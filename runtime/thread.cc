@@ -4878,11 +4878,12 @@ bool Thread::UnprotectStack() {
 #endif
 }
 
-// Explicit instantiations required: common_throws.cc references these templates.
+// Explicit instantiations required: common_throws.cc references these templates
+// for kHardware only. kSimulated needs GetStackBegin/SetStack* specializations
+// that exist only with the ART instruction simulator; instantiating them on
+// host Linux/Win64 non-simulator builds leaves an undefined GetStackBegin.
 template bool Thread::ProtectStack<StackType::kHardware>(bool);
 template bool Thread::UnprotectStack<StackType::kHardware>();
-template bool Thread::ProtectStack<StackType::kSimulated>(bool);
-template bool Thread::UnprotectStack<StackType::kSimulated>();
 
 size_t Thread::NumberOfHeldMutexes() const {
   size_t count = 0;
