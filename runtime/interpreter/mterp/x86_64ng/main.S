@@ -205,7 +205,11 @@
 // An assembly entry for nterp.
 .macro OAT_ENTRY name
     FUNCTION_TYPE(\name)
+#if !defined(_WIN32)
+#if !defined(_WIN32)
     ASM_HIDDEN SYMBOL(\name)
+#endif
+#endif
     .global SYMBOL(\name)
     .balign 16
 SYMBOL(\name):
@@ -213,7 +217,11 @@ SYMBOL(\name):
 
 .macro ENTRY name
     .text
+#if !defined(_WIN32)
+#if !defined(_WIN32)
     ASM_HIDDEN SYMBOL(\name)
+#endif
+#endif
     .global SYMBOL(\name)
     FUNCTION_TYPE(\name)
 SYMBOL(\name):
@@ -2287,7 +2295,11 @@ END nterp_helper
 // This is the end of PCs contained by the OatQuickMethodHeader created for the interpreter
 // entry point.
     FUNCTION_TYPE(EndExecuteNterpImpl)
+#if !defined(_WIN32)
+#if !defined(_WIN32)
     ASM_HIDDEN SYMBOL(EndExecuteNterpImpl)
+#endif
+#endif
     .global SYMBOL(EndExecuteNterpImpl)
 SYMBOL(EndExecuteNterpImpl):
 
@@ -2311,7 +2323,11 @@ END_FUNCTION nterp_deliver_pending_exception
 %def instruction_end():
 
     FUNCTION_TYPE(artNterpAsmInstructionEnd)
+#if !defined(_WIN32)
+#if !defined(_WIN32)
     ASM_HIDDEN SYMBOL(artNterpAsmInstructionEnd)
+#endif
+#endif
     .global SYMBOL(artNterpAsmInstructionEnd)
 SYMBOL(artNterpAsmInstructionEnd):
     // artNterpAsmInstructionEnd is used as landing pad for exception handling.
@@ -2321,7 +2337,11 @@ SYMBOL(artNterpAsmInstructionEnd):
 %def instruction_start():
 
     FUNCTION_TYPE(artNterpAsmInstructionStart)
+#if !defined(_WIN32)
+#if !defined(_WIN32)
     ASM_HIDDEN SYMBOL(artNterpAsmInstructionStart)
+#endif
+#endif
     .global SYMBOL(artNterpAsmInstructionStart)
 SYMBOL(artNterpAsmInstructionStart) = .L_op_nop
     .text

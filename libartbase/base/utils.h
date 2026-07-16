@@ -122,9 +122,8 @@ NO_RETURN void SleepForever();
 // Flush CPU caches. Returns true on success, false if flush failed.
 WARN_UNUSED bool FlushCpuCaches(void* begin, void* end);
 
-#if defined(__linux__)
+// Available on all hosts; non-Linux always returns false.
 bool IsKernelVersionAtLeast(int reqd_major, int reqd_minor);
-#endif
 
 // On some old kernels, a cache operation may segfault.
 WARN_UNUSED bool CacheOperationsMaySegFault();

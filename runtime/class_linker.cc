@@ -706,6 +706,24 @@ bool ClassLinker::InitWithoutImage(std::vector<std::unique_ptr<const DexFile>> b
   Handle<mirror::Class> java_lang_Class(hs.NewHandle(ObjPtr<mirror::Class>::DownCast(
       heap->AllocNonMovableObject(self, nullptr, class_class_size, VoidFunctor()))));
   CHECK(java_lang_Class != nullptr);
+#ifdef _WIN32
+  {
+    auto* nm = heap->GetNonMovingSpace();
+    auto* ct = heap->GetCardTable();
+    Runtime* rt = Runtime::Current();
+    LOG(INFO) << "InitWithoutImage java_lang_Class="
+              << static_cast<const void*>(java_lang_Class.Get())
+              << " size=" << class_class_size
+              << " non_moving=[" << (nm ? static_cast<const void*>(nm->Begin()) : nullptr)
+              << "," << (nm ? static_cast<const void*>(nm->Limit()) : nullptr) << ")"
+              << " card_map=" << (ct ? ct->MemMapBegin() : nullptr)
+              << " biased=" << (ct ? static_cast<const void*>(ct->GetBiasedBegin()) : nullptr)
+              << " runtime=" << static_cast<const void*>(rt)
+              << " rt->heap=" << static_cast<const void*>(rt->GetHeap())
+              << " heap_arg=" << static_cast<const void*>(heap)
+              << " ct=" << static_cast<const void*>(ct);
+  }
+#endif
   java_lang_Class->AddRemoveClassFlags(mirror::kClassFlagClass |
                                        mirror::kClassFlagHasEmbeddedVTable);
   java_lang_Class->SetClass(java_lang_Class.Get());
@@ -898,34 +916,86 @@ bool ClassLinker::InitWithoutImage(std::vector<std::unique_ptr<const DexFile>> b
     quick_generic_jni_trampoline_ = GetQuickGenericJniStub();
     quick_to_interpreter_bridge_trampoline_ = GetQuickToInterpreterBridge();
     nterp_trampoline_ = interpreter::GetNterpEntryPoint();
+#ifdef _WIN32
+    LOG(INFO) << "InitWithoutImage trampolines"
+              << " resolution=" << reinterpret_cast<const void*>(quick_resolution_trampoline_)
+              << " to_interp=" << reinterpret_cast<const void*>(quick_to_interpreter_bridge_trampoline_)
+              << " nterp=" << reinterpret_cast<const void*>(nterp_trampoline_)
+              << " generic_jni=" << reinterpret_cast<const void*>(quick_generic_jni_trampoline_);
+#endif
   }
 
   // Object, String, ClassExt and DexCache need to be rerun through FindSystemClass to finish init
   // We also need to immediately clear the finalizable flag for Object so that other classes are
   // not erroneously marked as finalizable. (Object defines an empty finalizer, so that other
   // classes can override it but it is not itself finalizable.)
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before CheckSystemClass Object";
+#endif
   mirror::Class::SetStatus(java_lang_Object, ClassStatus::kNotReady, self);
   CheckSystemClass(self, java_lang_Object, "Ljava/lang/Object;");
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after CheckSystemClass Object";
+#endif
   CHECK(java_lang_Object->IsFinalizable());
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after IsFinalizable Object";
+#endif
   java_lang_Object->ClearFinalizable();
   CHECK_EQ(java_lang_Object->GetObjectSize(), mirror::Object::InstanceSize());
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before CheckSystemClass String";
+#endif
   mirror::Class::SetStatus(java_lang_String, ClassStatus::kNotReady, self);
   CheckSystemClass(self, java_lang_String, "Ljava/lang/String;");
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after CheckSystemClass String";
+#endif
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before CheckSystemClass DexCache";
+#endif
   mirror::Class::SetStatus(java_lang_DexCache, ClassStatus::kNotReady, self);
   CheckSystemClass(self, java_lang_DexCache, "Ljava/lang/DexCache;");
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after CheckSystemClass DexCache";
+#endif
   CHECK_EQ(java_lang_DexCache->GetObjectSize(), mirror::DexCache::InstanceSize());
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before CheckSystemClass ClassExt";
+#endif
   mirror::Class::SetStatus(dalvik_system_ClassExt, ClassStatus::kNotReady, self);
   CheckSystemClass(self, dalvik_system_ClassExt, "Ldalvik/system/ClassExt;");
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after CheckSystemClass ClassExt";
+#endif
   CHECK_EQ(dalvik_system_ClassExt->GetObjectSize(), mirror::ClassExt::InstanceSize());
 
   // Run Class through FindSystemClass. This initializes the dex_cache_ fields and register it
   // in class_table_.
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before CheckSystemClass Class";
+#endif
   CheckSystemClass(self, java_lang_Class, "Ljava/lang/Class;");
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after CheckSystemClass Class";
+#endif
 
   // Setup core array classes, i.e. Object[], String[] and Class[] and primitive
   // arrays - can't be done until Object has a vtable and component classes are loaded.
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before FinishCoreArrayClassSetup ObjectArray";
+#endif
   FinishCoreArrayClassSetup(ClassRoot::kObjectArrayClass);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after FinishCoreArrayClassSetup ObjectArray";
+#endif
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before FinishCoreArrayClassSetup ClassArray";
+#endif
   FinishCoreArrayClassSetup(ClassRoot::kClassArrayClass);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after FinishCoreArrayClassSetup ClassArray";
+#endif
   FinishCoreArrayClassSetup(ClassRoot::kJavaLangStringArrayClass);
   FinishCoreArrayClassSetup(ClassRoot::kBooleanArrayClass);
   FinishCoreArrayClassSetup(ClassRoot::kByteArrayClass);
@@ -935,12 +1005,21 @@ bool ClassLinker::InitWithoutImage(std::vector<std::unique_ptr<const DexFile>> b
   FinishCoreArrayClassSetup(ClassRoot::kLongArrayClass);
   FinishCoreArrayClassSetup(ClassRoot::kFloatArrayClass);
   FinishCoreArrayClassSetup(ClassRoot::kDoubleArrayClass);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after all FinishCoreArrayClassSetup; before Cloneable FindSystemClass";
+#endif
 
   // Setup the single, global copy of "iftable".
   auto java_lang_Cloneable = hs.NewHandle(FindSystemClass(self, "Ljava/lang/Cloneable;"));
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Cloneable FindSystemClass";
+#endif
   CHECK(java_lang_Cloneable != nullptr);
   auto java_io_Serializable = hs.NewHandle(FindSystemClass(self, "Ljava/io/Serializable;"));
   CHECK(java_io_Serializable != nullptr);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Serializable FindSystemClass";
+#endif
   // We assume that Cloneable/Serializable don't have superinterfaces -- normally we'd have to
   // crawl up and explicitly list all of the supers as well.
   object_array_class->GetIfTable()->SetInterface(0, java_lang_Cloneable.Get());
@@ -959,122 +1038,254 @@ bool ClassLinker::InitWithoutImage(std::vector<std::unique_ptr<const DexFile>> b
   // a finalizer but it is not itself consedered finalizable. Load the Enum class now and clear
   // the finalizable flag to prevent subclasses from being marked as finalizable.
   CHECK_EQ(LookupClass(self, "Ljava/lang/Enum;", /*class_loader=*/ nullptr), nullptr);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before Enum FindSystemClass";
+#endif
   Handle<mirror::Class> java_lang_Enum = hs.NewHandle(FindSystemClass(self, "Ljava/lang/Enum;"));
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Enum FindSystemClass";
+#endif
   CHECK(java_lang_Enum->IsFinalizable());
   java_lang_Enum->ClearFinalizable();
 
   // End of special init trickery, all subsequent classes may be loaded via FindSystemClass.
 
   // Create java.lang.reflect.Proxy root.
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before Proxy FindSystemClass";
+#endif
   SetClassRoot(ClassRoot::kJavaLangReflectProxy,
                FindSystemClass(self, "Ljava/lang/reflect/Proxy;"));
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Proxy FindSystemClass";
+#endif
 
   // Create java.lang.reflect.Field.class root.
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before Field FindSystemClass";
+#endif
   ObjPtr<mirror::Class> class_root = FindSystemClass(self, "Ljava/lang/reflect/Field;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangReflectField, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Field FindSystemClass class=" << class_root.Ptr();
+#endif
 
   // Create java.lang.reflect.Field array root.
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before Field[] FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "[Ljava/lang/reflect/Field;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangReflectFieldArrayClass, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Field[] FindSystemClass class=" << class_root.Ptr();
+#endif
 
   // Create java.lang.reflect.Constructor.class root and array root.
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before Constructor FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/reflect/Constructor;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangReflectConstructor, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Constructor FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "[Ljava/lang/reflect/Constructor;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangReflectConstructorArrayClass, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Constructor[] FindSystemClass";
+#endif
 
   // Create java.lang.reflect.Method.class root and array root.
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before Method FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/reflect/Method;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangReflectMethod, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Method FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "[Ljava/lang/reflect/Method;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangReflectMethodArrayClass, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Method[] FindSystemClass";
+#endif
 
   // Create java.lang.invoke.CallSite.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before CallSite FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/CallSite;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeCallSite, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after CallSite FindSystemClass";
+#endif
 
   // Create java.lang.invoke.MethodType.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before MethodType FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/MethodType;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeMethodType, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after MethodType FindSystemClass";
+#endif
 
   // Create java.lang.invoke.MethodHandleImpl.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before MethodHandleImpl FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/MethodHandleImpl;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeMethodHandleImpl, class_root);
   SetClassRoot(ClassRoot::kJavaLangInvokeMethodHandle, class_root->GetSuperClass());
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after MethodHandleImpl FindSystemClass";
+#endif
 
   // Create java.lang.invoke.MethodHandles.Lookup.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before MethodHandles$Lookup FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/MethodHandles$Lookup;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeMethodHandlesLookup, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after MethodHandles$Lookup FindSystemClass";
+#endif
 
   // Create java.lang.invoke.VarHandle.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before VarHandle FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/VarHandle;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeVarHandle, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after VarHandle FindSystemClass";
+#endif
 
   // Create java.lang.invoke.FieldVarHandle.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before FieldVarHandle FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/FieldVarHandle;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeFieldVarHandle, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after FieldVarHandle FindSystemClass";
+#endif
 
   // Create java.lang.invoke.StaticFieldVarHandle.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before StaticFieldVarHandle FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/StaticFieldVarHandle;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeStaticFieldVarHandle, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after StaticFieldVarHandle FindSystemClass";
+#endif
 
   // Create java.lang.invoke.ArrayElementVarHandle.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before ArrayElementVarHandle FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/ArrayElementVarHandle;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeArrayElementVarHandle, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after ArrayElementVarHandle FindSystemClass";
+#endif
 
   // Create java.lang.invoke.ByteArrayViewVarHandle.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before ByteArrayViewVarHandle FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/ByteArrayViewVarHandle;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeByteArrayViewVarHandle, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after ByteArrayViewVarHandle FindSystemClass";
+#endif
 
   // Create java.lang.invoke.ByteBufferViewVarHandle.class root
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before ByteBufferViewVarHandle FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/invoke/ByteBufferViewVarHandle;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kJavaLangInvokeByteBufferViewVarHandle, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after ByteBufferViewVarHandle FindSystemClass";
+#endif
 
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before EmulatedStackFrame FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ldalvik/system/EmulatedStackFrame;");
   CHECK(class_root != nullptr);
   SetClassRoot(ClassRoot::kDalvikSystemEmulatedStackFrame, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after EmulatedStackFrame FindSystemClass";
+#endif
 
   // java.lang.ref classes need to be specially flagged, but otherwise are normal classes
   // finish initializing Reference class
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before Reference CheckSystemClass";
+#endif
   mirror::Class::SetStatus(java_lang_ref_Reference, ClassStatus::kNotReady, self);
   CheckSystemClass(self, java_lang_ref_Reference, "Ljava/lang/ref/Reference;");
   CHECK_EQ(java_lang_ref_Reference->GetObjectSize(), mirror::Reference::InstanceSize());
   CHECK_EQ(java_lang_ref_Reference->GetClassSize(),
            mirror::Reference::ClassSize(image_pointer_size_));
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Reference CheckSystemClass; before FinalizerReference";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/ref/FinalizerReference;");
   class_root->AddRemoveClassFlags(mirror::kClassFlagFinalizerReference, mirror::kClassFlagNormal);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after FinalizerReference";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/ref/PhantomReference;");
   class_root->AddRemoveClassFlags(mirror::kClassFlagPhantomReference, mirror::kClassFlagNormal);
   class_root = FindSystemClass(self, "Ljava/lang/ref/SoftReference;");
   class_root->AddRemoveClassFlags(mirror::kClassFlagSoftReference, mirror::kClassFlagNormal);
   class_root = FindSystemClass(self, "Ljava/lang/ref/WeakReference;");
   class_root->AddRemoveClassFlags(mirror::kClassFlagWeakReference, mirror::kClassFlagNormal);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after ref subclasses";
+#endif
 
   // Setup the ClassLoader, verifying the object_size_.
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before ClassLoader FindSystemClass";
+#endif
   class_root = FindSystemClass(self, "Ljava/lang/ClassLoader;");
   class_root->SetClassLoaderClass();
   CHECK_EQ(class_root->GetObjectSize(), mirror::ClassLoader::InstanceSize());
   SetClassRoot(ClassRoot::kJavaLangClassLoader, class_root);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after ClassLoader FindSystemClass";
+#endif
 
   // Set up java.lang.Throwable, java.lang.ClassNotFoundException, and
   // java.lang.StackTraceElement as a convenience.
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage before Throwable FindSystemClass";
+#endif
   SetClassRoot(ClassRoot::kJavaLangThrowable, FindSystemClass(self, "Ljava/lang/Throwable;"));
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after Throwable FindSystemClass";
+#endif
   SetClassRoot(ClassRoot::kJavaLangClassNotFoundException,
                FindSystemClass(self, "Ljava/lang/ClassNotFoundException;"));
   SetClassRoot(ClassRoot::kJavaLangStackTraceElement,
@@ -1083,11 +1294,20 @@ bool ClassLinker::InitWithoutImage(std::vector<std::unique_ptr<const DexFile>> b
                FindSystemClass(self, "[Ljava/lang/StackTraceElement;"));
   SetClassRoot(ClassRoot::kJavaLangClassLoaderArrayClass,
                FindSystemClass(self, "[Ljava/lang/ClassLoader;"));
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after convenience roots; before FixupConflictTables";
+#endif
 
   // Create conflict tables that depend on the class linker.
   runtime->FixupConflictTables();
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after FixupConflictTables; before FinishInit";
+#endif
 
   FinishInit(self);
+#ifdef _WIN32
+  LOG(INFO) << "InitWithoutImage after FinishInit";
+#endif
 
   VLOG(startup) << "ClassLinker::InitFromCompiler exiting";
 
@@ -2874,6 +3094,15 @@ void ClassLinker::AllocPrimitiveArrayClass(Thread* self,
 
 void ClassLinker::FinishArrayClassSetup(ObjPtr<mirror::Class> array_class) {
   ObjPtr<mirror::Class> java_lang_Object = GetClassRoot<mirror::Object>(this);
+#ifdef _WIN32
+  {
+    std::string d;
+    LOG(INFO) << "FinishArrayClassSetup enter array=" << array_class.Ptr()
+              << " descriptor=" << array_class->GetDescriptor(&d)
+              << " component=" << array_class->GetComponentType().Ptr()
+              << " ptr_size=" << static_cast<size_t>(image_pointer_size_);
+  }
+#endif
   array_class->SetSuperClass(java_lang_Object);
   array_class->SetVTable(java_lang_Object->GetVTable());
   array_class->SetPrimitiveType(Primitive::kPrimNot);
@@ -2887,9 +3116,21 @@ void ClassLinker::FinishArrayClassSetup(ObjPtr<mirror::Class> array_class) {
   array_class->AddRemoveClassFlags(class_flags);
   array_class->SetClassLoader(component_type->GetClassLoader());
   array_class->SetStatusForPrimitiveOrArray(ClassStatus::kLoaded);
+#ifdef _WIN32
+  LOG(INFO) << "FinishArrayClassSetup before PopulateEmbeddedVTable";
+#endif
   array_class->PopulateEmbeddedVTable(image_pointer_size_);
+#ifdef _WIN32
+  LOG(INFO) << "FinishArrayClassSetup after PopulateEmbeddedVTable";
+#endif
   ImTable* object_imt = java_lang_Object->GetImt(image_pointer_size_);
+#ifdef _WIN32
+  LOG(INFO) << "FinishArrayClassSetup Object IMT=" << static_cast<const void*>(object_imt);
+#endif
   array_class->SetImt(object_imt, image_pointer_size_);
+#ifdef _WIN32
+  LOG(INFO) << "FinishArrayClassSetup after SetImt";
+#endif
 
   // don't need to set new_class->SetObjectSize(..)
   // because Object::SizeOf delegates to Array::SizeOf
@@ -2925,6 +3166,9 @@ void ClassLinker::FinishArrayClassSetup(ObjPtr<mirror::Class> array_class) {
   array_class->SetFieldsPtrUnchecked(GetEmptyFieldArray());
   array_class->SetMethodsPtrUnchecked(GetEmptyMethodArray(), 0, 0);
   DCHECK_EQ(array_class->NumMethods(), 0u);
+#ifdef _WIN32
+  LOG(INFO) << "FinishArrayClassSetup done";
+#endif
 }
 
 void ClassLinker::FinishCoreArrayClassSetup(ClassRoot array_root) {
@@ -2937,8 +3181,15 @@ void ClassLinker::FinishCoreArrayClassSetup(ClassRoot array_root) {
   const char* raw_descriptor = array_class->GetDescriptor(&descriptor);
   DCHECK(raw_descriptor == descriptor.c_str());
   size_t hash = ComputeModifiedUtf8Hash(descriptor);
+#ifdef _WIN32
+  LOG(INFO) << "FinishCoreArrayClassSetup InsertClass " << descriptor
+            << " hash=" << hash << " array=" << array_class.Ptr();
+#endif
   ObjPtr<mirror::Class> existing = InsertClass(descriptor, array_class, hash);
   CHECK(existing == nullptr);
+#ifdef _WIN32
+  LOG(INFO) << "FinishCoreArrayClassSetup InsertClass done " << descriptor;
+#endif
 }
 
 ObjPtr<mirror::ObjectArray<mirror::StackTraceElement>> ClassLinker::AllocStackTraceElementArray(
@@ -3533,7 +3784,7 @@ struct ScopedDefiningClass {
     return Finish(h_klass);
   }
 
-  ObjPtr<mirror::Class> Finish([[maybe_unused]] nullptr_t np)
+  ObjPtr<mirror::Class> Finish([[maybe_unused]] std::nullptr_t np)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     ScopedNullHandle<mirror::Class> snh;
     return Finish(snh);
@@ -8786,6 +9037,11 @@ size_t ClassLinker::LinkMethodsHelper<kPointerSize>::AssignVTableIndexes(
                                 Allocator::GetNoopAllocator(),
                                 bit_vector_size,
                                 bit_vector_buffer_ptr);
+  // MDVM patch 0009: the backing buffer (alloca/arena) is NOT zeroed and this
+  // BitVector ctor does not clear it; the algorithm relies on zeroed bits.
+  // Uninitialized bits cause a same_signature_vtable_lists self-loop that
+  // hangs the vtable walk (guarding DCHECK_LT is gone under NDEBUG).
+  std::fill_n(bit_vector_buffer_ptr, bit_vector_size, 0u);
   // Clear the bit vector since bit_vector_buffer_ptr may not be zeroed.
   initialized_methods.SetInitialBits(0);
 

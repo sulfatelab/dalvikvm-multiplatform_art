@@ -33,11 +33,20 @@
 //  Argument 0: RDI: The context pointer for ExecuteSwitchImpl.
 //  Argument 1: RSI: Pointer to the templated ExecuteSwitchImpl to call.
 //  Argument 2: RDX: The value of DEX PC (memory address of the methods bytecode).
+//
+// Note: On Linux this is pure SysV. On Win64 the *caller* of ExecuteSwitchImplAsm is
+// forced to sysv_abi (see interpreter_switch_impl.h), but the C++ callee
+// ExecuteSwitchImplCpp is compiled with the MSVC ABI and expects arg0 in RCX.
 DEFINE_FUNCTION ExecuteSwitchImplAsm
     PUSH rbx                 // Spill RBX
     movq %rdx, %rbx          // RBX = DEX PC (callee save register)
     CFI_DEFINE_DEX_PC_WITH_OFFSET(0 /* RAX */, 3 /* RBX */, 0)
 
+#if defined(_WIN32)
+    // Convert SysV args (RDI/RSI) to MSVC for the C++ impl (RCX = ctx).
+    movq %rdi, %rcx          // RCX := SwitchImplContext*
+    // RSI still holds the impl function pointer.
+#endif
     call *%rsi               // Call the wrapped function
 
     POP rbx                  // Restore RBX

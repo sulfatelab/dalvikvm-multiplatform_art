@@ -54,13 +54,13 @@
 #endif
 
 #define LITERAL(value) $value
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     #define MACRO_LITERAL(value) $(value)
 #else
     #define MACRO_LITERAL(value) $value
 #endif
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     #define FUNCTION_TYPE(name)
     #define SIZE(name)
 #else
@@ -69,7 +69,7 @@
 #endif
 
     // CFI support.
-#if !defined(__APPLE__)
+#if !defined(__APPLE__) && !defined(_WIN32)
     #define CFI_STARTPROC .cfi_startproc
     #define CFI_ENDPROC .cfi_endproc
     #define CFI_ADJUST_CFA_OFFSET(size) .cfi_adjust_cfa_offset size
@@ -153,17 +153,24 @@ MACRO3(CFI_DEF_CFA_BREG_PLUS_UCONST, reg, offset, size)
 END_MACRO
 
     // Symbols.
-#if !defined(__APPLE__)
-    #define SYMBOL(name) name
-    #define PLT_SYMBOL(name) name ## @PLT
-#else
+#if defined(__APPLE__)
     #define SYMBOL(name) _ ## name
     #define PLT_SYMBOL(name) _ ## name
+#else
+    // Linux ELF and Windows PE: no leading underscore (x64).
+    #define SYMBOL(name) name
+#if defined(_WIN32)
+    #define PLT_SYMBOL(name) name
+#else
+    #define PLT_SYMBOL(name) name ## @PLT
+#endif
 #endif
 
 // Directive to hide a function symbol.
 #if defined(__APPLE__)
     #define ASM_HIDDEN .private_extern
+#elif defined(_WIN32)
+    #define ASM_HIDDEN /* PE has no .hidden/.private_extern equivalent here */
 #else
     #define ASM_HIDDEN .hidden
 #endif
@@ -177,7 +184,11 @@ END_MACRO
 // for mac builds.
 MACRO2(DEFINE_FUNCTION_CUSTOM_CFA, c_name, cfa_offset)
     FUNCTION_TYPE(SYMBOL(\c_name))
+#if !defined(_WIN32)
+#if !defined(_WIN32)
     ASM_HIDDEN CALLVAR(c_name)
+#endif
+#endif
     .globl CALLVAR(c_name)
     ALIGN_FUNCTION_ENTRY
 CALLVAR(c_name):
@@ -241,7 +252,9 @@ END_MACRO
 
 MACRO1(UNIMPLEMENTED,name)
     FUNCTION_TYPE(SYMBOL(\name))
+#if !defined(_WIN32)
     ASM_HIDDEN VAR(name)
+#endif
     .globl VAR(name)
     ALIGN_FUNCTION_ENTRY
 VAR(name):
@@ -261,8 +274,22 @@ MACRO0(UNTESTED)
 END_MACRO
 
 MACRO1(LOAD_RUNTIME_INSTANCE, reg)
+#if defined(_WIN32)
+    // PE helper returns Runtime** ; clobber only target reg via xchg dance.
+    // Prefer lea/mov of imported data later; helper is Phase-1 safe.
+    pushq %rcx
+    movq REG_VAR(reg), %rcx
+    pushq %rax
+    subq $40, %rsp          // shadow space + align
+    call art_Runtime_instance_ptr
+    movq (%rax), REG_VAR(reg)
+    addq $40, %rsp
+    popq %rax
+    popq %rcx
+#else
     movq _ZN3art7Runtime9instance_E@GOTPCREL(%rip), REG_VAR(reg)
     movq (REG_VAR(reg)), REG_VAR(reg)
+#endif
 END_MACRO
 
 // Macros to poison (negate) the reference for heap poisoning.
@@ -284,7 +311,7 @@ END_MACRO
      * Runtime::CreateCalleeSaveMethod(kSaveRefsOnly)
      */
 MACRO0(SETUP_SAVE_REFS_ONLY_FRAME)
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     int3
     int3
 #else
@@ -408,7 +435,7 @@ END_MACRO
      * Runtime::CreateCalleeSaveMethod(kSaveAllCalleeSaves)
      */
 MACRO0(SETUP_SAVE_ALL_CALLEE_SAVES_FRAME)
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     int3
     int3
 #else

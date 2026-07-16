@@ -487,7 +487,7 @@ static jclass DexFile_defineClassNative(JNIEnv* env,
     VLOG(class_linker) << "Failed to find class_name";
     return nullptr;
   }
-  const std::string descriptor = DotToDescriptor(class_name);
+  const std::string descriptor = DotToDescriptor(class_name.c_str());
   const size_t hash = ComputeModifiedUtf8Hash(descriptor);
   for (auto& dex_file : dex_files) {
     const dex::ClassDef* dex_class_def = OatDexFile::FindClassDef(*dex_file, descriptor, hash);

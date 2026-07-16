@@ -18,6 +18,9 @@
 
 #include <limits.h>  // for INT_MAX
 #include <pthread.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/resource.h>
@@ -757,8 +760,8 @@ static size_t FixStackSize(size_t stack_size) {
   }
 
   // It's not possible to request a stack smaller than the system-defined PTHREAD_STACK_MIN.
-  if (stack_size < PTHREAD_STACK_MIN) {
-    stack_size = PTHREAD_STACK_MIN;
+  if (stack_size < static_cast<size_t>(PTHREAD_STACK_MIN)) {
+    stack_size = static_cast<size_t>(PTHREAD_STACK_MIN);
   }
 
   if (Runtime::Current()->GetImplicitStackOverflowChecks()) {
@@ -1002,7 +1005,33 @@ static void GetThreadStack(pthread_t thread,
                            void** stack_base,
                            size_t* stack_size,
                            size_t* guard_size) {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+  UNUSED(thread);
+  // Prefer a conservative stack estimate for the current thread. VirtualQuery
+  // on Wine can report oversized regions; over-estimating causes stack-overflow
+  // mprotect to clobber the heap (seen as write faults in InitWithoutImage).
+  volatile char stack_probe;
+  MEMORY_BASIC_INFORMATION mbi;
+  if (VirtualQuery((void*)&stack_probe, &mbi, sizeof(mbi)) != 0) {
+    char* allocation_base = reinterpret_cast<char*>(mbi.AllocationBase);
+    // High address of current committed page chain containing the probe.
+    char* region_end = reinterpret_cast<char*>(mbi.BaseAddress) + mbi.RegionSize;
+    // Typical main-thread stack on Windows is 1MB; clamp to [256K, 8MB].
+    size_t approx = static_cast<size_t>(region_end - allocation_base);
+    if (approx < 256 * KB) {
+      approx = 1 * MB;
+    } else if (approx > 8 * MB) {
+      approx = 8 * MB;
+      allocation_base = region_end - approx;
+    }
+    *stack_base = allocation_base;
+    *stack_size = approx;
+  } else {
+    *stack_base = nullptr;
+    *stack_size = 1 * MB;
+  }
+  *guard_size = 4 * KB;
+#elif defined(__APPLE__)
   *stack_size = pthread_get_stacksize_np(thread);
   void* stack_addr = pthread_get_stackaddr_np(thread);
 
@@ -1542,9 +1571,9 @@ void Thread::GetThreadName(std::string& name) const {
 uint64_t Thread::GetCpuMicroTime() const {
 #if defined(__linux__)
   return Thread::GetCpuNanoTime() / 1000;
-#else  // __APPLE__
+#else  // __APPLE__ / Windows
   UNIMPLEMENTED(WARNING);
-  return -1;
+  return 0;
 #endif
 }
 
@@ -1556,9 +1585,9 @@ uint64_t Thread::GetCpuNanoTime() const {
   clock_gettime(cpu_clock_id, &now);
   return static_cast<uint64_t>(now.tv_sec) * UINT64_C(1000000000) +
          static_cast<uint64_t>(now.tv_nsec);
-#else  // __APPLE__
+#else  // __APPLE__ / Windows
   UNIMPLEMENTED(WARNING);
-  return -1;
+  return 0;
 #endif
 }
 
@@ -2498,7 +2527,7 @@ Thread::DumpOrder Thread::DumpStack(std::ostream& os,
                                     bool dump_native_stack,
                                     bool force_dump_stack) const {
   unwindstack::AndroidLocalUnwinder unwinder;
-  unwinder.set_check_global_elf_cache(true);
+  /* MDVM patch 0012: archive libunwindstack lacks set_check_global_elf_cache */ (void)0;
   return DumpStack(os, unwinder, dump_native_stack, force_dump_stack);
 }
 
@@ -4816,6 +4845,12 @@ std::ostream& operator<<(std::ostream& os, const Thread& thread) {
 
 template <StackType stack_type>
 bool Thread::ProtectStack(bool fatal_on_error) {
+#ifdef _WIN32
+  // Stack-overflow guard pages are unreliable until TEB bounds are accurate.
+  // Skipping avoids mprotect of miscomputed addresses that can hit the heap.
+  UNUSED(fatal_on_error);
+  return true;
+#else
   void* pregion = GetStackBegin<stack_type>() - GetStackOverflowProtectedSize();
   VLOG(threads) << "Protecting stack at " << pregion;
   if (mprotect(pregion, GetStackOverflowProtectedSize(), PROT_NONE) == -1) {
@@ -4829,14 +4864,25 @@ bool Thread::ProtectStack(bool fatal_on_error) {
     return false;
   }
   return true;
+#endif
 }
 
 template <StackType stack_type>
 bool Thread::UnprotectStack() {
+#ifdef _WIN32
+  return true;
+#else
   void* pregion = GetStackBegin<stack_type>() - GetStackOverflowProtectedSize();
   VLOG(threads) << "Unprotecting stack at " << pregion;
   return mprotect(pregion, GetStackOverflowProtectedSize(), PROT_READ|PROT_WRITE) == 0;
+#endif
 }
+
+// Explicit instantiations required: common_throws.cc references these templates.
+template bool Thread::ProtectStack<StackType::kHardware>(bool);
+template bool Thread::UnprotectStack<StackType::kHardware>();
+template bool Thread::ProtectStack<StackType::kSimulated>(bool);
+template bool Thread::UnprotectStack<StackType::kSimulated>();
 
 size_t Thread::NumberOfHeldMutexes() const {
   size_t count = 0;

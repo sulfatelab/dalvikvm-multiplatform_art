@@ -440,12 +440,19 @@ bool FdFile::IsOpened() const {
   return FdFile::IsOpenFd(fd_);
 }
 
-static ssize_t ReadIgnoreOffset(int fd, void *buf, size_t count, off_t offset) {
+#if defined(_WIN32)
+// Windows CRT off_t is 32-bit; ART's local pread/pwrite use off64_t.
+using FdReadOffset = off64_t;
+#else
+using FdReadOffset = off_t;
+#endif
+
+static ssize_t ReadIgnoreOffset(int fd, void *buf, size_t count, FdReadOffset offset) {
   DCHECK_EQ(offset, 0);
   return read(fd, buf, count);
 }
 
-template <ssize_t (*read_func)(int, void*, size_t, off_t)>
+template <ssize_t (*read_func)(int, void*, size_t, FdReadOffset)>
 static bool ReadFullyGeneric(int fd, void* buffer, size_t byte_count, size_t offset) {
   char* ptr = static_cast<char*>(buffer);
   while (byte_count > 0) {

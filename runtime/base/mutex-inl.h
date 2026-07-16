@@ -28,6 +28,9 @@
 #if ART_USE_FUTEXES
 #include <linux/futex.h>
 #include <sys/syscall.h>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 #endif  // ART_USE_FUTEXES
 
 #define CHECK_MUTEX_CALL(call, args) CHECK_PTHREAD_CALL(call, args, name_)
@@ -35,10 +38,75 @@
 namespace art HIDDEN {
 
 #if ART_USE_FUTEXES
+#if defined(_WIN32)
+// WaitOnAddress-based futex. Supports WAIT/WAKE used by ART mutexes.
+// FUTEX_* constants are provided by linux/futex.h shim on Windows.
+static inline int futex(volatile int *uaddr, int op, int val, const struct timespec *timeout,
+                        volatile int *uaddr2, int val3) {
+  (void)uaddr2; (void)val3;
+  // Strip PRIVATE bit if present.
+  int base_op = op & 0x7f; // ignore flags in high bits roughly
+  // Linux FUTEX_PRIVATE_FLAG is 128; ops used: WAIT=0, WAKE=1, WAIT_BITSET=9, WAKE_BITSET=10
+  int cmd = op & 0xf; // good enough for ART's usage patterns
+  if ((op & 128) != 0) {
+    // private flag; ignore
+  }
+  if (cmd == 0 /*FUTEX_WAIT*/ || cmd == 9 /*FUTEX_WAIT_BITSET*/) {
+    DWORD ms = INFINITE;
+    if (timeout != nullptr) {
+      // Relative timeout (ART always passes relative timespeces into futex()).
+      long long total_ms = (long long)timeout->tv_sec * 1000LL +
+                           (timeout->tv_nsec + 999999LL) / 1000000LL;  // round up
+      if (total_ms < 0) total_ms = 0;
+      // If a positive timeout rounded to 0ms, wait at least 1ms so we don't spin forever.
+      if (total_ms == 0 && (timeout->tv_sec > 0 || timeout->tv_nsec > 0)) total_ms = 1;
+      if (total_ms > 0xffffffffLL) ms = INFINITE;
+      else ms = (DWORD)total_ms;
+    }
+    // Snapshot expected value for WaitOnAddress compare.
+    int expected = val;
+    int observed = *uaddr;
+    if (observed != expected) {
+      errno = EAGAIN;
+      return -1;
+    }
+    if (!WaitOnAddress((PVOID)uaddr, &expected, sizeof(int), ms)) {
+      DWORD err = GetLastError();
+      if (err == ERROR_TIMEOUT || err == ERROR_TIMEOUT /* same */) {
+        errno = ETIMEDOUT;
+      } else if (err == 0 || err == ERROR_SUCCESS) {
+        // Some wine builds return false without setting last error on timeout.
+        errno = ETIMEDOUT;
+      } else {
+        errno = EINTR;
+      }
+      return -1;
+    }
+    return 0;
+  }
+  if (cmd == 1 /*FUTEX_WAKE*/ || cmd == 10 /*FUTEX_WAKE_BITSET*/) {
+    if (val == 1) {
+      WakeByAddressSingle((PVOID)uaddr);
+    } else {
+      WakeByAddressAll((PVOID)uaddr);
+    }
+    return val; // "woken" count unknown; ART ignores exact count mostly
+  }
+  // Best-effort requeue: wake all on uaddr.
+  if (cmd == 3 /*REQUEUE*/ || cmd == 4 /*CMP_REQUEUE*/) {
+    WakeByAddressAll((PVOID)uaddr);
+    if (uaddr2) WakeByAddressAll((PVOID)uaddr2);
+    return 0;
+  }
+  errno = ENOSYS;
+  return -1;
+}
+#else
 static inline int futex(volatile int *uaddr, int op, int val, const struct timespec *timeout,
                         volatile int *uaddr2, int val3) {
   return syscall(SYS_futex, uaddr, op, val, timeout, uaddr2, val3);
 }
+#endif
 #endif  // ART_USE_FUTEXES
 
 // The following isn't strictly necessary, but we want updates on Atomic<pid_t> to be lock-free.

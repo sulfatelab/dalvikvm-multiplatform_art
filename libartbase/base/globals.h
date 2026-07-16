@@ -56,6 +56,16 @@ static constexpr size_t kMaxPageSize = kMinPageSize;
 static constexpr size_t kElfSegmentAlignment = kMaxPageSize;
 
 #if defined(NDEBUG) && !defined(__clang_analyzer__)
+
+// Multi-element classpath / bootclasspath list separator (-cp, -Xbootclasspath).
+// Windows uses ';' (OpenJDK Win32); Unix/Android use ':'.
+// Drive letters make ':' unsafe on WinNT (C:\a.jar:C:\b.jar).
+#if defined(ART_TARGET_WINDOWS) || (defined(_WIN32) && !defined(ART_TARGET_LINUX) && !defined(ART_TARGET_ANDROID))
+static constexpr char kClassPathListSeparator = ';';
+#else
+static constexpr char kClassPathListSeparator = ':';
+#endif
+
 static constexpr bool kIsDebugBuild = false;
 #else
 static constexpr bool kIsDebugBuild = true;
@@ -82,16 +92,24 @@ static constexpr bool kIsTargetBuild = true;
 static constexpr bool kIsTargetLinux = true;
 static constexpr bool kIsTargetFuchsia = false;
 static constexpr bool kIsTargetAndroid = false;
+static constexpr bool kIsTargetWindows = false;
 # elif defined(ART_TARGET_ANDROID)
 static constexpr bool kIsTargetLinux = false;
 static constexpr bool kIsTargetFuchsia = false;
 static constexpr bool kIsTargetAndroid = true;
+static constexpr bool kIsTargetWindows = false;
 # elif defined(ART_TARGET_FUCHSIA)
 static constexpr bool kIsTargetLinux = false;
 static constexpr bool kIsTargetFuchsia = true;
 static constexpr bool kIsTargetAndroid = false;
+static constexpr bool kIsTargetWindows = false;
+# elif defined(ART_TARGET_WINDOWS)
+static constexpr bool kIsTargetLinux = false;
+static constexpr bool kIsTargetFuchsia = false;
+static constexpr bool kIsTargetAndroid = false;
+static constexpr bool kIsTargetWindows = true;
 # else
-# error "Either ART_TARGET_LINUX, ART_TARGET_ANDROID or ART_TARGET_FUCHSIA " \
+# error "Either ART_TARGET_LINUX, ART_TARGET_ANDROID, ART_TARGET_FUCHSIA or ART_TARGET_WINDOWS " \
         "needs to be defined for target builds."
 # endif
 #else
@@ -102,10 +120,13 @@ static constexpr bool kIsTargetBuild = false;
 # error "ART_TARGET_ANDROID defined for host build."
 # elif defined(ART_TARGET_FUCHSIA)
 # error "ART_TARGET_FUCHSIA defined for host build."
+# elif defined(ART_TARGET_WINDOWS)
+# error "ART_TARGET_WINDOWS defined for host build."
 # else
 static constexpr bool kIsTargetLinux = false;
 static constexpr bool kIsTargetFuchsia = false;
 static constexpr bool kIsTargetAndroid = false;
+static constexpr bool kIsTargetWindows = false;
 # endif
 #endif
 

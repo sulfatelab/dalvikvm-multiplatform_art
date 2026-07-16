@@ -122,9 +122,18 @@ static const char* GetAndroidDir(const char* env_var,
 
 std::string GetAndroidRootSafe(std::string* error_msg) {
 #ifdef _WIN32
-  UNUSED(kAndroidRootEnvVar, kAndroidRootDefaultPath);
-  *error_msg = "GetAndroidRootSafe unsupported for Windows.";
-  return "";
+  // Host/Win64 product path: honor ANDROID_ROOT when set (imageless runs).
+  UNUSED(kAndroidRootDefaultPath);
+  const char* dir = getenv(kAndroidRootEnvVar);
+  if (dir == nullptr || dir[0] == '\0') {
+    *error_msg = "ANDROID_ROOT not set (required on Windows)";
+    return "";
+  }
+  if (!OS::DirectoryExists(dir)) {
+    *error_msg = StringPrintf("Failed to find ANDROID_ROOT directory %s", dir);
+    return "";
+  }
+  return dir;
 #else
   std::string local_error_msg;
   const char* dir = GetAndroidDirSafe(kAndroidRootEnvVar, kAndroidRootDefaultPath,
@@ -161,9 +170,18 @@ std::string GetAndroidRoot() {
 
 std::string GetSystemExtRootSafe(std::string* error_msg) {
 #ifdef _WIN32
-  UNUSED(kAndroidSystemExtRootEnvVar, kAndroidSystemExtRootDefaultPath);
-  *error_msg = "GetSystemExtRootSafe unsupported for Windows.";
-  return "";
+  UNUSED(kAndroidSystemExtRootDefaultPath);
+  const char* dir = getenv(kAndroidSystemExtRootEnvVar);
+  if (dir == nullptr || dir[0] == '\0') {
+    // Optional on Windows host runs.
+    *error_msg = "SYSTEM_EXT_ROOT not set";
+    return "";
+  }
+  if (!OS::DirectoryExists(dir)) {
+    *error_msg = StringPrintf("Failed to find SYSTEM_EXT_ROOT directory %s", dir);
+    return "";
+  }
+  return dir;
 #else
   const char* dir = GetAndroidDirSafe(kAndroidSystemExtRootEnvVar, kAndroidSystemExtRootDefaultPath,
       /*must_exist=*/ true, error_msg);
@@ -180,10 +198,21 @@ std::string GetSystemExtRoot() {
 
 static std::string GetArtRootSafe(bool must_exist, /*out*/ std::string* error_msg) {
 #ifdef _WIN32
-  UNUSED(kAndroidArtRootEnvVar, kAndroidArtApexDefaultPath);
-  UNUSED(must_exist);
-  *error_msg = "GetArtRootSafe unsupported for Windows.";
-  return "";
+  UNUSED(kAndroidArtApexDefaultPath);
+  const char* dir = getenv(kAndroidArtRootEnvVar);
+  if (dir == nullptr || dir[0] == '\0') {
+    // Fall back to ANDROID_ROOT for non-APEX host layout.
+    dir = getenv(kAndroidRootEnvVar);
+  }
+  if (dir == nullptr || dir[0] == '\0') {
+    *error_msg = "ANDROID_ART_ROOT/ANDROID_ROOT not set (required on Windows)";
+    return "";
+  }
+  if (must_exist && !OS::DirectoryExists(dir)) {
+    *error_msg = StringPrintf("Failed to find ART root directory %s", dir);
+    return "";
+  }
+  return dir;
 #else
   // Prefer ANDROID_ART_ROOT if it's set.
   const char* android_art_root_from_env = getenv(kAndroidArtRootEnvVar);
@@ -288,7 +317,7 @@ std::string GetFirstMainlineFrameworkLibraryFilename(std::string* error_msg) {
   }
 
   std::vector<std::string_view> mainline_bcp_jars;
-  Split(mainline_bcp, ':', &mainline_bcp_jars);
+  Split(mainline_bcp, kClassPathListSeparator, &mainline_bcp_jars);
   if (mainline_bcp_jars.empty()) {
     *error_msg = "No mainline framework library found";
     return "";
@@ -532,13 +561,27 @@ void GetDalvikCache(const char* subdir,
                     bool* dalvik_cache_exists,
                     bool* is_global_cache) {
 #ifdef _WIN32
-  UNUSED(subdir);
-  UNUSED(create_if_absent);
-  UNUSED(dalvik_cache);
-  UNUSED(have_android_data);
-  UNUSED(dalvik_cache_exists);
-  UNUSED(is_global_cache);
-  LOG(FATAL) << "GetDalvikCache unsupported on Windows.";
+  CHECK(subdir != nullptr);
+  std::string unused_error_msg;
+  std::string android_data = GetAndroidDataSafe(&unused_error_msg);
+  if (android_data.empty()) {
+    *have_android_data = false;
+    *dalvik_cache_exists = false;
+    *is_global_cache = false;
+    return;
+  }
+  *have_android_data = true;
+  const std::string dalvik_cache_root = GetDalvikCacheDirectory(android_data);
+  *dalvik_cache = dalvik_cache_root + '/' + subdir;
+  *dalvik_cache_exists = OS::DirectoryExists(dalvik_cache->c_str());
+  *is_global_cache = false;
+  if (create_if_absent && !*dalvik_cache_exists) {
+    // Best-effort create; Windows mkdir via _mkdir only one level — use CreateDirectoryA chain.
+    // mkdir may fail if parent missing; try root then leaf.
+    mkdir(dalvik_cache_root.c_str(), 0700);
+    mkdir(dalvik_cache->c_str(), 0700);
+    *dalvik_cache_exists = OS::DirectoryExists(dalvik_cache->c_str());
+  }
 #else
   CHECK(subdir != nullptr);
   std::string unused_error_msg;
@@ -695,8 +738,18 @@ std::string GetSystemOdexFilenameForApex(std::string_view location, InstructionS
 static void InsertIsaDirectory(const InstructionSet isa, std::string* filename) {
   // in = /foo/bar/baz
   // out = /foo/bar/<isa>/baz
+  // Also accept Windows separators and relative names without a directory separator.
   size_t pos = filename->rfind('/');
-  CHECK_NE(pos, std::string::npos) << *filename << " " << isa;
+  size_t bpos = filename->rfind('\\');
+  if (bpos != std::string::npos && (pos == std::string::npos || bpos > pos)) {
+    pos = bpos;
+  }
+  if (pos == std::string::npos) {
+    // "boot.art" -> "x86_64/boot.art"
+    filename->insert(0, "/");
+    filename->insert(0, GetInstructionSetString(isa));
+    return;
+  }
   filename->insert(pos, "/", 1);
   filename->insert(pos + 1, GetInstructionSetString(isa));
 }

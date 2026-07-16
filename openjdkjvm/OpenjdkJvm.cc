@@ -475,5 +475,5 @@ JNIEXPORT __attribute__((noreturn))  void JVM_Halt(jint code) {
 }
 
 JNIEXPORT jboolean JVM_IsNaN(jdouble d) {
-  return isnan(d);
+  return std::isnan(d);
 }

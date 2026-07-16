@@ -30,6 +30,12 @@ namespace art HIDDEN {
 template <typename T, size_t kMaxStackEntries>
 class InlinedVector {
  public:
+  // MDVM patch 0014: size_ must start at 0. The implicit default ctor left it
+  // uninitialized; with ConcurrentHashMap's 37 fields (>kMaxStackEntries=8)
+  // GetArray() then returned a huge garbage length and CreateFromArtField saw
+  // null ArtField* pointers (SIGSEGV at +66). fprintf Heisenbug: stack zeroing.
+  InlinedVector() : size_(0u) {}
+
   void push_back(const T& value) {
     if (LIKELY(size_ < kMaxStackEntries)) {
       stack_entries_[size_] = value;
@@ -55,7 +61,7 @@ class InlinedVector {
  private:
   T stack_entries_[kMaxStackEntries];
   std::vector<T> heap_entries_;
-  size_t size_;
+  size_t size_ = 0u;
 };
 
 }  // namespace art

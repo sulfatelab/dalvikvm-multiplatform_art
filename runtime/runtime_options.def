@@ -38,6 +38,16 @@ RUNTIME_OPTIONS_KEY (Unit,                Zygote)
 RUNTIME_OPTIONS_KEY (Unit,                PrimaryZygote)
 RUNTIME_OPTIONS_KEY (Unit,                Help)
 RUNTIME_OPTIONS_KEY (Unit,                ShowVersion)
+#if defined(ART_TARGET_WINDOWS)
+RUNTIME_OPTIONS_KEY (ParseStringList<';'>,BootClassPath)           // std::vector<std::string>
+RUNTIME_OPTIONS_KEY (ParseStringList<';'>,BootClassPathLocations)  // std::vector<std::string>
+RUNTIME_OPTIONS_KEY (ParseIntList<';'>,   BootClassPathFds)        // std::vector<int>
+RUNTIME_OPTIONS_KEY (ParseIntList<';'>,   BootClassPathImageFds)   // std::vector<int>
+RUNTIME_OPTIONS_KEY (ParseIntList<';'>,   BootClassPathVdexFds)    // std::vector<int>
+RUNTIME_OPTIONS_KEY (ParseIntList<';'>,   BootClassPathOatFds)     // std::vector<int>
+RUNTIME_OPTIONS_KEY (std::string,         ClassPath)
+RUNTIME_OPTIONS_KEY (ParseStringList<';'>,Image)
+#else
 RUNTIME_OPTIONS_KEY (ParseStringList<':'>,BootClassPath)           // std::vector<std::string>
 RUNTIME_OPTIONS_KEY (ParseStringList<':'>,BootClassPathLocations)  // std::vector<std::string>
 RUNTIME_OPTIONS_KEY (ParseIntList<':'>,   BootClassPathFds)        // std::vector<int>
@@ -46,6 +56,7 @@ RUNTIME_OPTIONS_KEY (ParseIntList<':'>,   BootClassPathVdexFds)    // std::vecto
 RUNTIME_OPTIONS_KEY (ParseIntList<':'>,   BootClassPathOatFds)     // std::vector<int>
 RUNTIME_OPTIONS_KEY (std::string,         ClassPath)
 RUNTIME_OPTIONS_KEY (ParseStringList<':'>,Image)
+#endif
 RUNTIME_OPTIONS_KEY (Unit,                ForceJitZygote)
 RUNTIME_OPTIONS_KEY (Unit,                AllowInMemoryCompilation)
 RUNTIME_OPTIONS_KEY (Unit,                CheckJni)

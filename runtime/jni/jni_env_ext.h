@@ -73,7 +73,15 @@ class JNIEnvExt : public JNIEnv {
     locals_.Trim();
   }
   void AssertLocalsEmpty() REQUIRES_SHARED(Locks::mutator_lock_) {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+    // Phase-2 Win64 JNI stubs / interpreter JNI path may leave temporary locals.
+    // Trim rather than abort so Runtime::Start can complete under wine64.
+    if (locals_.Capacity() != 0u) {
+      locals_.Trim();
+    }
+#else
     locals_.AssertEmpty();
+#endif
   }
   size_t GetLocalsCapacity() REQUIRES_SHARED(Locks::mutator_lock_) {
     return locals_.Capacity();

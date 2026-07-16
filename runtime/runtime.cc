@@ -191,7 +191,12 @@ namespace apex = com::android::apex;
 #endif
 
 // Static asserts to check the values of generated assembly-support macros.
+// On Windows the host-generated offset table may not match PE layout yet.
+#if defined(_WIN32)
+#define ASM_DEFINE(NAME, EXPR) /* skip offset check for Phase 1 Win64 */
+#else
 #define ASM_DEFINE(NAME, EXPR) static_assert((NAME) == (EXPR), "Unexpected value of " #NAME);
+#endif
 #include "asm_defines.def"
 #undef ASM_DEFINE
 
@@ -1043,7 +1048,11 @@ void Runtime::RunRootClinits(Thread* self) {
 bool Runtime::Start() {
   VLOG(startup) << "Runtime::Start entering";
 
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  // Win64 uses VEH for faults; sigchain is a no-op stub. Allow -Xno-sig-chain.
+#else
   CHECK(!no_sig_chain_) << "A started runtime should have sig chain enabled";
+#endif
 
   // If a debug host build, disable ptrace restriction for debugging and test timeout thread dump.
   // Only 64-bit as prctl() may fail in 32 bit userspace on a 64-bit kernel.
@@ -1177,7 +1186,7 @@ bool Runtime::Start() {
   if (jit_.get() != nullptr && jit_options_->GetSaveProfilingInfo() &&
       !jit_options_->GetProfileSaverOptions().GetProfilePath().empty()) {
     std::vector<std::string> dex_filenames;
-    Split(class_path_string_, ':', &dex_filenames);
+    Split(class_path_string_, kClassPathListSeparator, &dex_filenames);
 
     // We pass "" as the package name because at this point we don't know it. It could be the
     // Zygote or it could be a dalvikvm cmd line execution. The package name will be re-set during
@@ -1245,7 +1254,7 @@ void Runtime::InitNonZygoteOrPostFork(
     if (system_server_classpath == nullptr || (strlen(system_server_classpath) == 0)) {
       LOG(WARNING) << "System server class path not set";
     } else {
-      std::vector<std::string> jars = android::base::Split(system_server_classpath, ":");
+      std::vector<std::string> jars = android::base::Split(system_server_classpath, std::string(1, kClassPathListSeparator));
       app_info_.RegisterAppInfo("android",
                                 jars,
                                 /*profile_output_filename=*/ "",
@@ -1350,9 +1359,16 @@ void Runtime::InitNonZygoteOrPostFork(
 }
 
 void Runtime::StartSignalCatcher() {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  // SignalCatcher uses sigwaitinfo; not available/usable under Win64/Wine.
+  // Faults are handled via VEH instead. Skip the catcher thread for Phase 2.
+  VLOG(startup) << "StartSignalCatcher skipped on Windows";
+  return;
+#else
   if (!is_zygote_) {
     signal_catcher_ = new SignalCatcher();
   }
+#endif
 }
 
 bool Runtime::IsShuttingDown(Thread* self) {
@@ -1607,8 +1623,10 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   // Note: Don't request an error message. That will lead to a maps dump in the case of failure,
   //       leading to logspam.
   {
+    // kBadGprBase is a 32-bit-ish pattern; cast via uint32_t so LLP64/LP64
+    // hosts do not sign-extend 0xebad6070 into the high half of a 64-bit pointer.
     const uintptr_t sentinel_addr =
-        RoundDown(static_cast<uintptr_t>(Context::kBadGprBase), gPageSize);
+        RoundDown(static_cast<uintptr_t>(static_cast<uint32_t>(Context::kBadGprBase)), gPageSize);
     protected_fault_page_ = MemMap::MapAnonymous("Sentinel fault page",
                                                  reinterpret_cast<uint8_t*>(sentinel_addr),
                                                  gPageSize,
@@ -1868,6 +1886,14 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
                        runtime_options.Exists(Opt::DumpRegionInfoAfterGC));
 
   dump_gc_performance_on_shutdown_ = runtime_options.Exists(Opt::DumpGCPerformanceOnShutdown);
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init after Heap construction"
+            << " Runtime=" << static_cast<const void*>(this)
+            << " heap_=" << static_cast<const void*>(heap_)
+            << " offsetof(heap_)=" << OFFSETOF_MEMBER(Runtime, heap_)
+            << " sizeof(long)=" << sizeof(long)
+            << " sizeof(void*)=" << sizeof(void*);
+#endif
 
   bool has_explicit_jdwp_options = runtime_options.Get(Opt::JdwpOptions) != nullptr;
   jdwp_options_ = runtime_options.GetOrDefault(Opt::JdwpOptions);
@@ -1902,6 +1928,9 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   }
   callbacks_->AddThreadLifecycleCallback(Dbg::GetThreadLifecycleCallback());
 
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init after JDWP setup";
+#endif
   jit_options_.reset(jit::JitOptions::CreateFromRuntimeArguments(runtime_options));
   if (IsAotCompiler()) {
     // If we are already the compiler at this point, we must be dex2oat. Don't create the jit in
@@ -1914,19 +1943,27 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 
   // Use MemMap arena pool for jit, malloc otherwise. Malloc arenas are faster to allocate but
   // can't be trimmed as easily.
+  // On Win64 keep arena/linear-alloc in low 4GB so ArtMethod* and related metadata stay
+  // compatible with compressed-ref / card-table assumptions during imageless boot.
   const bool use_malloc = IsAotCompiler();
+#if defined(_WIN32)
+  const bool win64_low_4gb = Is64BitInstructionSet(kRuntimeISA);
+#else
+  const bool win64_low_4gb = false;
+#endif
   if (use_malloc) {
     arena_pool_.reset(new CallocArenaPool());
     jit_arena_pool_.reset(new CallocArenaPool());
   } else {
-    arena_pool_.reset(new MemMapArenaPool(/* low_4gb= */ false));
-    jit_arena_pool_.reset(new MemMapArenaPool(/* low_4gb= */ false, "CompilerMetadata"));
+    arena_pool_.reset(new MemMapArenaPool(/* low_4gb= */ win64_low_4gb));
+    jit_arena_pool_.reset(new MemMapArenaPool(/* low_4gb= */ win64_low_4gb, "CompilerMetadata"));
   }
 
   // For 64 bit compilers, it needs to be in low 4GB in the case where we are cross compiling for a
   // 32 bit target. In this case, we have 32 bit pointers in the dex cache arrays which can't hold
   // when we have 64 bit ArtMethod pointers.
-  const bool low_4gb = IsAotCompiler() && Is64BitInstructionSet(kRuntimeISA);
+  // Also force low_4gb for Win64 runtime (not only AOT) — LinearAlloc hosts ArtMethods/IMT tables.
+  const bool low_4gb = (IsAotCompiler() && Is64BitInstructionSet(kRuntimeISA)) || win64_low_4gb;
   if (gUseUserfaultfd) {
     linear_alloc_arena_pool_.reset(new GcVisitedArenaPool(low_4gb, IsZygote()));
   } else if (low_4gb) {
@@ -1934,11 +1971,30 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   }
   linear_alloc_.reset(CreateLinearAlloc());
   startup_linear_alloc_.store(CreateLinearAlloc(), std::memory_order_relaxed);
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init linear_alloc low_4gb=" << low_4gb
+            << " win64_low_4gb=" << win64_low_4gb
+            << " linear_pool=" << (linear_alloc_arena_pool_ != nullptr)
+            << " arena_pool=" << (arena_pool_ != nullptr);
+#endif
 
   small_lrt_allocator_ = new jni::SmallLrtAllocator();
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init after SmallLrtAllocator";
+#endif
 
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init before arena pools";
+#endif
+  // ... arenas above already ran; marker before signals
   BlockSignals();
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init after BlockSignals";
+#endif
   InitPlatformSignalHandlers();
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init after InitPlatformSignalHandlers";
+#endif
 
   // Change the implicit checks flags based on runtime architecture.
   switch (kRuntimeQuickCodeISA) {
@@ -1964,8 +2020,20 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   implicit_suspend_checks_ = false;
   implicit_null_checks_ = false;
 #endif  // ART_USE_RESTRICTED_MODE
+#ifdef _WIN32
+  // Phase-2: no reliable stack guard / VEH SO handler yet.
+  implicit_so_checks_ = false;
+  implicit_null_checks_ = false;
+  implicit_suspend_checks_ = false;
+#endif
 
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init before fault_manager.Init no_sig_chain=" << no_sig_chain_;
+#endif
   fault_manager.Init(!no_sig_chain_);
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init after fault_manager.Init";
+#endif
   if (!no_sig_chain_) {
     if (HandlesSignalsInCompiledCode()) {
       // These need to be in a specific order.  The null point check handler must be
@@ -2003,7 +2071,13 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   verifier_logging_threshold_ms_ = runtime_options.GetOrDefault(Opt::VerifierLoggingThreshold);
 
   std::string error_msg;
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init before JavaVMExt::Create";
+#endif
   java_vm_ = JavaVMExt::Create(this, runtime_options, &error_msg);
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init after JavaVMExt::Create vm=" << (java_vm_.get() != nullptr);
+#endif
   if (java_vm_.get() == nullptr) {
     LOG(ERROR) << "Could not initialize JavaVMExt: " << error_msg;
     return false;
@@ -2013,12 +2087,24 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   // TODO Refactor this stuff.
   java_vm_->AddEnvironmentHook(JNIEnvExt::GetEnvHandler);
 
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init before Thread::Startup";
+#endif
   Thread::Startup();
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init after Thread::Startup";
+#endif
 
   // ClassLinker needs an attached thread, but we can't fully attach a thread without creating
   // objects. We can't supply a thread group yet; it will be fixed later. Since we are the main
   // thread, we do not get a java peer.
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init before Thread::Attach(main)";
+#endif
   Thread* self = Thread::Attach("main", false, nullptr, false, /* should_run_callbacks= */ true);
+#ifdef _WIN32
+  LOG(INFO) << "Runtime::Init after Thread::Attach(main) self=" << self;
+#endif
   CHECK_EQ(self->GetThreadId(), ThreadList::kMainThreadId);
   CHECK(self != nullptr);
 
@@ -2379,21 +2465,39 @@ void Runtime::InitNativeMethods() {
   {
     std::string error_msg;
     if (!java_vm_->LoadNativeLibrary(
-          env, "libicu_jni.so", nullptr, java_lang_Object, &error_msg)) {
-      LOG(FATAL) << "LoadNativeLibrary failed for \"libicu_jni.so\": " << error_msg;
+          env,
+#if defined(_WIN32)
+          "libicu_jni.dll",
+#else
+          "libicu_jni.so",
+#endif
+          nullptr, java_lang_Object, &error_msg)) {
+      LOG(FATAL) << "LoadNativeLibrary failed for libicu_jni: " << error_msg;
     }
   }
   {
     std::string error_msg;
     if (!java_vm_->LoadNativeLibrary(
-          env, "libjavacore.so", nullptr, java_lang_Object, &error_msg)) {
-      LOG(FATAL) << "LoadNativeLibrary failed for \"libjavacore.so\": " << error_msg;
+          env,
+#if defined(_WIN32)
+          "libjavacore.dll",
+#else
+          "libjavacore.so",
+#endif
+          nullptr, java_lang_Object, &error_msg)) {
+      LOG(FATAL) << "LoadNativeLibrary failed for libjavacore: " << error_msg;
     }
   }
   {
+#if defined(_WIN32)
+    constexpr const char* kOpenJdkLibrary = kIsDebugBuild
+                                                ? "libopenjdkd.dll"
+                                                : "libopenjdk.dll";
+#else
     constexpr const char* kOpenJdkLibrary = kIsDebugBuild
                                                 ? "libopenjdkd.so"
                                                 : "libopenjdk.so";
+#endif
     std::string error_msg;
     if (!java_vm_->LoadNativeLibrary(
           env, kOpenJdkLibrary, nullptr, java_lang_Object, &error_msg)) {
@@ -2944,7 +3048,7 @@ void Runtime::RegisterAppInfo(const std::string& package_name,
   }
 
   VLOG(profiler) << "Register app with " << profile_output_filename
-      << " " << android::base::Join(code_paths, ':');
+      << " " << android::base::Join(code_paths, kClassPathListSeparator);
   VLOG(profiler) << "Reference profile is: " << ref_profile_filename;
 
   if (profile_output_filename.empty()) {

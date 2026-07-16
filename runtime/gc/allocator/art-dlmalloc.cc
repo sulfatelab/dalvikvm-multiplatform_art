@@ -34,6 +34,36 @@ static void art_heap_usage_error(const char* function, void* p);
 
 // Ugly inclusion of C file so that ART specific #defines configure dlmalloc for our use for
 // mspaces (regular dlmalloc is still declared in bionic).
+//
+// dlmalloc.c's `#ifdef WIN32` block force-sets HAVE_MMAP=1 / HAVE_MORECORE=0 and uses
+// VirtualAlloc for growth. That returns high 64-bit addresses outside ART's MemMap, which
+// breaks compressed heap references (32-bit). Keep ART MORECORE (mprotect within the
+// non-moving MemMap) by temporarily hiding WIN32/_WIN32 so that configure block is skipped.
+// dlmalloc.c also does `#ifndef WIN32` / `#ifdef _WIN32` / `#define WIN32 1`, so both
+// macros must be cleared before the include.
+#if defined(_WIN32) || defined(WIN32)
+#define ART_DLMALLOC_RESTORE_WIN32 1
+#ifdef WIN32
+#undef WIN32
+#endif
+#ifdef _WIN32
+#undef _WIN32
+#endif
+#endif
+// ART mspace configuration (must win over any later platform defaults inside dlmalloc.c).
+// Note: dlmalloc.c may still #define HAVE_* inside a WIN32 block; with WIN32/_WIN32 cleared
+// that block is inactive.
+#undef HAVE_MMAP
+#define HAVE_MMAP 0
+#undef HAVE_MREMAP
+#define HAVE_MREMAP 0
+#undef HAVE_MORECORE
+#define HAVE_MORECORE 1
+// MORECORE already defined above as art_heap_morecore.
+// Avoid accidental sbrk dependency when WIN32 is suppressed.
+#ifndef LACKS_UNISTD_H
+#define LACKS_UNISTD_H 1
+#endif
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wredundant-decls"
 #pragma GCC diagnostic ignored "-Wempty-body"
@@ -45,6 +75,22 @@ static void art_heap_usage_error(const char* function, void* p);
 //       of libbase, so undefine it now.
 #undef DEBUG
 #pragma GCC diagnostic pop
+#if defined(ART_DLMALLOC_RESTORE_WIN32)
+#ifndef _WIN32
+#define _WIN32 1
+#endif
+#ifndef WIN32
+#define WIN32 1
+#endif
+#undef ART_DLMALLOC_RESTORE_WIN32
+#endif
+// Sanity: if someone reintroduces WIN32 mmap mode, fail the build.
+#if HAVE_MMAP
+#error "ART dlmalloc must be built with HAVE_MMAP 0 (use MORECORE within MemMap)"
+#endif
+#if !HAVE_MORECORE
+#error "ART dlmalloc must be built with HAVE_MORECORE 1"
+#endif
 
 static void* art_heap_morecore(void* m, intptr_t increment) {
   return ::art::gc::allocator::ArtDlMallocMoreCore(m, increment);

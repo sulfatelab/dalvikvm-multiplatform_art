@@ -250,7 +250,8 @@ static jint VMRuntime_getIntSystemProperty([[maybe_unused]] JNIEnv* env,
                                            [[maybe_unused]] jclass klass,
                                            jstring attribute_name,
                                            jint default_value) {
-  return android::base::GetIntProperty(std::string(ScopedUtfChars(env, attribute_name)),
+  ScopedUtfChars prop_name(env, attribute_name);
+  return android::base::GetIntProperty(prop_name.c_str() != nullptr ? prop_name.c_str() : "",
                                        default_value);
 }
 

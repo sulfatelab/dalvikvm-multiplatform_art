@@ -29,6 +29,8 @@
 #include <zircon/process.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
+#elif defined(_WIN32)
+#include <windows.h>
 #endif
 
 namespace art HIDDEN {
@@ -51,6 +53,12 @@ void Thread::InitCpu() {
                                               &thread_ptr,
                                               sizeof(thread_ptr));
   CHECK_EQ(status, ZX_OK) << "failed to set GS register";
+#elif defined(_WIN32)
+  // Thread::Current() on non-Bionic uses C++ TLS (self_tls_) / pthread_key, not
+  // %gs. Managed/nterp stubs still reference %gs; Phase-2 imageless Hello runs
+  // with -Xint so those stubs are not required for the A3 gate.
+  // Still set the indirection field used by some C++ paths.
+  // TODO(phase2+): implement TEB/GS setup for nterp/JIT entrypoints.
 #else
   UNIMPLEMENTED(FATAL) << "Need to set GS";
 #endif
@@ -58,6 +66,7 @@ void Thread::InitCpu() {
   // Allow easy indirection back to Thread*.
   tlsPtr_.self = this;
 
+#if defined(__linux__) || defined(__Fuchsia__)
   // Check that the reads from %gs point to this Thread*.
   Thread* self_check;
   __asm__ __volatile__("movq %%gs:(%1), %0"
@@ -65,9 +74,11 @@ void Thread::InitCpu() {
       : "r"(THREAD_SELF_OFFSET)  // input
       :);  // clobber
   CHECK_EQ(self_check, this);
+#endif
 }
 
 void Thread::CleanupCpu() {
+#if defined(__linux__) || defined(__Fuchsia__)
   // Check that the reads from %gs point to this Thread*.
   Thread* self_check;
   __asm__ __volatile__("movq %%gs:(%1), %0"
@@ -75,7 +86,7 @@ void Thread::CleanupCpu() {
       : "r"(THREAD_SELF_OFFSET)  // input
       :);  // clobber
   CHECK_EQ(self_check, this);
-
+#endif
   // Do nothing.
 }
 

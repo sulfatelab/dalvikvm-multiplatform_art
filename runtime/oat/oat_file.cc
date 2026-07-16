@@ -355,7 +355,7 @@ OatFileBase* OatFileBase::OpenOatFileFromSdm(const std::string& sdm_filename,
   if (sdc_reader == nullptr) {
     return nullptr;
   }
-  if (sdc_reader->GetSdmTimestampNs() != TimeSpecToNs(sdm_st.st_mtim)) {
+  if (sdc_reader->GetSdmTimestampNs() != TimeSpecToNs(timespec{static_cast<time_t>(sdm_st.st_mtime), 0})) {
     // The sdm file had been replaced after the sdc file was created.
     *error_msg = ART_FORMAT("Obsolete sdc file '{}'", sdc_filename);
     return nullptr;
@@ -1503,7 +1503,7 @@ bool DlOpenOatFile::Dlopen(const std::string& elf_filename,
           CondRoundUp<kPageSizeAgnostic>(context.max_size, kElfSegmentAlignment)));
     }
 #else
-    static_assert(!kIsTargetBuild || kIsTargetLinux || kIsTargetFuchsia,
+    static_assert(!kIsTargetBuild || kIsTargetLinux || kIsTargetFuchsia || kIsTargetWindows,
                   "host_dlopen_handles_ will leak handles");
     if (reservation != nullptr) {
       *error_msg = StringPrintf("dlopen() into reserved memory is unsupported on host for '%s'.",

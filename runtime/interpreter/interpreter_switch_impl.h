@@ -50,7 +50,15 @@ void ExecuteSwitchImplCpp(SwitchImplContext* ctx)
 
 // Hand-written assembly method which wraps the C++ implementation,
 // while defining the DEX PC in the CFI so that libunwind can resolve it.
-extern "C" void ExecuteSwitchImplAsm(
+// On Win64, C++ uses the MSVC ABI while this stub is written for SysV
+// (args in RDI/RSI/RDX). Force sysv_abi so the compiler places arguments
+// correctly.
+#if defined(_WIN32) && defined(__x86_64__)
+#define ART_SWITCH_IMPL_ASM_ABI __attribute__((sysv_abi))
+#else
+#define ART_SWITCH_IMPL_ASM_ABI
+#endif
+extern "C" ART_SWITCH_IMPL_ASM_ABI void ExecuteSwitchImplAsm(
     SwitchImplContext* ctx, const void* impl, const uint16_t* dexpc)
     REQUIRES_SHARED(Locks::mutator_lock_);
 

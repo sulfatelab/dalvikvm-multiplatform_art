@@ -282,6 +282,8 @@ class Runtime {
   static Runtime* Current() {
     return instance_;
   }
+  static Runtime** InstanceLocation() { return &instance_; }
+
 
   // Set the current runtime to be the given instance.
   // Note that this function is not responsible for cleaning up the old instance or taking the

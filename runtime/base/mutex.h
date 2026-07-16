@@ -33,7 +33,8 @@
 #include "base/macros.h"
 #include "locks.h"
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
+// Windows uses WaitOnAddress/WakeByAddress as a futex-compatible backend.
 #define ART_USE_FUTEXES 1
 #else
 #define ART_USE_FUTEXES 0

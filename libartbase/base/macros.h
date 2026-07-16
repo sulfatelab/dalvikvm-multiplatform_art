@@ -114,8 +114,8 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 // exported symbols and eliminates the need to check debug build configurations
 // when changing the exported symbols.
 #ifdef NDEBUG
-#define HIDDEN __attribute__((visibility("hidden")))
-#define PROTECTED __attribute__((visibility("protected")))
+#define HIDDEN /* MDVM patch 0013: export-all for the multi-.so host split */
+#define PROTECTED
 #define EXPORT __attribute__((visibility("default")))
 #else
 #define HIDDEN
@@ -135,6 +135,6 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 
 // Some global variables shouldn't be visible outside libraries declaring them.
 // The attribute allows hiding them, so preventing direct access.
-#define ALWAYS_HIDDEN __attribute__((visibility("hidden")))
+#define ALWAYS_HIDDEN /* MDVM patch 0013 */
 
 #endif  // ART_LIBARTBASE_BASE_MACROS_H_

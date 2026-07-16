@@ -69,6 +69,16 @@ using HiddenapiPolicyValueMap =
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wframe-larger-than="
 
+
+// Classpath / bootclasspath multi-path list separator (see kClassPathListSeparator).
+#if defined(ART_TARGET_WINDOWS)
+using ArtPathStringList = ParseStringList<';'>;
+using ArtPathIntList = ParseIntList<';'>;
+#else
+using ArtPathStringList = ParseStringList<':'>;
+using ArtPathIntList = ParseIntList<':'>;
+#endif
+
 std::unique_ptr<RuntimeParser> ParsedOptions::MakeParser(bool ignore_unrecognized) {
   using M = RuntimeArgumentMap;
 
@@ -86,7 +96,11 @@ std::unique_ptr<RuntimeParser> ParsedOptions::MakeParser(bool ignore_unrecognize
   parser_builder->
        SetCategory("standard")
       .Define({"-classpath _", "-cp _"})
+          #if defined(ART_TARGET_WINDOWS)
+          .WithHelp("The classpath, separated by ';'")
+#else
           .WithHelp("The classpath, separated by ':'")
+#endif
           .WithType<std::string>()
           .IntoKey(M::ClassPath)
       .Define("-D_")
@@ -111,19 +125,19 @@ std::unique_ptr<RuntimeParser> ParsedOptions::MakeParser(bool ignore_unrecognize
           .IntoKey(M::AgentPath)
       .SetCategory("extended")
       .Define("-Xbootclasspath:_")
-          .WithType<ParseStringList<':'>>()  // std::vector<std::string>, split by :
+          .WithType<ArtPathStringList>()  // path list split
           .IntoKey(M::BootClassPath)
       .Define("-Xbootclasspathfds:_")
-          .WithType<ParseIntList<':'>>()
+          .WithType<ArtPathIntList>()
           .IntoKey(M::BootClassPathFds)
       .Define("-Xbootclasspathimagefds:_")
-          .WithType<ParseIntList<':'>>()
+          .WithType<ArtPathIntList>()
           .IntoKey(M::BootClassPathImageFds)
       .Define("-Xbootclasspathvdexfds:_")
-          .WithType<ParseIntList<':'>>()
+          .WithType<ArtPathIntList>()
           .IntoKey(M::BootClassPathVdexFds)
       .Define("-Xbootclasspathoatfds:_")
-          .WithType<ParseIntList<':'>>()
+          .WithType<ArtPathIntList>()
           .IntoKey(M::BootClassPathOatFds)
       .Define("-Xcheck:jni")
           .IntoKey(M::CheckJni)
@@ -181,7 +195,7 @@ std::unique_ptr<RuntimeParser> ParsedOptions::MakeParser(bool ignore_unrecognize
           .IntoKey(M::JITOptimizeThreshold)
       .SetCategory("ART")
       .Define("-Ximage:_")
-          .WithType<ParseStringList<':'>>()
+          .WithType<ArtPathStringList>()
           .IntoKey(M::Image)
       .Define("-Xforcejitzygote")
           .IntoKey(M::ForceJitZygote)
@@ -192,7 +206,7 @@ std::unique_ptr<RuntimeParser> ParsedOptions::MakeParser(bool ignore_unrecognize
       .Define("-Xprimaryzygote")
           .IntoKey(M::PrimaryZygote)
       .Define("-Xbootclasspath-locations:_")
-          .WithType<ParseStringList<':'>>()  // std::vector<std::string>, split by :
+          .WithType<ArtPathStringList>()  // path list split
           .IntoKey(M::BootClassPathLocations)
       .Define("-Xjniopts:forcecopy")
           .IntoKey(M::JniOptsForceCopy)
@@ -709,7 +723,7 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
   // Set a default boot class path if we didn't get an explicit one via command line.
   const char* env_bcp = getenv("BOOTCLASSPATH");
   if (env_bcp != nullptr) {
-    args.SetIfMissing(M::BootClassPath, ParseStringList<':'>::Split(env_bcp));
+    args.SetIfMissing(M::BootClassPath, ArtPathStringList::Split(env_bcp));
   }
 
   // Set a default class path if we didn't get an explicit one via command line.
@@ -752,9 +766,9 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
     args.Set(M::BackgroundGc, BackgroundGcOption { background_collector_type_ });
   }
 
-  const ParseStringList<':'>* boot_class_path_locations = args.Get(M::BootClassPathLocations);
+  const ArtPathStringList* boot_class_path_locations = args.Get(M::BootClassPathLocations);
   if (boot_class_path_locations != nullptr && boot_class_path_locations->Size() != 0u) {
-    const ParseStringList<':'>* boot_class_path = args.Get(M::BootClassPath);
+    const ArtPathStringList* boot_class_path = args.Get(M::BootClassPath);
     if (boot_class_path == nullptr ||
         boot_class_path_locations->Size() != boot_class_path->Size()) {
       Usage("The number of boot class path files does not match"
@@ -775,7 +789,7 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
       UNREACHABLE();
     }
     // If `boot.art` exists in the ART APEX, it will be used. Otherwise, Everything will be JITed.
-    args.Set(M::Image, ParseStringList<':'>::Split(GetJitZygoteBootImageLocation()));
+    args.Set(M::Image, ArtPathStringList::Split(GetJitZygoteBootImageLocation()));
   }
 
   if (args.Exists(M::Zygote)) {
@@ -787,7 +801,7 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
     const bool deny_art_apex_data_files = args.Exists(M::DenyArtApexDataFiles);
     std::string image_locations =
         GetDefaultBootImageLocation(GetAndroidRoot(), deny_art_apex_data_files);
-    args.Set(M::Image, ParseStringList<':'>::Split(image_locations));
+    args.Set(M::Image, ArtPathStringList::Split(image_locations));
   }
 
   // 0 means no growth limit, and growth limit should be always <= heap size

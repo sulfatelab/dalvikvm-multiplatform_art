@@ -17,7 +17,7 @@
 #ifndef ART_RUNTIME_INTERPRETER_CFI_ASM_SUPPORT_H_
 #define ART_RUNTIME_INTERPRETER_CFI_ASM_SUPPORT_H_
 
-#if !defined(__APPLE__)
+#if !defined(__APPLE__) && !defined(_WIN32)
   /*
    * Define the DEX PC (memory address of the currently interpreted bytecode)
    * within the CFI stream of the current function (stored in .eh_frame).

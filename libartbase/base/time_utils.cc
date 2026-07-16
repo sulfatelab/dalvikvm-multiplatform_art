@@ -17,6 +17,9 @@
 #define _POSIX_THREAD_SAFE_FUNCTIONS  // For mingw localtime_r().
 
 #include "time_utils.h"
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -197,9 +200,23 @@ uint64_t ThreadCpuNanoTime() {
     PLOG(ERROR) << "Failed to get thread cpu time";
   }
   return static_cast<uint64_t>(now.tv_sec) * UINT64_C(1000000000) + now.tv_nsec;
+#elif defined(_WIN32)
+  // Windows has no CLOCK_THREAD_CPUTIME_ID. Approximate with GetThreadTimes.
+  FILETIME create_t, exit_t, kernel_t, user_t;
+  if (!GetThreadTimes(GetCurrentThread(), &create_t, &exit_t, &kernel_t, &user_t)) {
+    return NanoTime();  // fall back to wall clock rather than -1
+  }
+  auto ft_to_ns = [](const FILETIME& ft) -> uint64_t {
+    ULARGE_INTEGER uli;
+    uli.LowPart = ft.dwLowDateTime;
+    uli.HighPart = ft.dwHighDateTime;
+    // FILETIME is 100ns units
+    return uli.QuadPart * 100ull;
+  };
+  return ft_to_ns(kernel_t) + ft_to_ns(user_t);
 #else
-  UNIMPLEMENTED(WARNING);
-  return -1;
+  // Approximate with wall time.
+  return NanoTime();
 #endif
 }
 

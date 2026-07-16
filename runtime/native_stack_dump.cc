@@ -322,7 +322,7 @@ void DumpNativeStack(std::ostream& os,
                      void* ucontext_ptr,
                      bool skip_frames) {
   unwindstack::AndroidLocalUnwinder unwinder;
-  unwinder.set_check_global_elf_cache(true);
+  /* MDVM patch 0012: archive libunwindstack lacks set_check_global_elf_cache */ (void)0;
   DumpNativeStack(os, unwinder, tid, prefix, current_method, ucontext_ptr, skip_frames);
 }
 
@@ -429,7 +429,7 @@ void DumpNativeStack(std::ostream& os,
   }
 }
 
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) || defined(_WIN32)
 
 void DumpNativeStack([[maybe_unused]] std::ostream& os,
                      [[maybe_unused]] pid_t tid,

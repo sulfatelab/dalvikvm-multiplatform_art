@@ -16,6 +16,8 @@
 
 #include "art_method.h"
 
+#include <atomic>
+
 #include <algorithm>
 #include <cstddef>
 
@@ -58,10 +60,18 @@ namespace art HIDDEN {
 
 using android::base::StringPrintf;
 
-extern "C" void art_quick_invoke_stub(ArtMethod*, uint32_t*, uint32_t, Thread*, JValue*,
-                                      const char*);
-extern "C" void art_quick_invoke_static_stub(ArtMethod*, uint32_t*, uint32_t, Thread*, JValue*,
-                                             const char*);
+// Quick invoke stubs are written for the SysV x86_64 ABI and %gs Thread TLS.
+// On Win64 C++ uses the MSVC ABI, so mark the declarations as sysv_abi so the
+// compiler places arguments correctly when those stubs are used.
+#if defined(_WIN32) && defined(__x86_64__)
+#define ART_QUICK_INVOKE_ABI __attribute__((sysv_abi))
+#else
+#define ART_QUICK_INVOKE_ABI
+#endif
+extern "C" ART_QUICK_INVOKE_ABI void art_quick_invoke_stub(ArtMethod*, uint32_t*, uint32_t, Thread*,
+                                                           JValue*, const char*);
+extern "C" ART_QUICK_INVOKE_ABI void art_quick_invoke_static_stub(ArtMethod*, uint32_t*, uint32_t,
+                                                                  Thread*, JValue*, const char*);
 
 // Enforce that we have the right index for runtime methods.
 static_assert(ArtMethod::kRuntimeMethodDexMethodIndex == dex::kDexNoIndex,
@@ -387,8 +397,29 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
   // If the runtime is not yet started or it is required by the debugger, then perform the
   // Invocation by the interpreter, explicitly forcing interpretation over JIT to prevent
   // cycling around the various JIT/Interpreter methods that handle method invocation.
-  if (UNLIKELY(!runtime->IsStarted() ||
-               (self->IsForceInterpreter() && !IsNative() && !IsProxyMethod() && IsInvokable()))) {
+  //
+  // Win64: quick invoke stubs assume SysV register ABI + %gs:THREAD_SELF. Until those are
+  // fully ported, route invokable methods (including natives via InterpreterJni) through
+  // EnterInterpreterFromInvoke. This is required for Phase-2 imageless Hello (-Xint).
+  bool use_interpreter_invoke =
+      !runtime->IsStarted() ||
+      (self->IsForceInterpreter() && !IsNative() && !IsProxyMethod() && IsInvokable());
+#if defined(_WIN32)
+  if (IsInvokable() && !IsProxyMethod()) {
+    use_interpreter_invoke = true;
+  }
+#endif
+  if (UNLIKELY(use_interpreter_invoke)) {
+#ifdef _WIN32
+    static std::atomic<int> g_win_invoke_logs{0};
+    if (g_win_invoke_logs.fetch_add(1) < 20) {
+      LOG(INFO) << "Win64 ArtMethod::Invoke via interpreter method=" << PrettyMethod()
+                << " started=" << runtime->IsStarted()
+                << " native=" << IsNative()
+                << " static=" << IsStatic()
+                << " entry=" << GetEntryPointFromQuickCompiledCode();
+    }
+#endif
     if (IsStatic()) {
       art::interpreter::EnterInterpreterFromInvoke(
           self, this, nullptr, args, result, /*stay_in_interpreter=*/ true);

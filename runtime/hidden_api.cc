@@ -966,6 +966,8 @@ bool ShouldDenyAccessToMemberImpl(T* member,
     }
 
     // If event log sampling is enabled, report this violation.
+    // Windows CRT RAND_MAX is 0x7fff; skip this Android-only sampling path.
+#if !defined(_WIN32)
     if (kIsTargetBuild && !kIsTargetLinux) {
       uint32_t eventLogSampleRate = runtime->GetHiddenApiEventLogSampleRate();
       // Assert that RAND_MAX is big enough, to ensure sampling below works as expected.
@@ -977,6 +979,7 @@ bool ShouldDenyAccessToMemberImpl(T* member,
         }
       }
     }
+#endif
 
     // If this access was not denied, flag member as SDK and skip
     // the warning the next time the member is accessed. Don't update for

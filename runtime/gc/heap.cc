@@ -650,6 +650,17 @@ Heap::Heap(size_t initial_size,
         << non_moving_space_mem_map_begin;
     non_moving_space_->SetFootprintLimit(non_moving_space_->Capacity());
     AddSpace(non_moving_space_);
+    // Non-moving space is always dlmalloc; register it so ArtDlMallocMoreCore can find it
+    // even when the main space is RosAlloc (dlmalloc_space_ would otherwise stay null).
+    dlmalloc_space_ = non_moving_space_->AsDlMallocSpace();
+#ifdef _WIN32
+    LOG(INFO) << "Heap non_moving space begin="
+              << static_cast<const void*>(non_moving_space_->Begin())
+              << " end=" << static_cast<const void*>(non_moving_space_->End())
+              << " limit=" << static_cast<const void*>(non_moving_space_->Limit())
+              << " capacity=" << non_moving_space_->Capacity()
+              << " dlmalloc_space=" << static_cast<const void*>(dlmalloc_space_);
+#endif
   }
   // Create other spaces based on whether or not we have a moving GC.
   if (foreground_collector_type_ == kCollectorTypeCC) {
@@ -738,6 +749,19 @@ Heap::Heap(size_t initial_size,
   card_table_.reset(accounting::CardTable::Create(reinterpret_cast<uint8_t*>(kMinHeapAddress),
                                                   4 * GB - kMinHeapAddress));
   CHECK(card_table_.get() != nullptr) << "Failed to create card table";
+#ifdef _WIN32
+  for (space::ContinuousSpace* sp : continuous_spaces_) {
+    LOG(INFO) << "Win64 continuous space " << sp->GetName()
+              << " [" << static_cast<const void*>(sp->Begin())
+              << "," << static_cast<const void*>(sp->Limit()) << ")"
+              << " continuous=" << sp->IsContinuousSpace();
+  }
+  LOG(INFO) << "Win64 Heap this=" << static_cast<const void*>(this)
+            << " card_table_ptr=" << static_cast<const void*>(card_table_.get())
+            << " biased=" << (card_table_ ? static_cast<const void*>(card_table_->GetBiasedBegin()) : nullptr)
+            << " offsetof(card_table_) approx via ptr-diff: "
+            << (reinterpret_cast<const char*>(&card_table_) - reinterpret_cast<const char*>(this));
+#endif
   if (foreground_collector_type_ == kCollectorTypeCC && kUseTableLookupReadBarrier) {
     rb_table_.reset(new accounting::ReadBarrierTable());
     DCHECK(rb_table_->IsAllCleared());
@@ -971,7 +995,23 @@ void Heap::CreateMainMallocSpace(MemMap&& mem_map,
                                             capacity, name,
                                             can_move_objects);
   SetSpaceAsDefault(main_space_);
-  VLOG(heap) << "Created main space " << main_space_;
+  // Ensure default allocator matches the main space type (RosAlloc vs dlmalloc).
+  // ChangeCollector should have set this already; re-apply after space creation.
+  if (main_space_->IsRosAllocSpace()) {
+    current_allocator_ = kAllocatorTypeRosAlloc;
+  } else if (main_space_->IsDlMallocSpace()) {
+    current_allocator_ = kAllocatorTypeDlMalloc;
+  }
+  VLOG(heap) << "Created main space " << main_space_
+             << " current_allocator=" << static_cast<int>(current_allocator_);
+#ifdef _WIN32
+  LOG(INFO) << "Win64 CreateMainMallocSpace begin="
+            << static_cast<const void*>(main_space_->Begin())
+            << " limit=" << static_cast<const void*>(main_space_->Limit())
+            << " allocator=" << static_cast<int>(current_allocator_)
+            << " dlmalloc_space=" << static_cast<const void*>(dlmalloc_space_)
+            << " rosalloc_space=" << static_cast<const void*>(rosalloc_space_);
+#endif
 }
 
 void Heap::ChangeAllocator(AllocatorType allocator) {

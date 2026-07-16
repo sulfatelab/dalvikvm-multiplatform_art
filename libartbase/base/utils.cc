@@ -172,6 +172,13 @@ bool IsKernelVersionAtLeast(int reqd_major, int reqd_minor) {
   }();
   return version >= std::make_pair(reqd_major, reqd_minor);
 }
+#else
+// Non-Linux (Windows/macOS/Fuchsia): no Linux kernel feature gates apply.
+bool IsKernelVersionAtLeast(int reqd_major, int reqd_minor) {
+  (void)reqd_major;
+  (void)reqd_minor;
+  return false;
+}
 #endif
 
 bool CacheOperationsMaySegFault() {

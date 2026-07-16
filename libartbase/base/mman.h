@@ -32,6 +32,13 @@
 #define MAP_FAILED     ((void*) -1)
 #define MAP_FIXED      0x10
 #define MAP_ANONYMOUS  0x20
+#define MAP_32BIT     0x40
+#define MREMAP_MAYMOVE 1
+#define MREMAP_FIXED 2
+#define MREMAP_DONTUNMAP 4
+#define MS_SYNC 4
+#define MS_ASYNC 1
+#define MS_INVALIDATE 2
 
 #else
 

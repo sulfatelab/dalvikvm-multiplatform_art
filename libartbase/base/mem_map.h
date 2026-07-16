@@ -17,6 +17,15 @@
 #ifndef ART_LIBARTBASE_BASE_MEM_MAP_H_
 #define ART_LIBARTBASE_BASE_MEM_MAP_H_
 
+// Win64: windows.h defines ZeroMemory as a macro; ART declares free functions
+// with that name. Undefine early (MDVM_UNDEFINE_ZEROMEMORY).
+#ifdef _WIN32
+#ifdef ZeroMemory
+#undef ZeroMemory
+#endif
+#endif
+
+
 #include <stddef.h>
 #include <sys/types.h>
 

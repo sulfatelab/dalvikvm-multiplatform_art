@@ -396,7 +396,9 @@ DEFINE_FUNCTION art_jni_lock_object_no_inline
     // Restore register args RDI, RSI, RDX, RCX, R8, R9, mmx0-mmx7 and return.
     RESTORE_MANAGED_ARGS_DECREASE_FRAME
     ret
+#if !defined(_WIN32) && !defined(__APPLE__)
     .cfi_adjust_cfa_offset MANAGED_ARGS_SAVE_SIZE
+#endif
 1:
     // All args are irrelevant when throwing an exception. Remove the spill area except for new
     // padding to align stack.

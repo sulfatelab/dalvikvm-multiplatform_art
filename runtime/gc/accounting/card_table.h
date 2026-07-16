@@ -69,7 +69,28 @@ class CardTable {
 
   // Set the card associated with the given address to `kCardDirty`.
   ALWAYS_INLINE void MarkCard(const void *addr) {
+#ifdef _WIN32
+    uint8_t* card_addr = biased_begin_ + (reinterpret_cast<uintptr_t>(addr) >> kCardShift);
+    uint8_t* begin = mem_map_.Begin() + offset_;
+    uint8_t* end = mem_map_.End();
+    if (card_addr < begin || card_addr >= end) {
+      // Avoid hard page fault; bad object pointers have been observed during
+      // imageless InitWithoutImage bring-up. Log once per process.
+      static bool logged = false;
+      if (!logged) {
+        logged = true;
+        LOG(ERROR) << "Win64 MarkCard OOB (skipping) addr=" << addr
+                   << " card=" << static_cast<const void*>(card_addr)
+                   << " biased=" << static_cast<const void*>(biased_begin_)
+                   << " map=[" << static_cast<const void*>(begin)
+                   << "," << static_cast<const void*>(end) << ")";
+      }
+      return;
+    }
+    *card_addr = kCardDirty;
+#else
     *CardFromAddr(addr) = kCardDirty;
+#endif
   }
 
   // Is the object on a dirty card?

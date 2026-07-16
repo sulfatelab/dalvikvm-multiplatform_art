@@ -16,6 +16,7 @@
 
 #include "java_vm_ext-inl.h"
 
+#include <cstring>
 #include <dlfcn.h>
 #include <string_view>
 
@@ -308,6 +309,76 @@ class Libraries {
     if (native_code != nullptr) {
       return native_code;
     }
+#if defined(_WIN32)
+    // Phase-2 imageless Hello: many libcore PE natives are still stubs/missing.
+    // Install a shorty-based generic native that returns 0/null so System/Proxy
+    // clinits can proceed. Real PE libcore ports remain Phase 3.
+    {
+      const char* s = shorty;
+      // Critical natives: only Java args.
+      if (m->IsCriticalNative()) {
+        if (strcmp(s, "I") == 0) {
+          static auto* stub = +[]() -> int32_t { return 0; };
+          return reinterpret_cast<void*>(stub);
+        }
+        if (strcmp(s, "II") == 0) {
+          static auto* stub = +[](int32_t) -> int32_t { return 0; };
+          return reinterpret_cast<void*>(stub);
+        }
+        if (strcmp(s, "J") == 0) {
+          static auto* stub = +[]() -> int64_t { return 0; };
+          return reinterpret_cast<void*>(stub);
+        }
+        if (strcmp(s, "JI") == 0) {
+          static auto* stub = +[](int32_t) -> int64_t { return 0; };
+          return reinterpret_cast<void*>(stub);
+        }
+        if (strcmp(s, "Z") == 0) {
+          static auto* stub = +[]() -> uint8_t { return 0; };
+          return reinterpret_cast<void*>(stub);
+        }
+        if (strcmp(s, "V") == 0) {
+          static auto* stub = +[]() {};
+          return reinterpret_cast<void*>(stub);
+        }
+      }
+      // Normal JNI: (JNIEnv*, jobject/jclass, ...)
+      if (s[0] == 'V') {
+        static auto* stub = +[](void*, void*, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) {};
+        return reinterpret_cast<void*>(stub);
+      }
+      if (s[0] == 'Z' || s[0] == 'B' || s[0] == 'C' || s[0] == 'S' || s[0] == 'I') {
+        static auto* stub = +[](void*, void*, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) -> int32_t {
+          return 0;
+        };
+        return reinterpret_cast<void*>(stub);
+      }
+      if (s[0] == 'J') {
+        static auto* stub = +[](void*, void*, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) -> int64_t {
+          return 0;
+        };
+        return reinterpret_cast<void*>(stub);
+      }
+      if (s[0] == 'F') {
+        static auto* stub = +[](void*, void*, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) -> float {
+          return 0.0f;
+        };
+        return reinterpret_cast<void*>(stub);
+      }
+      if (s[0] == 'D') {
+        static auto* stub = +[](void*, void*, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) -> double {
+          return 0.0;
+        };
+        return reinterpret_cast<void*>(stub);
+      }
+      if (s[0] == 'L' || s[0] == '[') {
+        static auto* stub = +[](void*, void*, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) -> void* {
+          return nullptr;
+        };
+        return reinterpret_cast<void*>(stub);
+      }
+    }
+#endif
     if (detail != nullptr) {
       *detail += "No implementation found for ";
       *detail += m->PrettyMethod();
@@ -328,10 +399,17 @@ class Libraries {
     for (const auto& lib : libraries_) {
       SharedLibrary* const library = lib.second;
       // Use the allocator address for class loader equality to avoid unnecessary weak root decode.
+#if defined(_WIN32)
+      // Phase-2 imageless boot loads libicu/libjavacore/libopenjdk with a null/boot
+      // ClassLoader via Runtime::InitNativeMethods. Search all loaded PE libraries
+      // rather than requiring ClassLoader allocator identity.
+      (void)declaring_class_loader_allocator;
+#else
       if (library->GetClassLoaderAllocator() != declaring_class_loader_allocator) {
         // We only search libraries loaded by the appropriate ClassLoader.
         continue;
       }
+#endif
       // Try the short name then the long name...
       const char* arg_shorty = library->NeedsNativeBridge() ? shorty : nullptr;
       void* fn = library->FindSymbol(jni_short_name, arg_shorty, jni_call_type);

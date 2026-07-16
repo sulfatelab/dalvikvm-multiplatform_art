@@ -33,7 +33,7 @@ static void SigAltStack(stack_t* new_stack, stack_t* old_stack) {
 // handler or do a stack unwind, this is too small.  We allocate 32K
 // instead of the minimum signal stack size.
 // TODO: We shouldn't do logging (with locks) in signal handlers.
-static constexpr int kHostAltSigStackSize =
+static const int kHostAltSigStackSize =
     32 * KB < MINSIGSTKSZ ? MINSIGSTKSZ : 32 * KB;
 
 void Thread::SetUpAlternateSignalStack() {

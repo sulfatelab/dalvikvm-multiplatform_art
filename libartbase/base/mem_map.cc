@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#ifdef ZeroMemory
+#undef ZeroMemory
+#endif
+#endif
+// MDVM_UNDEFINE_ZEROMEMORY
 /*
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -15,6 +21,13 @@
  */
 
 #include "mem_map.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
 
 #include <inttypes.h>
 #include <stdlib.h>
@@ -892,16 +905,35 @@ bool MemMap::Protect(int prot) {
     return true;
   }
 
-#ifndef _WIN32
+#ifdef _WIN32
+  DWORD old_protect = 0;
+  DWORD np = PAGE_NOACCESS;
+  if ((prot & PROT_EXEC) && (prot & PROT_WRITE)) {
+    np = PAGE_EXECUTE_READWRITE;
+  } else if (prot & PROT_EXEC) {
+    np = (prot & PROT_READ) ? PAGE_EXECUTE_READ : PAGE_EXECUTE;
+  } else if (prot & PROT_WRITE) {
+    np = PAGE_READWRITE;
+  } else if (prot & PROT_READ) {
+    np = PAGE_READONLY;
+  }
+  if (VirtualProtect(base_begin_, base_size_, np, &old_protect)) {
+    prot_ = prot;
+    return true;
+  }
+  PLOG(ERROR) << "VirtualProtect(" << reinterpret_cast<void*>(base_begin_) << ", " << base_size_
+              << ", " << prot << ") failed";
+  return false;
+#else
   if (mprotect(base_begin_, base_size_, prot) == 0) {
     prot_ = prot;
     return true;
   }
-#endif
 
   PLOG(ERROR) << "mprotect(" << reinterpret_cast<void*>(base_begin_) << ", " << base_size_ << ", "
               << prot << ") failed";
   return false;
+#endif
 }
 
 bool MemMap::CheckNoGaps(MemMap& begin_map, MemMap& end_map) {
@@ -1230,10 +1262,15 @@ void* MemMap::MapInternal(void* addr,
     return actual;
   }
 
+  // Prefer low 4GiB for ART heap even when a preferred address was supplied
+  // (Windows has no MAP_32BIT; TargetMMap implements the constraint).
+  if (low_4gb) {
+    flags |= MAP_32BIT;
+  }
   actual = TargetMMap(addr, length, prot, flags, fd, offset);
 #else
 #if defined(__LP64__)
-  if (low_4gb && addr == nullptr) {
+  if (low_4gb) {
     flags |= MAP_32BIT;
   }
 #endif

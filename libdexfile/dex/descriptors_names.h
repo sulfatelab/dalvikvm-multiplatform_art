@@ -45,6 +45,9 @@ std::string GetJniShortName(const std::string& class_name, const std::string& me
 
 // Turn "java.lang.String" into "Ljava/lang/String;".
 std::string DotToDescriptor(std::string_view class_name);
+inline std::string DotToDescriptor(const char* class_name) {
+  return DotToDescriptor(std::string_view(class_name == nullptr ? "" : class_name));
+}
 
 // Turn "Ljava/lang/String;" into "java.lang.String" using the conventions of
 // java.lang.Class.getName().

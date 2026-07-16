@@ -108,7 +108,7 @@ static jclass Class_classForName(JNIEnv* env, jclass, jstring javaName, jboolean
     return nullptr;
   }
 
-  std::string descriptor = DotToDescriptor(name);
+  std::string descriptor = DotToDescriptor(name.c_str());
   Handle<mirror::ClassLoader> class_loader(
       hs.NewHandle(soa.Decode<mirror::ClassLoader>(javaLoader)));
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();

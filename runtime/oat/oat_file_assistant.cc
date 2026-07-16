@@ -61,6 +61,12 @@
 
 namespace art HIDDEN {
 
+// MDVM patch 0011: archive fmtlib is v7 (no fmt::streamed, added in v8). Stringify
+// a streamable value via operator<< so ART_FORMAT("{}") can take it.
+template <typename T> static inline std::string MdvmStreamed(const T& v) {
+  std::ostringstream oss; oss << v; return oss.str();
+}
+
 using ::android::base::ConsumePrefix;
 using ::android::base::StringPrintf;
 
@@ -864,11 +870,11 @@ OatFileAssistant::OatFileInfo& OatFileAssistant::GetBestInfo() {
       std::string message = ART_FORMAT("GetBestInfo: {} ({}) is {}",
                                        info->GetLocationDebugString(),
                                        info->DisplayFilename(),
-                                       fmt::streamed(status));
+                                       MdvmStreamed(status));
       const OatFile* file = info->GetFile();
       if (file != nullptr) {
         message += ART_FORMAT(" with filter '{}' executable '{}'",
-                              fmt::streamed(file->GetCompilerFilter()),
+                              MdvmStreamed(file->GetCompilerFilter()),
                               file->IsExecutable());
       }
       if (!info->IsUseable()) {

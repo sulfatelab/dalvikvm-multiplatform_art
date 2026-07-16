@@ -22,10 +22,8 @@
 #include "android-base/parseint.h"
 #include "android-base/properties.h"
 #include "base/utils.h"
-// TODO(b/350967139): Remove #ifndef when aconfig supports windows.
-#ifndef _WIN32
+// TODO(b/350967139): aconfig Windows uses generated stub header.
 #include "com_android_art_rw_flags.h"
-#endif
 
 #pragma clang diagnostic push
 #pragma clang diagnostic error "-Wconversion"
@@ -179,10 +177,8 @@ template class Flag<bool>;
 template class Flag<int>;
 template class Flag<std::string>;
 
-// TODO(b/350967139): Remove #ifndef when aconfig supports windows.
-#ifndef _WIN32
+// TODO(b/350967139): aconfig Windows generation is stubbed; keep helper available.
 bool is_test_rw_flag_enabled() { return com_android_art_rw_flags_test_rw_flag(); }
-#endif
 }  // namespace art
 
 #pragma clang diagnostic pop  // -Wconversion
