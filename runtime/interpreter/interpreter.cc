@@ -433,7 +433,13 @@ static bool InterpreterJniGeneric(Thread* self,
                                uint64_t, uint64_t, uint64_t, uint64_t);
   auto* fn = reinterpret_cast<jni_fn8>(jni_code);
   uint64_t raw;
-  {
+  // @FastNative (and CriticalNative) must remain Runnable: natives use
+  // ScopedFastNativeObjectAccess which DCHECK_EQ(state, kRunnable) and assert the
+  // mutator lock. Transitioning to kNative here made BootClassLoader.findLoadedClass
+  // crash on Win64 -Xint (Security.getProviders / ProviderConfig path).
+  if (method->IsFastNative() || method->IsCriticalNative()) {
+    raw = fn(slots[0], slots[1], slots[2], slots[3], slots[4], slots[5], slots[6], slots[7]);
+  } else {
     ScopedThreadStateChange tsc(self, ThreadState::kNative);
     raw = fn(slots[0], slots[1], slots[2], slots[3], slots[4], slots[5], slots[6], slots[7]);
   }
@@ -562,9 +568,29 @@ static void InterpreterJni(Thread* self,
       ScopedLocalRef<jobject> arg0(soa.Env(),
                                    soa.AddLocalReference<jobject>(ObjArg(args[0])));
       jobject jresult;
-      {
+      if (method->IsFastNative()) {
+        jresult = fn(soa.Env(), klass.get(), arg0.get());
+      } else {
         ScopedThreadStateChange tsc(self, ThreadState::kNative);
         jresult = fn(soa.Env(), klass.get(), arg0.get());
+      }
+      result->SetL(soa.Decode<mirror::Object>(jresult));
+    } else if (shorty == "LLL") {
+      // VMClassLoader.findLoadedClass(ClassLoader, String) and similar static natives.
+      using fntype = jobject(JNIEnv*, jclass, jobject, jobject);
+      fntype* const fn = reinterpret_cast<fntype*>(jni_code);
+      ScopedLocalRef<jclass> klass(soa.Env(),
+                                   soa.AddLocalReference<jclass>(method->GetDeclaringClass()));
+      ScopedLocalRef<jobject> arg0(soa.Env(),
+                                   soa.AddLocalReference<jobject>(ObjArg(args[0])));
+      ScopedLocalRef<jobject> arg1(soa.Env(),
+                                   soa.AddLocalReference<jobject>(ObjArg(args[1])));
+      jobject jresult;
+      if (method->IsFastNative() || method->IsCriticalNative()) {
+        jresult = fn(soa.Env(), klass.get(), arg0.get(), arg1.get());
+      } else {
+        ScopedThreadStateChange tsc(self, ThreadState::kNative);
+        jresult = fn(soa.Env(), klass.get(), arg0.get(), arg1.get());
       }
       result->SetL(soa.Decode<mirror::Object>(jresult));
     } else if (shorty == "IIZ") {
@@ -1138,13 +1164,19 @@ void ArtInterpreterToInterpreterBridge(Thread* self,
   if (LIKELY(!shadow_frame->GetMethod()->IsNative())) {
     result->SetJ(Execute(self, accessor, *shadow_frame, JValue()).GetJ());
   } else {
-    // We don't expect to be asked to interpret native code (which is entered via a JNI compiler
-    // generated stub) except during testing and image writing.
-    CHECK(!Runtime::Current()->IsStarted());
+    // Win64 -Xint: quick/generic-JNI stubs are not ABI-safe. When the interpreter bridge
+    // receives a native method, call InterpreterJni instead of UnstartedRuntime (which only
+    // works before Runtime::IsStarted()).
     bool is_static = shadow_frame->GetMethod()->IsStatic();
     ObjPtr<mirror::Object> receiver = is_static ? nullptr : shadow_frame->GetVRegReference(0);
     uint32_t* args = shadow_frame->GetVRegArgs(is_static ? 0 : 1);
-    UnstartedRuntime::Jni(self, shadow_frame->GetMethod(), receiver.Ptr(), args, result);
+    if (!Runtime::Current()->IsStarted()) {
+      UnstartedRuntime::Jni(self, shadow_frame->GetMethod(), receiver.Ptr(), args, result);
+    } else {
+      InterpreterJni(self, shadow_frame->GetMethod(),
+                     shadow_frame->GetMethod()->GetShorty(),
+                     receiver, args, result);
+    }
   }
 
   self->PopShadowFrame();
