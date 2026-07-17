@@ -292,6 +292,62 @@ MACRO1(LOAD_RUNTIME_INSTANCE, reg)
 #endif
 END_MACRO
 
+// Managed Thread* base:
+//   Linux/Fuchsia: GS segment base = Thread* (ARCH_SET_GS / ZX_PROP_REGISTER_GS)
+//   Windows PE:    GS is TEB; draft lock-in uses callee-saved r15 as rSELF
+//                  (win32_tls_jit_entrypoints.md). C++ Thread::Current() remains
+//                  thread_local on non-Bionic hosts.
+#if defined(_WIN32)
+#define rSELF r15
+// THREAD_SELF_OFFSET is the Thread* self indirection field; on Win it equals rSELF.
+MACRO1(THREAD_GET_SELF, dst)
+    movq %r15, REG_VAR(dst)
+END_MACRO
+MACRO2(THREAD_LOAD_Q, dst, off)
+    movq RAW_VAR(off)(%r15), REG_VAR(dst)
+END_MACRO
+MACRO2(THREAD_STORE_Q, src, off)
+    movq REG_VAR(src), RAW_VAR(off)(%r15)
+END_MACRO
+MACRO2(THREAD_LOAD_L, dst, off)
+    movl RAW_VAR(off)(%r15), REG_VAR(dst)
+END_MACRO
+MACRO1(THREAD_CMP_Q_ZERO, off)
+    cmpq MACRO_LITERAL(0), RAW_VAR(off)(%r15)
+END_MACRO
+MACRO1(THREAD_CMP_L_ZERO, off)
+    cmpl LITERAL(0), RAW_VAR(off)(%r15)
+END_MACRO
+MACRO1(THREAD_PUSH_FIELD_Q, off)
+    pushq RAW_VAR(off)(%r15)
+    CFI_ADJUST_CFA_OFFSET(8)
+END_MACRO
+#else
+MACRO1(THREAD_GET_SELF, dst)
+    movq %gs:THREAD_SELF_OFFSET, REG_VAR(dst)
+END_MACRO
+MACRO2(THREAD_LOAD_Q, dst, off)
+    movq %gs:RAW_VAR(off), REG_VAR(dst)
+END_MACRO
+MACRO2(THREAD_STORE_Q, src, off)
+    movq REG_VAR(src), %gs:RAW_VAR(off)
+END_MACRO
+MACRO2(THREAD_LOAD_L, dst, off)
+    movl %gs:RAW_VAR(off), REG_VAR(dst)
+END_MACRO
+MACRO1(THREAD_CMP_Q_ZERO, off)
+    cmpq MACRO_LITERAL(0), %gs:RAW_VAR(off)
+END_MACRO
+MACRO1(THREAD_CMP_L_ZERO, off)
+    cmpl LITERAL(0), %gs:RAW_VAR(off)
+END_MACRO
+MACRO1(THREAD_PUSH_FIELD_Q, off)
+    pushq %gs:RAW_VAR(off)
+    CFI_ADJUST_CFA_OFFSET(8)
+END_MACRO
+#endif
+
+
 // Macros to poison (negate) the reference for heap poisoning.
 MACRO1(POISON_HEAP_REF, rRef)
 #ifdef USE_HEAP_POISONING
@@ -311,7 +367,7 @@ END_MACRO
      * Runtime::CreateCalleeSaveMethod(kSaveRefsOnly)
      */
 MACRO0(SETUP_SAVE_REFS_ONLY_FRAME)
-#if defined(__APPLE__) || defined(_WIN32)
+#if defined(__APPLE__)
     int3
     int3
 #else
@@ -336,7 +392,7 @@ MACRO0(SETUP_SAVE_REFS_ONLY_FRAME)
     // Store ArtMethod* to bottom of stack.
     movq %r10, 0(%rsp)
     // Store rsp as the stop quick frame.
-    movq %rsp, %gs:THREAD_TOP_QUICK_FRAME_OFFSET
+    THREAD_STORE_Q rsp, THREAD_TOP_QUICK_FRAME_OFFSET
 
     // Ugly compile-time check, but we only have the preprocessor.
     // Last +8: implicit return address pushed on stack when caller made call.
@@ -435,7 +491,7 @@ END_MACRO
      * Runtime::CreateCalleeSaveMethod(kSaveAllCalleeSaves)
      */
 MACRO0(SETUP_SAVE_ALL_CALLEE_SAVES_FRAME)
-#if defined(__APPLE__) || defined(_WIN32)
+#if defined(__APPLE__)
     int3
     int3
 #else
@@ -460,7 +516,7 @@ MACRO0(SETUP_SAVE_ALL_CALLEE_SAVES_FRAME)
     // Store ArtMethod* to bottom of stack.
     movq %r10, 0(%rsp)
     // Store rsp as the top quick frame.
-    movq %rsp, %gs:THREAD_TOP_QUICK_FRAME_OFFSET
+    THREAD_STORE_Q rsp, THREAD_TOP_QUICK_FRAME_OFFSET
 
     // Ugly compile-time check, but we only have the preprocessor.
     // Last +8: implicit return address pushed on stack when caller made call.
@@ -494,7 +550,7 @@ END_MACRO
      */
 MACRO0(DELIVER_PENDING_EXCEPTION_FRAME_READY)
     // (Thread*) setup
-    movq %gs:THREAD_SELF_OFFSET, %rdi
+    THREAD_GET_SELF rdi
     call SYMBOL(artDeliverPendingExceptionFromCode)  // artDeliverPendingExceptionFromCode(Thread*)
     movq %rax, %rdi                                  // pass Context*
     call SYMBOL(art_quick_do_long_jump)
@@ -510,7 +566,7 @@ MACRO0(DELIVER_PENDING_EXCEPTION)
 END_MACRO
 
 MACRO0(RETURN_OR_DELIVER_PENDING_EXCEPTION)
-    cmpq MACRO_LITERAL(0), %gs:THREAD_EXCEPTION_OFFSET  // compare exception field with 0
+    THREAD_CMP_Q_ZERO THREAD_EXCEPTION_OFFSET  // compare exception field with 0
     jne 1f                                              // if exception != 0 goto 1
     ret                                                 // return
 1:                                                      // deliver exception on current thread
@@ -521,7 +577,11 @@ END_MACRO
 MACRO3(LOCK_OBJECT_FAST_PATH, obj, tmp, slow_lock)
 1:
     movl MIRROR_OBJECT_LOCK_WORD_OFFSET(REG_VAR(obj)), %eax  // EAX := lock word
+#if defined(_WIN32)
+    movl THREAD_ID_OFFSET(%r15), REG_VAR(tmp)  // tmp: thread id.
+#else
     movl %gs:THREAD_ID_OFFSET, REG_VAR(tmp)  // tmp: thread id.
+#endif
     xorl %eax, REG_VAR(tmp)               // tmp: thread id with count 0 + read barrier bits.
     testl LITERAL(LOCK_WORD_GC_STATE_MASK_SHIFTED_TOGGLED), %eax  // Test the non-gc bits.
     jnz  2f                               // Check if unlocked.
@@ -549,7 +609,11 @@ END_MACRO
 MACRO4(UNLOCK_OBJECT_FAST_PATH, obj, tmp, saved_rax, slow_unlock)
 1:
     movl MIRROR_OBJECT_LOCK_WORD_OFFSET(REG_VAR(obj)), %eax  // EAX := lock word
+#if defined(_WIN32)
+    movl THREAD_ID_OFFSET(%r15), REG_VAR(tmp)  // tmp := thread id
+#else
     movl %gs:THREAD_ID_OFFSET, REG_VAR(tmp)  // tmp := thread id
+#endif
     xorl %eax, REG_VAR(tmp)               // tmp := thread id ^ lock word
     test LITERAL(LOCK_WORD_GC_STATE_MASK_SHIFTED_TOGGLED), REG_VAR(tmp)
     jnz  2f                               // Check if simply locked.

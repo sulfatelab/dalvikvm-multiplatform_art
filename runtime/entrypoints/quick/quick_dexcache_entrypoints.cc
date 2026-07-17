@@ -207,7 +207,7 @@ static inline void StoreMethodTypeInBss(ArtMethod* caller,
   }
 }
 
-extern "C" mirror::Class* artInitializeStaticStorageFromCode(mirror::Class* klass, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::Class* artInitializeStaticStorageFromCode(mirror::Class* klass, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Called to ensure static storage base is initialized for direct static field reads and writes.
   // A class may be accessing another class' fields when it doesn't have access, as access has been
@@ -225,7 +225,7 @@ extern "C" mirror::Class* artInitializeStaticStorageFromCode(mirror::Class* klas
   return h_klass.Get();
 }
 
-extern "C" mirror::Class* artResolveTypeFromCode(uint32_t type_idx, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::Class* artResolveTypeFromCode(uint32_t type_idx, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Called when the .bss slot was empty or for main-path runtime call.
   ScopedQuickEntrypointChecks sqec(self);
@@ -244,7 +244,7 @@ extern "C" mirror::Class* artResolveTypeFromCode(uint32_t type_idx, Thread* self
   return result.Ptr();
 }
 
-extern "C" mirror::Class* artResolveTypeAndVerifyAccessFromCode(uint32_t type_idx, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::Class* artResolveTypeAndVerifyAccessFromCode(uint32_t type_idx, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Called when caller isn't guaranteed to have access to a type.
   ScopedQuickEntrypointChecks sqec(self);
@@ -263,7 +263,7 @@ extern "C" mirror::Class* artResolveTypeAndVerifyAccessFromCode(uint32_t type_id
   return result.Ptr();
 }
 
-extern "C" mirror::MethodHandle* artResolveMethodHandleFromCode(uint32_t method_handle_idx,
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::MethodHandle* artResolveMethodHandleFromCode(uint32_t method_handle_idx,
                                                                 Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
@@ -274,7 +274,7 @@ extern "C" mirror::MethodHandle* artResolveMethodHandleFromCode(uint32_t method_
   return result.Ptr();
 }
 
-extern "C" mirror::MethodType* artResolveMethodTypeFromCode(uint32_t proto_idx, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::MethodType* artResolveMethodTypeFromCode(uint32_t proto_idx, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   auto caller_and_outer = GetCalleeSaveMethodCallerAndOuterMethod(self,
@@ -288,7 +288,7 @@ extern "C" mirror::MethodType* artResolveMethodTypeFromCode(uint32_t proto_idx, 
   return result.Ptr();
 }
 
-extern "C" mirror::String* artResolveStringFromCode(int32_t string_idx, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::String* artResolveStringFromCode(int32_t string_idx, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   auto caller_and_outer = GetCalleeSaveMethodCallerAndOuterMethod(self,

@@ -620,7 +620,7 @@ using QuickArgumentVisitor =
 
 // Returns the 'this' object of a proxy method. This function is only used by StackVisitor. It
 // allows to use the QuickArgumentVisitor constants without moving all the code in its own module.
-extern "C" mirror::Object* artQuickGetProxyThisObject(ArtMethod** sp)
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::Object* artQuickGetProxyThisObject(ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK((*sp)->IsProxyMethod());
   return QuickArgumentVisitor::GetThisObjectReference(sp)->AsMirrorPtr();
@@ -758,7 +758,7 @@ static int64_t NanBoxResultIfNeeded(int64_t result, char result_shorty) {
 }
 
 NO_STACK_PROTECTOR
-extern "C" uint64_t artQuickToInterpreterBridge(ArtMethod* method, Thread* self, ArtMethod** sp)
+extern "C" ART_QUICK_ENTRYPOINT_ABI uint64_t artQuickToInterpreterBridge(ArtMethod* method, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Ensure we don't get thread suspension until the object arguments are safely in the shadow
   // frame.
@@ -902,7 +902,7 @@ void BuildQuickArgumentVisitor::Visit() {
 // which is responsible for recording callee save registers. We explicitly place into jobjects the
 // incoming reference arguments (so they survive GC). We invoke the invocation handler, which is a
 // field within the proxy object, which will box the primitive arguments and deal with error cases.
-extern "C" uint64_t artQuickProxyInvokeHandler(
+extern "C" ART_QUICK_ENTRYPOINT_ABI uint64_t artQuickProxyInvokeHandler(
     ArtMethod* proxy_method, mirror::Object* receiver, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(proxy_method->IsProxyMethod()) << proxy_method->PrettyMethod();
@@ -1017,7 +1017,7 @@ class GetQuickReferenceArgumentAtVisitor final : public QuickArgumentVisitor {
 
 // Returning reference argument at position `arg_pos` in Quick stack frame at address `sp`.
 // NOTE: Only used for testing purposes.
-EXPORT extern "C" StackReference<mirror::Object>* artQuickGetProxyReferenceArgumentAt(
+EXPORT extern "C" ART_QUICK_ENTRYPOINT_ABI StackReference<mirror::Object>* artQuickGetProxyReferenceArgumentAt(
     size_t arg_pos, ArtMethod** sp) REQUIRES_SHARED(Locks::mutator_lock_) {
   ArtMethod* proxy_method = *sp;
   ArtMethod* non_proxy_method = proxy_method->GetInterfaceMethodIfProxy(kRuntimePointerSize);
@@ -1206,7 +1206,7 @@ static void DumpB74410240DebugData(ArtMethod** sp) REQUIRES_SHARED(Locks::mutato
 }
 
 // Lazily resolve a method for quick. Called by stub code.
-extern "C" const void* artQuickResolutionTrampoline(
+extern "C" ART_QUICK_ENTRYPOINT_ABI const void* artQuickResolutionTrampoline(
     ArtMethod* called, mirror::Object* receiver, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // The resolution trampoline stashes the resolved method into the callee-save frame to transport
@@ -2049,7 +2049,7 @@ void BuildGenericJniFrameVisitor::Visit() {
  * NO_THREAD_SAFETY_ANALYSIS: Depending on the use case, the trampoline may
  * or may not lock a synchronization object and transition out of Runnable.
  */
-extern "C" const void* artQuickGenericJniTrampoline(Thread* self,
+extern "C" ART_QUICK_ENTRYPOINT_ABI const void* artQuickGenericJniTrampoline(Thread* self,
                                                     ArtMethod** managed_sp,
                                                     uintptr_t* reserved_area)
     REQUIRES_SHARED(Locks::mutator_lock_) NO_THREAD_SAFETY_ANALYSIS {
@@ -2165,7 +2165,7 @@ extern uint64_t GenericJniMethodEnd(Thread* self,
  * Is called after the native JNI code. Responsible for cleanup (handle scope, saved state) and
  * unlocking.
  */
-extern "C" uint64_t artQuickGenericJniEndTrampoline(Thread* self,
+extern "C" ART_QUICK_ENTRYPOINT_ABI uint64_t artQuickGenericJniEndTrampoline(Thread* self,
                                                     jvalue result,
                                                     uint64_t result_f) {
   // We're here just back from a native call. We don't have the shared mutator lock at this point
@@ -2257,19 +2257,19 @@ EXPLICIT_INVOKE_COMMON_TEMPLATE_DECL(kSuper);
 #undef EXPLICIT_INVOKE_COMMON_TEMPLATE_DECL
 
 // See comments in runtime_support_asm.S
-extern "C" TwoWordReturn artInvokeInterfaceTrampolineWithAccessCheck(
+extern "C" ART_QUICK_ENTRYPOINT_ABI TwoWordReturn artInvokeInterfaceTrampolineWithAccessCheck(
     uint32_t method_idx, mirror::Object* this_object, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   return artInvokeCommon<kInterface>(method_idx, this_object, self, sp);
 }
 
-extern "C" TwoWordReturn artInvokeDirectTrampolineWithAccessCheck(
+extern "C" ART_QUICK_ENTRYPOINT_ABI TwoWordReturn artInvokeDirectTrampolineWithAccessCheck(
     uint32_t method_idx, mirror::Object* this_object, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   return artInvokeCommon<kDirect>(method_idx, this_object, self, sp);
 }
 
-extern "C" TwoWordReturn artInvokeStaticTrampolineWithAccessCheck(
+extern "C" ART_QUICK_ENTRYPOINT_ABI TwoWordReturn artInvokeStaticTrampolineWithAccessCheck(
     uint32_t method_idx, [[maybe_unused]] mirror::Object* this_object, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // For static, this_object is not required and may be random garbage. Don't pass it down so that
@@ -2277,13 +2277,13 @@ extern "C" TwoWordReturn artInvokeStaticTrampolineWithAccessCheck(
   return artInvokeCommon<kStatic>(method_idx, nullptr, self, sp);
 }
 
-extern "C" TwoWordReturn artInvokeSuperTrampolineWithAccessCheck(
+extern "C" ART_QUICK_ENTRYPOINT_ABI TwoWordReturn artInvokeSuperTrampolineWithAccessCheck(
     uint32_t method_idx, mirror::Object* this_object, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   return artInvokeCommon<kSuper>(method_idx, this_object, self, sp);
 }
 
-extern "C" TwoWordReturn artInvokeVirtualTrampolineWithAccessCheck(
+extern "C" ART_QUICK_ENTRYPOINT_ABI TwoWordReturn artInvokeVirtualTrampolineWithAccessCheck(
     uint32_t method_idx, mirror::Object* this_object, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   return artInvokeCommon<kVirtual>(method_idx, this_object, self, sp);
@@ -2291,7 +2291,7 @@ extern "C" TwoWordReturn artInvokeVirtualTrampolineWithAccessCheck(
 
 // Determine target of interface dispatch. The interface method and this object are known non-null.
 // The interface method is the method returned by the dex cache in the conflict trampoline.
-extern "C" TwoWordReturn artInvokeInterfaceTrampoline(ArtMethod* interface_method,
+extern "C" ART_QUICK_ENTRYPOINT_ABI TwoWordReturn artInvokeInterfaceTrampoline(ArtMethod* interface_method,
                                                       mirror::Object* raw_this_object,
                                                       Thread* self,
                                                       ArtMethod** sp)
@@ -2411,7 +2411,7 @@ extern "C" TwoWordReturn artInvokeInterfaceTrampoline(ArtMethod* interface_metho
 }
 
 // Returns uint64_t representing raw bits from JValue.
-extern "C" uint64_t artInvokePolymorphic(mirror::Object* raw_receiver, Thread* self, ArtMethod** sp)
+extern "C" ART_QUICK_ENTRYPOINT_ABI uint64_t artInvokePolymorphic(mirror::Object* raw_receiver, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   DCHECK(raw_receiver != nullptr);
@@ -2534,7 +2534,7 @@ extern "C" uint64_t artInvokePolymorphic(mirror::Object* raw_receiver, Thread* s
   return NanBoxResultIfNeeded(result.GetJ(), shorty[0]);
 }
 
-extern "C" uint64_t artInvokePolymorphicWithHiddenReceiver(mirror::Object* raw_receiver,
+extern "C" ART_QUICK_ENTRYPOINT_ABI uint64_t artInvokePolymorphicWithHiddenReceiver(mirror::Object* raw_receiver,
                                                            Thread* self,
                                                            ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -2635,7 +2635,7 @@ extern "C" uint64_t artInvokePolymorphicWithHiddenReceiver(mirror::Object* raw_r
 }
 
 // Returns uint64_t representing raw bits from JValue.
-extern "C" uint64_t artInvokeCustom(uint32_t call_site_idx, Thread* self, ArtMethod** sp)
+extern "C" ART_QUICK_ENTRYPOINT_ABI uint64_t artInvokeCustom(uint32_t call_site_idx, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   DCHECK_EQ(*sp, Runtime::Current()->GetCalleeSaveMethod(CalleeSaveType::kSaveRefsAndArgs));
@@ -2693,14 +2693,14 @@ extern "C" uint64_t artInvokeCustom(uint32_t call_site_idx, Thread* self, ArtMet
   return NanBoxResultIfNeeded(result.GetJ(), shorty[0]);
 }
 
-extern "C" void artJniMethodEntryHook(Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI void artJniMethodEntryHook(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   instrumentation::Instrumentation* instr = Runtime::Current()->GetInstrumentation();
   ArtMethod* method = *self->GetManagedStack()->GetTopQuickFrame();
   instr->MethodEnterEvent(self, method);
 }
 
-extern "C" Context* artMethodEntryHook(ArtMethod* method, Thread* self, ArtMethod** sp)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artMethodEntryHook(ArtMethod* method, Thread* self, ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   instrumentation::Instrumentation* instr = Runtime::Current()->GetInstrumentation();
@@ -2727,7 +2727,7 @@ extern "C" Context* artMethodEntryHook(ArtMethod* method, Thread* self, ArtMetho
   return nullptr;
 }
 
-extern "C" Context* artMethodExitHook(Thread* self,
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artMethodExitHook(Thread* self,
                                       ArtMethod** sp,
                                       uint64_t* gpr_result,
                                       uint64_t* fpr_result,
@@ -2811,7 +2811,7 @@ extern "C" Context* artMethodExitHook(Thread* self,
   return nullptr;
 }
 
-extern "C" void artRecordLongRunningMethodTraceEvent(ArtMethod* method, Thread* self, bool is_entry)
+extern "C" ART_QUICK_ENTRYPOINT_ABI void artRecordLongRunningMethodTraceEvent(ArtMethod* method, Thread* self, bool is_entry)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   TraceProfiler::FlushBufferAndRecordTraceEvent(method, self, is_entry);
 }

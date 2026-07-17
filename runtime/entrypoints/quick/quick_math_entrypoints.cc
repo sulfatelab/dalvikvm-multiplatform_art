@@ -69,15 +69,15 @@ int CmplDouble(double a, double b) {
 
 #pragma clang diagnostic pop
 
-extern "C" int64_t artLmul(int64_t a, int64_t b) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI int64_t artLmul(int64_t a, int64_t b) {
   return a * b;
 }
 
-extern "C" int64_t artLdiv(int64_t a, int64_t b) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI int64_t artLdiv(int64_t a, int64_t b) {
   return a / b;
 }
 
-extern "C" int64_t artLmod(int64_t a, int64_t b) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI int64_t artLmod(int64_t a, int64_t b) {
   return a % b;
 }
 

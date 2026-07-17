@@ -234,7 +234,7 @@ DEFINE_FUNCTION art_jni_dlsym_lookup_critical_stub
     movq %r10, (%rbp)
 
     // Place (maybe tagged) managed SP in Thread::Current()->top_quick_frame.
-    movq %rax, %gs:THREAD_TOP_QUICK_FRAME_OFFSET
+    THREAD_STORE_Q rax, THREAD_TOP_QUICK_FRAME_OFFSET
 
     // Save our return PC in the padding.
     movq %r11, __SIZEOF_POINTER__(%rbp)
@@ -244,7 +244,7 @@ DEFINE_FUNCTION art_jni_dlsym_lookup_critical_stub
     movq %rdi, %rbx
 
     // Call artFindNativeMethodRunnable()
-    movq %gs:THREAD_SELF_OFFSET, %rdi  // pass Thread::Current()
+    THREAD_GET_SELF rdi  // pass Thread::Current()
     call SYMBOL(artFindNativeMethodRunnable)  // (Thread*)
 
     // Check for exception.
@@ -388,7 +388,7 @@ DEFINE_FUNCTION art_jni_lock_object_no_inline
     SAVE_MANAGED_ARGS_INCREASE_FRAME
     // Call `artLockObjectFromCode()`
     movq %rbx, %rdi                       // Pass the object to lock.
-    movq %gs:THREAD_SELF_OFFSET, %rsi     // Pass Thread::Current().
+    THREAD_GET_SELF rsi     // Pass Thread::Current().
     call SYMBOL(artLockObjectFromCode)    // (object, Thread*)
     // Check result.
     testl %eax, %eax
@@ -404,7 +404,7 @@ DEFINE_FUNCTION art_jni_lock_object_no_inline
     // padding to align stack.
     DECREASE_FRAME MANAGED_ARGS_SAVE_SIZE - /*new padding*/ 8
     // Rely on the JNI transition frame constructed in the JNI stub.
-    movq %gs:THREAD_SELF_OFFSET, %rdi     // Pass Thread::Current().
+    THREAD_GET_SELF rdi     // Pass Thread::Current().
     call  SYMBOL(artDeliverPendingExceptionFromCode)  // (Thread*)
     movq %rax, %rdi                       // pass Context*
     call  SYMBOL(art_quick_do_long_jump)

@@ -28,7 +28,7 @@
 namespace art HIDDEN {
 
 // Deliver an exception that's pending on thread helping set up a callee save frame on the way.
-extern "C" Context* artDeliverPendingExceptionFromCode(Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artDeliverPendingExceptionFromCode(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   std::unique_ptr<Context> context = self->QuickDeliverException();
@@ -36,7 +36,7 @@ extern "C" Context* artDeliverPendingExceptionFromCode(Thread* self)
   return context.release();
 }
 
-extern "C" Context* artInvokeObsoleteMethod(ArtMethod* method, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artInvokeObsoleteMethod(ArtMethod* method, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(method->IsObsolete());
   ScopedQuickEntrypointChecks sqec(self);
@@ -48,7 +48,7 @@ extern "C" Context* artInvokeObsoleteMethod(ArtMethod* method, Thread* self)
 }
 
 // Called by generated code to throw an exception.
-extern "C" Context* artDeliverExceptionFromCode(mirror::Throwable* exception, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artDeliverExceptionFromCode(mirror::Throwable* exception, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   /*
    * exception may be null, in which case this routine should
@@ -69,7 +69,7 @@ extern "C" Context* artDeliverExceptionFromCode(mirror::Throwable* exception, Th
 }
 
 // Called by generated code to throw a NPE exception.
-extern "C" Context* artThrowNullPointerExceptionFromCode(Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowNullPointerExceptionFromCode(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   // We come from an explicit check in the generated code. This path is triggered
@@ -81,7 +81,7 @@ extern "C" Context* artThrowNullPointerExceptionFromCode(Thread* self)
 }
 
 // Installed by a signal handler to throw a NPE exception.
-extern "C" Context* artThrowNullPointerExceptionFromSignal(uintptr_t addr, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowNullPointerExceptionFromSignal(uintptr_t addr, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowNullPointerExceptionFromDexPC(/* check_address= */ true, addr);
@@ -91,7 +91,7 @@ extern "C" Context* artThrowNullPointerExceptionFromSignal(uintptr_t addr, Threa
 }
 
 // Called by generated code to throw an arithmetic divide by zero exception.
-extern "C" Context* artThrowDivZeroFromCode(Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowDivZeroFromCode(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowArithmeticExceptionDivideByZero();
@@ -101,7 +101,7 @@ extern "C" Context* artThrowDivZeroFromCode(Thread* self)
 }
 
 // Called by generated code to throw an array index out of bounds exception.
-extern "C" Context* artThrowArrayBoundsFromCode(int index, int length, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowArrayBoundsFromCode(int index, int length, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowArrayIndexOutOfBoundsException(index, length);
@@ -111,7 +111,7 @@ extern "C" Context* artThrowArrayBoundsFromCode(int index, int length, Thread* s
 }
 
 // Called by generated code to throw a string index out of bounds exception.
-extern "C" Context* artThrowStringBoundsFromCode(int index, int length, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowStringBoundsFromCode(int index, int length, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   ThrowStringIndexOutOfBoundsException(index, length);
@@ -120,7 +120,7 @@ extern "C" Context* artThrowStringBoundsFromCode(int index, int length, Thread* 
   return context.release();
 }
 
-extern "C" Context* artThrowStackOverflowFromCode(Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowStackOverflowFromCode(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   // Throw a stack overflow error for the quick stack. This is needed to throw stack overflow
@@ -132,7 +132,7 @@ extern "C" Context* artThrowStackOverflowFromCode(Thread* self)
   return context.release();
 }
 
-extern "C" Context* artThrowClassCastException(mirror::Class* dest_type,
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowClassCastException(mirror::Class* dest_type,
                                                mirror::Class* src_type,
                                                Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -164,7 +164,7 @@ extern "C" Context* artThrowClassCastException(mirror::Class* dest_type,
   return context.release();
 }
 
-extern "C" Context* artThrowClassCastExceptionForObject(mirror::Object* obj,
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowClassCastExceptionForObject(mirror::Object* obj,
                                                         mirror::Class* dest_type,
                                                         Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -172,7 +172,7 @@ extern "C" Context* artThrowClassCastExceptionForObject(mirror::Object* obj,
   return artThrowClassCastException(dest_type, obj->GetClass(), self);
 }
 
-extern "C" Context* artThrowArrayStoreException(mirror::Object* array,
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowArrayStoreException(mirror::Object* array,
                                                 mirror::Object* value,
                                                 Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {

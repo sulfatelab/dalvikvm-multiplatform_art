@@ -18,6 +18,7 @@
 #define ART_RUNTIME_ENTRYPOINTS_QUICK_QUICK_ENTRYPOINTS_H_
 
 #include <jni.h>
+#include <cstddef>
 
 #include "base/locks.h"
 #include "base/macros.h"
@@ -43,10 +44,30 @@ template<class MirrorType> class StackReference;
 class Thread;
 
 // Pointers to functions that are called by quick compiler generated code via thread-local storage.
+// Pointers to functions called from quick/managed code via Thread TLS.
+// On Win64, managed/quick asm uses the SysV register ABI for ART helpers
+// (ART_QUICK_ENTRYPOINT_ABI = sysv_abi). Set* therefore has:
+//   - default C++ ABI pointer (libm cos/sin, libc memcpy, nullptr via nullptr_t)
+//   - sysv_abi ART helper pointer
+// A dedicated nullptr_t overload avoids ambiguous conversion to both ABIs.
 struct QuickEntryPoints {
+#if defined(_WIN32) && defined(__x86_64__)
 #define ENTRYPOINT_ENUM(name, rettype, ...) \
-  void* p##name;                            \
-  void Set##name(rettype (*fn)(__VA_ARGS__)) { p##name = reinterpret_cast<void*>(fn); }
+  void* p##name; \
+  void Set##name(std::nullptr_t) { p##name = nullptr; } \
+  void Set##name(rettype (*fn)(__VA_ARGS__)) { \
+    p##name = reinterpret_cast<void*>(fn); \
+  } \
+  void Set##name(rettype (ART_QUICK_ENTRYPOINT_ABI *fn)(__VA_ARGS__)) { \
+    p##name = reinterpret_cast<void*>(fn); \
+  }
+#else
+#define ENTRYPOINT_ENUM(name, rettype, ...) \
+  void* p##name; \
+  void Set##name(rettype (*fn)(__VA_ARGS__)) { \
+    p##name = reinterpret_cast<void*>(fn); \
+  }
+#endif
 #include "quick_entrypoints_list.h"
   QUICK_ENTRYPOINT_LIST(ENTRYPOINT_ENUM)
 #undef QUICK_ENTRYPOINT_LIST

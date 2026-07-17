@@ -23,7 +23,7 @@
 
 namespace art HIDDEN {
 
-extern "C" Context* artDeoptimizeIfNeeded(Thread* self, uintptr_t result, bool is_ref)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artDeoptimizeIfNeeded(Thread* self, uintptr_t result, bool is_ref)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   instrumentation::Instrumentation* instr = Runtime::Current()->GetInstrumentation();
@@ -39,7 +39,7 @@ extern "C" Context* artDeoptimizeIfNeeded(Thread* self, uintptr_t result, bool i
   return context.release();
 }
 
-extern "C" Context* artTestSuspendFromCode(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artTestSuspendFromCode(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_) {
   // Called when there is a pending checkpoint or suspend request.
   ScopedQuickEntrypointChecks sqec(self);
   self->CheckSuspend();
@@ -54,7 +54,7 @@ extern "C" Context* artTestSuspendFromCode(Thread* self) REQUIRES_SHARED(Locks::
   return context.release();
 }
 
-extern "C" Context* artImplicitSuspendFromCode(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artImplicitSuspendFromCode(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_) {
   // Called when there is a pending checkpoint or suspend request.
   ScopedQuickEntrypointChecks sqec(self);
   self->CheckSuspend(/*implicit=*/ true);
@@ -69,7 +69,7 @@ extern "C" Context* artImplicitSuspendFromCode(Thread* self) REQUIRES_SHARED(Loc
   return context.release();
 }
 
-extern "C" void artCompileOptimized(ArtMethod* method, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI void artCompileOptimized(ArtMethod* method, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   // It is important this method is not suspended due to:
@@ -82,7 +82,7 @@ extern "C" void artCompileOptimized(ArtMethod* method, Thread* self)
   Runtime::Current()->GetJit()->EnqueueOptimizedCompilation(method, self);
 }
 
-extern "C" void artCompileBaseline(ArtMethod* method, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI void artCompileBaseline(ArtMethod* method, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   // It is important this method is not suspended due to:

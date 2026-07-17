@@ -48,7 +48,7 @@ static inline uint32_t GetInvokeStaticMethodIndex(ArtMethod* caller, uint32_t de
 }
 
 // Used by the JNI dlsym stub to find the native method to invoke if none is registered.
-extern "C" const void* artFindNativeMethodRunnable(Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI const void* artFindNativeMethodRunnable(Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   Locks::mutator_lock_->AssertSharedHeld(self);  // We come here as Runnable.
   uint32_t dex_pc;
@@ -125,14 +125,14 @@ extern "C" const void* artFindNativeMethodRunnable(Thread* self)
 }
 
 // Used by the JNI dlsym stub to find the native method to invoke if none is registered.
-extern "C" const void* artFindNativeMethod(Thread* self) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI const void* artFindNativeMethod(Thread* self) {
   DCHECK_EQ(self, Thread::Current());
   Locks::mutator_lock_->AssertNotHeld(self);  // We come here as Native.
   ScopedObjectAccess soa(self);
   return artFindNativeMethodRunnable(self);
 }
 
-extern "C" size_t artCriticalNativeFrameSize(ArtMethod* method, uintptr_t caller_pc)
+extern "C" ART_QUICK_ENTRYPOINT_ABI size_t artCriticalNativeFrameSize(ArtMethod* method, uintptr_t caller_pc)
     REQUIRES_SHARED(Locks::mutator_lock_)  {
   if (method->IsNative()) {
     // Get the method's shorty.

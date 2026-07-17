@@ -20,7 +20,7 @@
 namespace art HIDDEN {
 
 // Assignable test for code, won't throw.  Null and equality tests already performed
-extern "C" size_t artIsAssignableFromCode(mirror::Class* klass, mirror::Class* ref_class)
+extern "C" ART_QUICK_ENTRYPOINT_ABI size_t artIsAssignableFromCode(mirror::Class* klass, mirror::Class* ref_class)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(klass != nullptr);
   DCHECK(ref_class != nullptr);
@@ -28,7 +28,7 @@ extern "C" size_t artIsAssignableFromCode(mirror::Class* klass, mirror::Class* r
 }
 
 // Is assignable test for code, won't throw.  Null and equality test already performed.
-extern "C" size_t artInstanceOfFromCode(mirror::Object* obj, mirror::Class* ref_class)
+extern "C" ART_QUICK_ENTRYPOINT_ABI size_t artInstanceOfFromCode(mirror::Object* obj, mirror::Class* ref_class)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(obj != nullptr);
   DCHECK(ref_class != nullptr);

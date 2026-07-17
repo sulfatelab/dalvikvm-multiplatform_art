@@ -18,11 +18,11 @@
 
 namespace art HIDDEN {
 
-extern "C" double art_l2d(int64_t l) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI double art_l2d(int64_t l) {
   return static_cast<double>(l);
 }
 
-extern "C" float art_l2f(int64_t l) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI float art_l2f(int64_t l) {
   return static_cast<float>(l);
 }
 
@@ -30,19 +30,19 @@ extern "C" float art_l2f(int64_t l) {
  * Float/double conversion requires clamping to min and max of integer form.  If
  * target doesn't support this normally, use these.
  */
-extern "C" int64_t art_d2l(double d) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI int64_t art_d2l(double d) {
   return art_float_to_integral<int64_t, double>(d);
 }
 
-extern "C" int64_t art_f2l(float f) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI int64_t art_f2l(float f) {
   return art_float_to_integral<int64_t, float>(f);
 }
 
-extern "C" int32_t art_d2i(double d) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI int32_t art_d2i(double d) {
   return art_float_to_integral<int32_t, double>(d);
 }
 
-extern "C" int32_t art_f2i(float f) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI int32_t art_f2i(float f) {
   return art_float_to_integral<int32_t, float>(f);
 }
 

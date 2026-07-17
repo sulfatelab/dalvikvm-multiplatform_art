@@ -24,7 +24,7 @@ namespace art HIDDEN {
 /*
  * Handle fill array data by copying appropriate part of dex file into array.
  */
-extern "C" int artHandleFillArrayDataFromCode(const Instruction::ArrayDataPayload* payload,
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artHandleFillArrayDataFromCode(const Instruction::ArrayDataPayload* payload,
                                               mirror::Array* array,
                                               Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {

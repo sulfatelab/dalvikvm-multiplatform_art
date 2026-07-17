@@ -108,7 +108,7 @@ static ArtMethod* GetReferrer(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_
 //
 #define ART_GET_FIELD_FROM_CODE(Kind, RetType, SetType, PrimitiveOrObject,     \
                                 IsObject, Ptr)                                 \
-  extern "C" RetType artGet ## Kind ## StaticFromCode(uint32_t field_idx,      \
+  extern "C" ART_QUICK_ENTRYPOINT_ABI RetType artGet ## Kind ## StaticFromCode(uint32_t field_idx,      \
                                                       ArtMethod* referrer,     \
                                                       Thread* self)            \
       REQUIRES_SHARED(Locks::mutator_lock_) {                                  \
@@ -127,7 +127,7 @@ static ArtMethod* GetReferrer(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_
     return 0;                                                                  \
   }                                                                            \
                                                                                \
-  extern "C" RetType artGet ## Kind ## InstanceFromCode(uint32_t field_idx,    \
+  extern "C" ART_QUICK_ENTRYPOINT_ABI RetType artGet ## Kind ## InstanceFromCode(uint32_t field_idx,    \
                                                         mirror::Object* obj,   \
                                                         ArtMethod* referrer,   \
                                                         Thread* self)          \
@@ -147,7 +147,7 @@ static ArtMethod* GetReferrer(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_
     return 0;                                                                  \
   }                                                                            \
                                                                                \
-  extern "C" int artSet ## Kind ## StaticFromCode(uint32_t field_idx,          \
+  extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet ## Kind ## StaticFromCode(uint32_t field_idx,          \
                                                   SetType new_value,           \
                                                   ArtMethod* referrer,         \
                                                   Thread* self)                \
@@ -181,7 +181,7 @@ static ArtMethod* GetReferrer(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_
     return 0;                                                                  \
   }                                                                            \
                                                                                \
-  extern "C" int artSet ## Kind ## InstanceFromCode(uint32_t field_idx,        \
+  extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet ## Kind ## InstanceFromCode(uint32_t field_idx,        \
                                                     mirror::Object* obj,       \
                                                     SetType new_value,         \
                                                     ArtMethod* referrer,       \
@@ -217,7 +217,7 @@ static ArtMethod* GetReferrer(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_
     return 0;                                                                  \
   }                                                                            \
                                                                                \
-  extern "C" RetType artGet ## Kind ## StaticFromCompiledCode(                 \
+  extern "C" ART_QUICK_ENTRYPOINT_ABI RetType artGet ## Kind ## StaticFromCompiledCode(                 \
       uint32_t field_idx,                                                      \
       Thread* self)                                                            \
       REQUIRES_SHARED(Locks::mutator_lock_) {                                  \
@@ -225,7 +225,7 @@ static ArtMethod* GetReferrer(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_
         field_idx, GetReferrer(self), self);                                   \
   }                                                                            \
                                                                                \
-  extern "C" RetType artGet ## Kind ## InstanceFromCompiledCode(               \
+  extern "C" ART_QUICK_ENTRYPOINT_ABI RetType artGet ## Kind ## InstanceFromCompiledCode(               \
       uint32_t field_idx,                                                      \
       mirror::Object* obj,                                                     \
       Thread* self)                                                            \
@@ -234,7 +234,7 @@ static ArtMethod* GetReferrer(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_
         field_idx, obj, GetReferrer(self), self);                              \
   }                                                                            \
                                                                                \
-  extern "C" int artSet ## Kind ## StaticFromCompiledCode(                     \
+  extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet ## Kind ## StaticFromCompiledCode(                     \
       uint32_t field_idx,                                                      \
       SetType new_value,                                                       \
       Thread* self)                                                            \
@@ -243,7 +243,7 @@ static ArtMethod* GetReferrer(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_
         field_idx, new_value, GetReferrer(self), self);                        \
   }                                                                            \
                                                                                \
-  extern "C" int artSet ## Kind ## InstanceFromCompiledCode(                   \
+  extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet ## Kind ## InstanceFromCompiledCode(                   \
       uint32_t field_idx,                                                      \
       mirror::Object* obj,                                                     \
       SetType new_value,                                                       \
@@ -361,21 +361,21 @@ ART_GET_FIELD_FROM_CODE(Obj, mirror::Object*, mirror::Object*, Object, true, .Pt
 // To cut on the number of entrypoints, we have shared entries for
 // byte/boolean and char/short for setting an instance or static field. We just
 // forward those to the unsigned variant.
-extern "C" int artSet8StaticFromCompiledCode(uint32_t field_idx,
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet8StaticFromCompiledCode(uint32_t field_idx,
                                              uint32_t new_value,
                                              Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   return artSetBooleanStaticFromCode(field_idx, new_value, GetReferrer(self), self);
 }
 
-extern "C" int artSet16StaticFromCompiledCode(uint32_t field_idx,
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet16StaticFromCompiledCode(uint32_t field_idx,
                                               uint16_t new_value,
                                               Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   return artSetCharStaticFromCode(field_idx, new_value, GetReferrer(self), self);
 }
 
-extern "C" int artSet8InstanceFromCompiledCode(uint32_t field_idx,
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet8InstanceFromCompiledCode(uint32_t field_idx,
                                                mirror::Object* obj,
                                                uint8_t new_value,
                                                Thread* self)
@@ -383,7 +383,7 @@ extern "C" int artSet8InstanceFromCompiledCode(uint32_t field_idx,
   return artSetBooleanInstanceFromCode(field_idx, obj, new_value, GetReferrer(self), self);
 }
 
-extern "C" int artSet16InstanceFromCompiledCode(uint32_t field_idx,
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet16InstanceFromCompiledCode(uint32_t field_idx,
                                                 mirror::Object* obj,
                                                 uint16_t new_value,
                                                 Thread* self)
@@ -391,7 +391,7 @@ extern "C" int artSet16InstanceFromCompiledCode(uint32_t field_idx,
   return artSetCharInstanceFromCode(field_idx, obj, new_value, GetReferrer(self), self);
 }
 
-extern "C" int artSet8StaticFromCode(uint32_t field_idx,
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet8StaticFromCode(uint32_t field_idx,
                                      uint32_t new_value,
                                      ArtMethod* referrer,
                                      Thread* self)
@@ -399,7 +399,7 @@ extern "C" int artSet8StaticFromCode(uint32_t field_idx,
   return artSetBooleanStaticFromCode(field_idx, new_value, referrer, self);
 }
 
-extern "C" int artSet16StaticFromCode(uint32_t field_idx,
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet16StaticFromCode(uint32_t field_idx,
                                       uint16_t new_value,
                                       ArtMethod* referrer,
                                       Thread* self)
@@ -407,7 +407,7 @@ extern "C" int artSet16StaticFromCode(uint32_t field_idx,
   return artSetCharStaticFromCode(field_idx, new_value, referrer, self);
 }
 
-extern "C" int artSet8InstanceFromCode(uint32_t field_idx,
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet8InstanceFromCode(uint32_t field_idx,
                                        mirror::Object* obj,
                                        uint8_t new_value,
                                        ArtMethod* referrer,
@@ -416,7 +416,7 @@ extern "C" int artSet8InstanceFromCode(uint32_t field_idx,
   return artSetBooleanInstanceFromCode(field_idx, obj, new_value, referrer, self);
 }
 
-extern "C" int artSet16InstanceFromCode(uint32_t field_idx,
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artSet16InstanceFromCode(uint32_t field_idx,
                                         mirror::Object* obj,
                                         uint16_t new_value,
                                         ArtMethod* referrer,
@@ -434,7 +434,7 @@ extern "C" int artSet16InstanceFromCode(uint32_t field_idx,
 // Mark the heap reference `obj`. This entry point is used by read
 // barrier fast path implementations generated by the compiler to mark
 // an object that is referenced by a field of a gray object.
-extern "C" mirror::Object* artReadBarrierMark(mirror::Object* obj)
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::Object* artReadBarrierMark(mirror::Object* obj)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(gUseReadBarrier);
   return ReadBarrier::Mark(obj);
@@ -443,7 +443,7 @@ extern "C" mirror::Object* artReadBarrierMark(mirror::Object* obj)
 // Read barrier entrypoint for heap references.
 // This is the read barrier slow path for instance and static fields
 // and reference type arrays.
-extern "C" mirror::Object* artReadBarrierSlow([[maybe_unused]] mirror::Object* ref,
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::Object* artReadBarrierSlow([[maybe_unused]] mirror::Object* ref,
                                               mirror::Object* obj,
                                               uint32_t offset)
     REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -461,7 +461,7 @@ extern "C" mirror::Object* artReadBarrierSlow([[maybe_unused]] mirror::Object* r
 }
 
 // Read barrier entrypoint for GC roots.
-extern "C" mirror::Object* artReadBarrierForRootSlow(GcRoot<mirror::Object>* root)
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::Object* artReadBarrierForRootSlow(GcRoot<mirror::Object>* root)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(gUseReadBarrier);
   return root->Read();

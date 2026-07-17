@@ -25,6 +25,7 @@
 
 #include "arch/context.h"
 #include "art_method-inl.h"
+#include <cstdlib>
 #include "base/pointer_size.h"
 #include "base/stl_util.h"
 #include "class_linker-inl.h"
@@ -60,18 +61,15 @@ namespace art HIDDEN {
 
 using android::base::StringPrintf;
 
-// Quick invoke stubs are written for the SysV x86_64 ABI and %gs Thread TLS.
-// On Win64 C++ uses the MSVC ABI, so mark the declarations as sysv_abi so the
-// compiler places arguments correctly when those stubs are used.
-#if defined(_WIN32) && defined(__x86_64__)
-#define ART_QUICK_INVOKE_ABI __attribute__((sysv_abi))
-#else
-#define ART_QUICK_INVOKE_ABI
-#endif
-extern "C" ART_QUICK_INVOKE_ABI void art_quick_invoke_stub(ArtMethod*, uint32_t*, uint32_t, Thread*,
-                                                           JValue*, const char*);
-extern "C" ART_QUICK_INVOKE_ABI void art_quick_invoke_static_stub(ArtMethod*, uint32_t*, uint32_t,
-                                                                  Thread*, JValue*, const char*);
+// Quick invoke stubs:
+//   Linux: SysV AMD64 args (rdi..r9) + GS Thread TLS in managed code.
+//   Win64: Microsoft x64 entry converts to shared SysV-shaped body and sets
+//          rSELF=r15 (see win32_tls_jit_entrypoints.md). No sysv_abi on the
+//          C++ declaration — the PE stub itself performs the conversion.
+extern "C" void art_quick_invoke_stub(ArtMethod*, uint32_t*, uint32_t, Thread*,
+                                      JValue*, const char*);
+extern "C" void art_quick_invoke_static_stub(ArtMethod*, uint32_t*, uint32_t,
+                                             Thread*, JValue*, const char*);
 
 // Enforce that we have the right index for runtime methods.
 static_assert(ArtMethod::kRuntimeMethodDexMethodIndex == dex::kDexNoIndex,
@@ -398,15 +396,21 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
   // Invocation by the interpreter, explicitly forcing interpretation over JIT to prevent
   // cycling around the various JIT/Interpreter methods that handle method invocation.
   //
-  // Win64: quick invoke stubs assume SysV register ABI + %gs:THREAD_SELF. Until those are
-  // fully ported, route invokable methods (including natives via InterpreterJni) through
-  // EnterInterpreterFromInvoke. This is required for Phase-2 imageless Hello (-Xint).
+  // Win64: default still forces interpreter invoke (W-001) until quick entrypoints are
+  // product-validated. Set ART_WIN64_QUICK_INVOKE=1 to use art_quick_invoke_* which
+  // publish rSELF=r15 and bridge into quick/interpreter entrypoints.
   bool use_interpreter_invoke =
       !runtime->IsStarted() ||
       (self->IsForceInterpreter() && !IsNative() && !IsProxyMethod() && IsInvokable());
 #if defined(_WIN32)
   if (IsInvokable() && !IsProxyMethod()) {
-    use_interpreter_invoke = true;
+    static const bool kWin64QuickInvoke = []() {
+      const char* e = getenv("ART_WIN64_QUICK_INVOKE");
+      return e != nullptr && e[0] == '1' && e[1] == '\0';
+    }();
+    if (!kWin64QuickInvoke) {
+      use_interpreter_invoke = true;
+    }
   }
 #endif
   if (UNLIKELY(use_interpreter_invoke)) {

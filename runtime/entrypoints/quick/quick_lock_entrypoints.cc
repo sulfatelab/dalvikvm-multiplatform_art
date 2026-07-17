@@ -20,7 +20,7 @@
 
 namespace art HIDDEN {
 
-extern "C" int artLockObjectFromCode(mirror::Object* obj, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artLockObjectFromCode(mirror::Object* obj, Thread* self)
     NO_THREAD_SAFETY_ANALYSIS
     REQUIRES(!Roles::uninterruptible_)
     REQUIRES_SHARED(Locks::mutator_lock_) /* EXCLUSIVE_LOCK_FUNCTION(Monitor::monitor_lock_) */ {
@@ -48,7 +48,7 @@ extern "C" int artLockObjectFromCode(mirror::Object* obj, Thread* self)
   }
 }
 
-extern "C" int artUnlockObjectFromCode(mirror::Object* obj, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI int artUnlockObjectFromCode(mirror::Object* obj, Thread* self)
     NO_THREAD_SAFETY_ANALYSIS
     REQUIRES(!Roles::uninterruptible_)
     REQUIRES_SHARED(Locks::mutator_lock_) /* UNLOCK_FUNCTION(Monitor::monitor_lock_) */ {

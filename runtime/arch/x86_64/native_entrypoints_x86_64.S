@@ -76,7 +76,7 @@ DEFINE_FUNCTION art_jni_dlsym_lookup_stub
     movq %xmm6, 48(%rsp)
     movq %xmm7, 56(%rsp)
     // prepare call
-    movq %gs:THREAD_SELF_OFFSET, %rdi      // RDI := Thread::Current()
+    THREAD_GET_SELF rdi      // RDI := Thread::Current()
     // Call artFindNativeMethod() for normal native and artFindNativeMethodRunnable()
     // for @FastNative or @CriticalNative.
     movq THREAD_TOP_QUICK_FRAME_OFFSET(%rdi), %rax   // uintptr_t tagged_quick_frame

@@ -442,7 +442,7 @@ enum class DeoptimizationKind;
 // Define a macro that will extract information from RUNTIME_ENTRYPOINT_LIST to create a function
 // declaration.
 #define ENTRYPOINT_ENUM(name, attr, rettype, ...) \
-  extern "C" rettype name(__VA_ARGS__) attr;
+  extern "C" ART_QUICK_ENTRYPOINT_ABI rettype name(__VA_ARGS__) attr;
 
 // Declare all C++ quick entrypoints.
 RUNTIME_ENTRYPOINT_LIST(ENTRYPOINT_ENUM)

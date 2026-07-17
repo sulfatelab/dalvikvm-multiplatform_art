@@ -21,7 +21,7 @@
 
 namespace art HIDDEN {
 
-extern "C" mirror::String* artStringBuilderAppend(uint32_t format,
+extern "C" ART_QUICK_ENTRYPOINT_ABI mirror::String* artStringBuilderAppend(uint32_t format,
                                                   const uint32_t* args,
                                                   Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {

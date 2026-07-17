@@ -41,7 +41,7 @@ namespace art HIDDEN {
 static_assert(sizeof(jni::LRTSegmentState) == sizeof(uint32_t), "LRTSegmentState size unexpected");
 static_assert(std::is_trivial<jni::LRTSegmentState>::value, "LRTSegmentState not trivial");
 
-extern "C" void artJniReadBarrier(ArtMethod* method)
+extern "C" ART_QUICK_ENTRYPOINT_ABI void artJniReadBarrier(ArtMethod* method)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(gUseReadBarrier);
   mirror::CompressedReference<mirror::Object>* declaring_class =
@@ -60,7 +60,7 @@ extern "C" void artJniReadBarrier(ArtMethod* method)
 }
 
 // Called on entry to JNI, transition out of Runnable and release share of mutator_lock_.
-extern "C" void artJniMethodStart(Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI void artJniMethodStart(Thread* self)
     UNLOCK_FUNCTION(Locks::mutator_lock_) {
   if (kIsDebugBuild) {
     ArtMethod* native_method = *self->GetManagedStack()->GetTopQuickFrame();
@@ -83,7 +83,7 @@ static void PopLocalReferences(uint32_t saved_local_ref_cookie, Thread* self)
 
 // TODO: annotalysis disabled as monitor semantics are maintained in Java code.
 __attribute__((no_sanitize("memtag")))  // TODO(b/305919664)
-extern "C" void
+extern "C" ART_QUICK_ENTRYPOINT_ABI void
 artJniUnlockObject(mirror::Object* locked, Thread* self) NO_THREAD_SAFETY_ANALYSIS
     REQUIRES(!Roles::uninterruptible_) REQUIRES_SHARED(Locks::mutator_lock_) {
   // Note: No thread suspension is allowed for successful unlocking, otherwise plain
@@ -117,7 +117,7 @@ artJniUnlockObject(mirror::Object* locked, Thread* self) NO_THREAD_SAFETY_ANALYS
 // TODO: These should probably be templatized or macro-ized.
 // Otherwise there's just too much repetitive boilerplate.
 
-extern "C" void artJniMethodEnd(Thread* self) SHARED_LOCK_FUNCTION(Locks::mutator_lock_) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI void artJniMethodEnd(Thread* self) SHARED_LOCK_FUNCTION(Locks::mutator_lock_) {
   self->TransitionFromSuspendedToRunnable();
 
   if (kIsDebugBuild) {
@@ -230,12 +230,12 @@ extern uint64_t GenericJniMethodEnd(Thread* self,
   return ret;
 }
 
-extern "C" void artJniMonitoredMethodStart(Thread* self) UNLOCK_FUNCTION(Locks::mutator_lock_) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI void artJniMonitoredMethodStart(Thread* self) UNLOCK_FUNCTION(Locks::mutator_lock_) {
   artJniMethodStart(self);
   MONITOR_JNI(PaletteNotifyBeginJniInvocation);
 }
 
-extern "C" void artJniMonitoredMethodEnd(Thread* self) SHARED_LOCK_FUNCTION(Locks::mutator_lock_) {
+extern "C" ART_QUICK_ENTRYPOINT_ABI void artJniMonitoredMethodEnd(Thread* self) SHARED_LOCK_FUNCTION(Locks::mutator_lock_) {
   MONITOR_JNI(PaletteNotifyEndJniInvocation);
   artJniMethodEnd(self);
 }

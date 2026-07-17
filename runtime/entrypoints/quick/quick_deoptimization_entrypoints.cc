@@ -26,7 +26,7 @@
 
 namespace art HIDDEN {
 
-extern "C" Context* artDeoptimize(Thread* self, bool skip_method_exit_callbacks)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artDeoptimize(Thread* self, bool skip_method_exit_callbacks)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   std::unique_ptr<Context> context = self->Deoptimize(DeoptimizationKind::kFullFrame,
@@ -37,7 +37,7 @@ extern "C" Context* artDeoptimize(Thread* self, bool skip_method_exit_callbacks)
 }
 
 // This is called directly from compiled code by an HDeoptimize.
-extern "C" Context* artDeoptimizeFromCompiledCode(DeoptimizationKind kind, Thread* self)
+extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artDeoptimizeFromCompiledCode(DeoptimizationKind kind, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
   // Before deoptimizing to interpreter, we must push the deoptimization context.

@@ -40,6 +40,12 @@ bool IsNterpSupported() {
   // Nterp uses the native stack and quick stack frame layout; this will be a complication
   // for the simulator mode. We should use switch interpreter only for now.
   return false;
+#elif defined(_WIN32)
+  // WinNT: generated mterp_x86_64 still addresses Thread via %gs (TEB on Windows)
+  // and reserves r15 as rREFS, conflicting with managed rSELF=r15
+  // (win32_tls_jit_entrypoints.md). Stay on switch interpreter until mterp is
+  // ported to THREAD_* macros + a free refs register.
+  return false;
 #else
   switch (kRuntimeQuickCodeISA) {
     case InstructionSet::kArm:
@@ -54,7 +60,7 @@ bool IsNterpSupported() {
     default:
       return false;
   }
-#endif  // #ifdef ART_USE_RESTRICTED_MODE
+#endif  // #ifdef ART_USE_RESTRICTED_MODE / _WIN32
 }
 
 bool CanRuntimeUseNterp() REQUIRES_SHARED(Locks::mutator_lock_) {

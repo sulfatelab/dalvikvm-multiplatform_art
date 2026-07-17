@@ -27,66 +27,66 @@ namespace art HIDDEN {
 class ArtMethod;
 class Thread;
 
-extern "C" void* art_jni_dlsym_lookup_stub(JNIEnv*, jobject);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void* art_jni_dlsym_lookup_stub(JNIEnv*, jobject);
 static inline const void* GetJniDlsymLookupStub() {
   return reinterpret_cast<const void*>(art_jni_dlsym_lookup_stub);
 }
 
-extern "C" void* art_jni_dlsym_lookup_critical_stub(JNIEnv*, jobject);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void* art_jni_dlsym_lookup_critical_stub(JNIEnv*, jobject);
 static inline const void* GetJniDlsymLookupCriticalStub() {
   return reinterpret_cast<const void*>(art_jni_dlsym_lookup_critical_stub);
 }
 
 // Return the address of quick stub code for handling IMT conflicts.
-extern "C" void art_quick_imt_conflict_trampoline(ArtMethod*);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_imt_conflict_trampoline(ArtMethod*);
 static inline const void* GetQuickImtConflictStub() {
   return reinterpret_cast<const void*>(art_quick_imt_conflict_trampoline);
 }
 
 // Return the address of quick stub code for bridging from quick code to the interpreter.
-extern "C" void art_quick_to_interpreter_bridge(ArtMethod*);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_to_interpreter_bridge(ArtMethod*);
 static inline const void* GetQuickToInterpreterBridge() {
   return reinterpret_cast<const void*>(art_quick_to_interpreter_bridge);
 }
 
 // Return the address of stub code for attempting to invoke an obsolete method.
-extern "C" void art_invoke_obsolete_method_stub(ArtMethod*);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_invoke_obsolete_method_stub(ArtMethod*);
 static inline const void* GetInvokeObsoleteMethodStub() {
   return reinterpret_cast<const void*>(art_invoke_obsolete_method_stub);
 }
 
 // Return the address of quick stub code for handling JNI calls.
-extern "C" void art_quick_generic_jni_trampoline(ArtMethod*);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_generic_jni_trampoline(ArtMethod*);
 static inline const void* GetQuickGenericJniStub() {
   return reinterpret_cast<const void*>(art_quick_generic_jni_trampoline);
 }
 
 // Return the address of quick stub code for handling transitions into the proxy invoke handler.
-extern "C" void art_quick_proxy_invoke_handler();
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_proxy_invoke_handler();
 static inline const void* GetQuickProxyInvokeHandler() {
   return reinterpret_cast<const void*>(art_quick_proxy_invoke_handler);
 }
 
 // Return the address of quick stub code for resolving a method at first call.
-extern "C" void art_quick_resolution_trampoline(ArtMethod*);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_resolution_trampoline(ArtMethod*);
 static inline const void* GetQuickResolutionStub() {
   return reinterpret_cast<const void*>(art_quick_resolution_trampoline);
 }
 
 // Entry point for quick code that performs deoptimization.
-extern "C" void art_quick_deoptimize();
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_deoptimize();
 static inline const void* GetQuickDeoptimizationEntryPoint() {
   return reinterpret_cast<const void*>(art_quick_deoptimize);
 }
 
 // Stub to deoptimize from compiled code.
-extern "C" void art_quick_deoptimize_from_compiled_code(DeoptimizationKind);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_deoptimize_from_compiled_code(DeoptimizationKind);
 
-extern "C" void* art_quick_string_builder_append(uint32_t format);
-extern "C" void art_quick_compile_optimized(ArtMethod*, Thread*);
-extern "C" void art_quick_compile_baseline(ArtMethod*, Thread*);
-extern "C" void art_quick_method_entry_hook(ArtMethod*, Thread*);
-extern "C" int32_t art_quick_method_exit_hook(Thread*, ArtMethod*, uint64_t*, uint64_t*);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void* art_quick_string_builder_append(uint32_t format);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_compile_optimized(ArtMethod*, Thread*);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_compile_baseline(ArtMethod*, Thread*);
+extern "C" ART_QUICK_ENTRYPOINT_ABI void art_quick_method_entry_hook(ArtMethod*, Thread*);
+extern "C" ART_QUICK_ENTRYPOINT_ABI int32_t art_quick_method_exit_hook(Thread*, ArtMethod*, uint64_t*, uint64_t*);
 
 }  // namespace art
 

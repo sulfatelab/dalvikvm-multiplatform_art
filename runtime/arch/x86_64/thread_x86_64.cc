@@ -54,11 +54,11 @@ void Thread::InitCpu() {
                                               sizeof(thread_ptr));
   CHECK_EQ(status, ZX_OK) << "failed to set GS register";
 #elif defined(_WIN32)
-  // Thread::Current() on non-Bionic uses C++ TLS (self_tls_) / pthread_key, not
-  // %gs. Managed/nterp stubs still reference %gs; Phase-2 imageless Hello runs
-  // with -Xint so those stubs are not required for the A3 gate.
-  // Still set the indirection field used by some C++ paths.
-  // TODO(phase2+): implement TEB/GS setup for nterp/JIT entrypoints.
+  // Windows GS is the TEB — never ARCH_SET_GS(Thread*). Managed code uses
+  // rSELF=r15 (see win32_tls_jit_entrypoints.md). C++ Thread::Current() uses
+  // self_tls_ (set below / in Init). Invoke stubs publish r15 from the Thread*
+  // argument; quick entrypoints load Thread fields via THREAD_* macros.
+  // No GS verify: TEB must remain intact.
 #else
   UNIMPLEMENTED(FATAL) << "Need to set GS";
 #endif
