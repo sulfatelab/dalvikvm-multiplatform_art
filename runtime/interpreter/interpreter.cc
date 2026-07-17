@@ -375,16 +375,21 @@ static bool InterpreterJniGeneric(Thread* self,
   JNIEnv* env = soa.Env();
   // Keep local refs alive for the duration of the native call.
   std::vector<ScopedLocalRef<jobject>> local_refs;
-  local_refs.reserve(8);
+  local_refs.reserve(16);
   auto add_local = [&](ObjPtr<mirror::Object> o) -> jobject {
     local_refs.emplace_back(env, soa.AddLocalReference<jobject>(o));
     return local_refs.back().get();
   };
 
-  uint64_t slots[8] = {};
+  // Win64 multipath: Runtime.exec (UNIXProcess.forkAndExec) and
+  // Linux.sendtoBytes need more than 8 total JNI slots (env+this+args).
+  // Keep a larger spill array and call through a 12-arg prototype so
+  // stack-passed args (Win64: after 4 registers) work (W-011 / L-003).
+  constexpr size_t kMaxJniSlots = 12;
+  uint64_t slots[kMaxJniSlots] = {};
   size_t nslots = 0;
   auto push = [&](uint64_t v) {
-    CHECK_LT(nslots, 8u) << method->PrettyMethod() << " shorty=" << shorty;
+    CHECK_LT(nslots, kMaxJniSlots) << method->PrettyMethod() << " shorty=" << shorty;
     slots[nslots++] = v;
   };
 
@@ -429,19 +434,24 @@ static bool InterpreterJniGeneric(Thread* self,
     }
   }
 
-  using jni_fn8 = uint64_t (*)(uint64_t, uint64_t, uint64_t, uint64_t,
-                               uint64_t, uint64_t, uint64_t, uint64_t);
-  auto* fn = reinterpret_cast<jni_fn8>(jni_code);
+  using jni_fn12 = uint64_t (*)(uint64_t, uint64_t, uint64_t, uint64_t,
+                                uint64_t, uint64_t, uint64_t, uint64_t,
+                                uint64_t, uint64_t, uint64_t, uint64_t);
+  auto* fn = reinterpret_cast<jni_fn12>(jni_code);
+  auto call = [&]() -> uint64_t {
+    return fn(slots[0], slots[1], slots[2], slots[3], slots[4], slots[5],
+              slots[6], slots[7], slots[8], slots[9], slots[10], slots[11]);
+  };
   uint64_t raw;
   // @FastNative (and CriticalNative) must remain Runnable: natives use
   // ScopedFastNativeObjectAccess which DCHECK_EQ(state, kRunnable) and assert the
   // mutator lock. Transitioning to kNative here made BootClassLoader.findLoadedClass
   // crash on Win64 -Xint (Security.getProviders / ProviderConfig path).
   if (method->IsFastNative() || method->IsCriticalNative()) {
-    raw = fn(slots[0], slots[1], slots[2], slots[3], slots[4], slots[5], slots[6], slots[7]);
+    raw = call();
   } else {
     ScopedThreadStateChange tsc(self, ThreadState::kNative);
-    raw = fn(slots[0], slots[1], slots[2], slots[3], slots[4], slots[5], slots[6], slots[7]);
+    raw = call();
   }
 
   switch (shorty[0]) {
