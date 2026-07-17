@@ -92,7 +92,17 @@ static bool InterpreterJniGeneric(Thread* self,
   }
 
   if (method->IsCriticalNative()) {
-    // Critical natives omit JNIEnv*/jclass; only handle simple cases here.
+    // Critical natives omit JNIEnv*/jclass. Args use the *native* ABI for the
+    // target OS (Win64 MSVC: first double in XMM0, second in XMM1, etc.).
+    // On Win64 -Xint we call through C prototypes so the compiler places FP args.
+    auto load_d = [&](size_t arg_index) -> jdouble {
+      // Interpreter packs each 'D' as two consecutive uint32 vregs (lo, hi).
+      uint64_t bits = (static_cast<uint64_t>(args[arg_index + 1]) << 32) |
+                      static_cast<uint32_t>(args[arg_index]);
+      jdouble d;
+      __builtin_memcpy(&d, &bits, sizeof(d));
+      return d;
+    };
     if (shorty == "II") {
       using fntype = jint(jint);
       auto* fn = reinterpret_cast<fntype*>(jni_code);
@@ -115,6 +125,43 @@ static bool InterpreterJniGeneric(Thread* self,
       using fntype = jboolean(jint);
       auto* fn = reinterpret_cast<fntype*>(jni_code);
       result->SetZ(fn(static_cast<jint>(args[0])));
+      return true;
+    }
+    // java.lang.Math / StrictMath @CriticalNative: ceil/floor/sin/... (D)D
+    // and atan2/pow/hypot/IEEEremainder (DD)D. Missing these caused Win64
+    // AV when falling through to wrong paths / LOG(FATAL) after partial work
+    // (W-019).
+    if (shorty == "DD") {
+      using fntype = jdouble(jdouble);
+      auto* fn = reinterpret_cast<fntype*>(jni_code);
+      ScopedThreadStateChange tsc(self, ThreadState::kNative);
+      result->SetD(fn(load_d(0)));
+      return true;
+    }
+    if (shorty == "DDD") {
+      using fntype = jdouble(jdouble, jdouble);
+      auto* fn = reinterpret_cast<fntype*>(jni_code);
+      ScopedThreadStateChange tsc(self, ThreadState::kNative);
+      result->SetD(fn(load_d(0), load_d(2)));
+      return true;
+    }
+    if (shorty == "FF") {
+      using fntype = jfloat(jfloat);
+      auto* fn = reinterpret_cast<fntype*>(jni_code);
+      jfloat f;
+      uint32_t bits = args[0];
+      __builtin_memcpy(&f, &bits, sizeof(f));
+      ScopedThreadStateChange tsc(self, ThreadState::kNative);
+      result->SetF(fn(f));
+      return true;
+    }
+    if (shorty == "J") {
+      // Also seen as CriticalNative (e.g. System clocks may use FastNative;
+      // keep CriticalNative-capable).
+      using fntype = jlong();
+      auto* fn = reinterpret_cast<fntype*>(jni_code);
+      ScopedThreadStateChange tsc(self, ThreadState::kNative);
+      result->SetJ(fn());
       return true;
     }
     return false;
