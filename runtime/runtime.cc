@@ -1691,6 +1691,28 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   class_path_string_ = runtime_options.ReleaseOrDefault(Opt::ClassPath);
   properties_ = runtime_options.ReleaseOrDefault(Opt::PropertiesList);
 
+  // Multipath shared boot.jar: inject closed OS family enum so libcore can
+  // select UnixFileSystem vs WinNTFileSystem and separators from one jar.
+  // Canonical: dalvik.vm.multiplatform.internal.os = "windows" | "unix"
+  // (internal multipath contract — not a public app API).
+  {
+    constexpr const char* kOsPropKey = "dalvik.vm.multiplatform.internal.os=";
+    bool has_os_prop = false;
+    for (const std::string& prop : properties_) {
+      if (prop.compare(0, strlen(kOsPropKey), kOsPropKey) == 0) {
+        has_os_prop = true;
+        break;
+      }
+    }
+    if (!has_os_prop) {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+      properties_.push_back(std::string(kOsPropKey) + "windows");
+#else
+      properties_.push_back(std::string(kOsPropKey) + "unix");
+#endif
+    }
+  }
+
   compiler_callbacks_ = runtime_options.GetOrDefault(Opt::CompilerCallbacksPtr);
   must_relocate_ = runtime_options.GetOrDefault(Opt::Relocate);
   is_zygote_ = runtime_options.Exists(Opt::Zygote);
