@@ -1434,6 +1434,7 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr bool kNativeSoftFloatAfterHardFloat = false;
   static constexpr size_t kNumNativeGprArgs = 4;  // 4 arguments passed in GPRs, r0-r3
   static constexpr size_t kNumNativeFprArgs = 0;  // 0 arguments passed in FPRs.
+  static constexpr bool kNativeMsX64Abi = false;
 
   static constexpr size_t kRegistersNeededForLong = 2;
   static constexpr size_t kRegistersNeededForDouble = 2;
@@ -1446,6 +1447,7 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr bool kNativeSoftFloatAfterHardFloat = false;
   static constexpr size_t kNumNativeGprArgs = 8;  // 8 arguments passed in GPRs.
   static constexpr size_t kNumNativeFprArgs = 8;  // 8 arguments passed in FPRs.
+  static constexpr bool kNativeMsX64Abi = false;
 
   static constexpr size_t kRegistersNeededForLong = 1;
   static constexpr size_t kRegistersNeededForDouble = 1;
@@ -1458,6 +1460,7 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr bool kNativeSoftFloatAfterHardFloat = true;
   static constexpr size_t kNumNativeGprArgs = 8;
   static constexpr size_t kNumNativeFprArgs = 8;
+  static constexpr bool kNativeMsX64Abi = false;
 
   static constexpr size_t kRegistersNeededForLong = 1;
   static constexpr size_t kRegistersNeededForDouble = 1;
@@ -1470,6 +1473,7 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr bool kNativeSoftFloatAfterHardFloat = false;
   static constexpr size_t kNumNativeGprArgs = 0;  // 0 arguments passed in GPRs.
   static constexpr size_t kNumNativeFprArgs = 0;  // 0 arguments passed in FPRs.
+  static constexpr bool kNativeMsX64Abi = false;
 
   static constexpr size_t kRegistersNeededForLong = 2;
   static constexpr size_t kRegistersNeededForDouble = 2;
@@ -1480,8 +1484,17 @@ template<class T> class BuildNativeCallFrameStateMachine {
 #elif defined(__x86_64__)
   static constexpr bool kNativeSoftFloatAbi = false;  // This is a hard float ABI.
   static constexpr bool kNativeSoftFloatAfterHardFloat = false;
+#if defined(_WIN32)
+  // Microsoft x64: first 4 args in rcx/xmm0 .. r9/xmm3 (unified slots), rest on
+  // stack after 32-byte shadow. Not SysV's 6 GPR + 8 independent FPRs.
+  static constexpr size_t kNumNativeGprArgs = 4;
+  static constexpr size_t kNumNativeFprArgs = 4;
+  static constexpr bool kNativeMsX64Abi = true;
+#else
   static constexpr size_t kNumNativeGprArgs = 6;  // 6 arguments passed in GPRs.
   static constexpr size_t kNumNativeFprArgs = 8;  // 8 arguments passed in FPRs.
+  static constexpr bool kNativeMsX64Abi = false;
+#endif
 
   static constexpr size_t kRegistersNeededForLong = 1;
   static constexpr size_t kRegistersNeededForDouble = 1;
@@ -1514,11 +1527,17 @@ template<class T> class BuildNativeCallFrameStateMachine {
   void AdvancePointer(const void* val) {
     if (HavePointerGpr()) {
       gpr_index_--;
+      if (kNativeMsX64Abi) {
+        fpr_index_--;  // unified MS x64 arg slot
+      }
       PushGpr(reinterpret_cast<uintptr_t>(val));
     } else {
       stack_entries_++;  // TODO: have a field for pointer length as multiple of 32b
       PushStack(reinterpret_cast<uintptr_t>(val));
       gpr_index_ = 0;
+      if (kNativeMsX64Abi) {
+        fpr_index_ = 0;
+      }
     }
   }
 
@@ -1529,6 +1548,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
   void AdvanceInt(uint32_t val) {
     if (HaveIntGpr()) {
       gpr_index_--;
+      if (kNativeMsX64Abi) {
+        fpr_index_--;
+      }
       if (kMultiGPRegistersWidened) {
         DCHECK_EQ(sizeof(uintptr_t), sizeof(int64_t));
         PushGpr(static_cast<int64_t>(bit_cast<int32_t, uint32_t>(val)));
@@ -1544,6 +1566,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
         PushStack(val);
       }
       gpr_index_ = 0;
+      if (kNativeMsX64Abi) {
+        fpr_index_ = 0;
+      }
     }
   }
 
@@ -1576,6 +1601,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
         PushGpr(static_cast<uintptr_t>((val >> 32) & 0xFFFFFFFF));
       }
       gpr_index_ -= kRegistersNeededForLong;
+      if (kNativeMsX64Abi) {
+        fpr_index_ -= kRegistersNeededForLong;
+      }
     } else {
       if (LongStackNeedsPadding()) {
         PushStack(0);
@@ -1590,6 +1618,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
         stack_entries_ += 2;
       }
       gpr_index_ = 0;
+      if (kNativeMsX64Abi) {
+        fpr_index_ = 0;
+      }
     }
   }
 
@@ -1602,6 +1633,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
       AdvanceInt(val);
     } else if (HaveFloatFpr()) {
       fpr_index_--;
+      if (kNativeMsX64Abi) {
+        gpr_index_--;  // unified MS x64 arg slot
+      }
       if (kRegistersNeededForDouble == 1) {
         if (kNaNBoxing) {
           // NaN boxing: no widening, just use the bits, but reset upper bits to 1s.
@@ -1621,6 +1655,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
       stack_entries_++;
       PushStack(static_cast<uintptr_t>(val));
       fpr_index_ = 0;
+      if (kNativeMsX64Abi) {
+        gpr_index_ = 0;
+      }
     }
   }
 
@@ -1650,6 +1687,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
       }
       PushFpr8(val);
       fpr_index_ -= kRegistersNeededForDouble;
+      if (kNativeMsX64Abi) {
+        gpr_index_ -= kRegistersNeededForDouble;
+      }
     } else if (kNativeSoftFloatAfterHardFloat) {
       // After using FP arg registers, pass FP args in general purpose registers or on the stack.
       AdvanceLong(val);
@@ -1667,6 +1707,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
         stack_entries_ += 2;
       }
       fpr_index_ = 0;
+      if (kNativeMsX64Abi) {
+        gpr_index_ = 0;
+      }
     }
   }
 
@@ -1720,6 +1763,10 @@ class ComputeNativeCallFrameSize {
 
   uint8_t* LayoutStackArgs(uint8_t* sp8) const {
     sp8 -= GetStackSize();
+#if defined(__x86_64__) && defined(_WIN32)
+    // Microsoft x64 requires 32 bytes of shadow space under the return address.
+    sp8 -= 32;
+#endif
     // Align by kStackAlignment; it is at least as strict as native stack alignment.
     sp8 = reinterpret_cast<uint8_t*>(RoundDown(reinterpret_cast<uintptr_t>(sp8), kStackAlignment));
     return sp8;
@@ -1922,9 +1969,16 @@ class BuildGenericJniFrameVisitor final : public QuickArgumentVisitor {
     *hidden_arg_slot = critical_native ? (reinterpret_cast<uintptr_t>(method) | kGenericJniTag)
                                        : 0xebad6a89u;  // Bad value.
 
-    // Set out args SP.
+    // Set out args SP (native call rsp). On Win64 this includes 32B shadow below stack args.
     uintptr_t* out_args_sp_slot = fsc.GetOutArgsSpSlot(reserved_area);
     *out_args_sp_slot = reinterpret_cast<uintptr_t>(out_args_sp);
+#if defined(__x86_64__) && defined(_WIN32)
+    // Stack args are written after the shadow home area.
+    uintptr_t* stack_args_write =
+        reinterpret_cast<uintptr_t*>(reinterpret_cast<uint8_t*>(out_args_sp) + 32);
+#else
+    uintptr_t* stack_args_write = out_args_sp;
+#endif
 
     // Prepare vreg pointer for spilling references.
     static constexpr size_t frame_size =
@@ -1934,7 +1988,7 @@ class BuildGenericJniFrameVisitor final : public QuickArgumentVisitor {
 
     jni_call_.Reset(fsc.GetStartGprRegs(reserved_area),
                     fsc.GetStartFprRegs(reserved_area),
-                    out_args_sp);
+                    stack_args_write);
 
     bool uses_critical_args = critical_native;
 

@@ -18,7 +18,7 @@
 
 #include <optional>
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(_WIN32)
 #include <link.h>  // for dl_iterate_phdr.
 #endif
 
@@ -31,6 +31,9 @@
 #include "stack_map.h"
 #include "thread.h"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 namespace art HIDDEN {
 
 uint32_t OatQuickMethodHeader::ToDexPc(ArtMethod** frame,
@@ -144,10 +147,27 @@ bool OatQuickMethodHeader::IsNterpMethodHeader() const {
   return interpreter::IsNterpSupported() ? (this == NterpMethodHeader) : false;
 }
 
-// Find memory range where all libart code is located in memory.
+// Find memory range where all ART runtime code is located in memory
+// (libart.so / art.dll / host dylib depending on platform).
 static ArrayRef<const uint8_t> FindLibartCode() {
   ArrayRef<const uint8_t> result;
-#ifndef __APPLE__
+#if defined(_WIN32)
+  // PE: locate the module containing Runtime::Current and use its full image size.
+  // dl_iterate_phdr is unavailable / ineffective for PE modules under wine/Win64.
+  HMODULE module = nullptr;
+  if (GetModuleHandleExA(
+          GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+          reinterpret_cast<LPCSTR>(reinterpret_cast<void*>(&Runtime::Current)),
+          &module) &&
+      module != nullptr) {
+    auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
+    auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(
+        reinterpret_cast<const uint8_t*>(module) + dos->e_lfanew);
+    const uint8_t* base = reinterpret_cast<const uint8_t*>(module);
+    result = ArrayRef<const uint8_t>(base, nt->OptionalHeader.SizeOfImage);
+  }
+  CHECK(!result.empty()) << "Can not find art.dll code in memory";
+#elif !defined(__APPLE__)
   auto callback = [](dl_phdr_info* info, size_t, void* ctx) {
     auto res = reinterpret_cast<decltype(result)*>(ctx);
     for (size_t i = 0; i < info->dlpi_phnum; i++) {

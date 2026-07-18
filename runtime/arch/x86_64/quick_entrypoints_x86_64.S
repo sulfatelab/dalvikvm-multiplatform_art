@@ -1572,6 +1572,28 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     test %rax, %rax
     jz .Lexception_in_native
 
+    // Save call target (native code pointer).
+    movq %rax, %r11
+
+#if defined(_WIN32)
+    // Microsoft x64 native call: reserved_area layout is
+    //   [gpr0..3][fpr0..3 as 8B][hidden][out_args_sp]
+    // Map gpr0..3 -> rcx, rdx, r8, r9; fpr0..3 -> xmm0..3; out_args_sp already
+    // includes 32-byte shadow (ComputeGenericJniFrameSize on Win).
+    popq %rcx
+    popq %rdx
+    popq %r8
+    popq %r9
+    movq 0(%rsp), %xmm0
+    movq 8(%rsp), %xmm1
+    movq 16(%rsp), %xmm2
+    movq 24(%rsp), %xmm3
+    // hidden @CriticalNative arg in rax (unused for normal JNI)
+    movq 32(%rsp), %rax
+    // SP for native call (shadow + stack args)
+    movq 40(%rsp), %rsp
+#else
+    // SysV: 6 GPR + 8 FPR in reserved_area
     // pop from the register-passing alloca region
     // what's the right layout?
     popq %rdi
@@ -1590,13 +1612,11 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     movq 48(%rsp), %xmm6
     movq 56(%rsp), %xmm7
 
-    // Save call target in scratch register.
-    movq %rax, %r11
-
     // Load hidden arg (rax) for @CriticalNative.
     movq 64(%rsp), %rax
     // Load SP for out args, releasing unneeded reserved area.
     movq 72(%rsp), %rsp
+#endif
 
     // native call
     call *%r11
