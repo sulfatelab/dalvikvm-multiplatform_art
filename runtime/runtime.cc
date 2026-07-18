@@ -155,6 +155,7 @@
 #include "native_stack_dump.h"
 #include "nativehelper/scoped_local_ref.h"
 #include "nterp_helpers.h"
+#include "interpreter/mterp/nterp.h"
 #include "oat/elf_file.h"
 #include "oat/image-inl.h"
 #include "oat/oat.h"
@@ -994,7 +995,34 @@ static jobject CreateSystemClassLoader(Runtime* runtime) {
   CHECK(getSystemClassLoader != nullptr);
   CHECK(getSystemClassLoader->IsStatic());
 
+  LOG(INFO) << "Win64 CreateSystemClassLoader before invoke"
+            << " class_path_string_='" << runtime->GetClassPathString() << "'"
+            << " entry=" << getSystemClassLoader->GetEntryPointFromQuickCompiledCode()
+            << " nterp_supported=" << interpreter::IsNterpSupported()
+            << " can_use_nterp=" << interpreter::CanRuntimeUseNterp();
   ObjPtr<mirror::Object> system_class_loader = getSystemClassLoader->InvokeStatic<'L'>(soa.Self());
+  if (soa.Self()->IsExceptionPending()) {
+    LOG(ERROR) << "Win64 CreateSystemClassLoader pending exception: "
+               << soa.Self()->GetException()->Dump();
+  }
+  LOG(INFO) << "Win64 CreateSystemClassLoader after invoke loader="
+            << system_class_loader.Ptr();
+  if (system_class_loader != nullptr) {
+    ArtMethod* to_string = system_class_loader->GetClass()->FindClassMethod(
+        "toString", "()Ljava/lang/String;", pointer_size);
+    if (to_string != nullptr) {
+      ObjPtr<mirror::Object> s =
+          to_string->InvokeVirtual<'L'>(soa.Self(), system_class_loader.Ptr());
+      if (soa.Self()->IsExceptionPending()) {
+        LOG(ERROR) << "Win64 loader.toString pending: " << soa.Self()->GetException()->Dump();
+        soa.Self()->ClearException();
+      } else if (s != nullptr && s->IsString()) {
+        LOG(INFO) << "Win64 loader.toString=" << s->AsString()->ToModifiedUtf8();
+      } else {
+        LOG(INFO) << "Win64 loader.toString returned null/non-string";
+      }
+    }
+  }
   CHECK(system_class_loader != nullptr)
       << (soa.Self()->IsExceptionPending() ? soa.Self()->GetException()->Dump() : "<null>");
 
