@@ -238,10 +238,9 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
     return false;
   }
 #if defined(_WIN32)
-  // Residual: CharsetEncoderICU.newInstance under nterp still ends with
-  // averageBytesPerChar exceeds maxBytesPerChar despite correct native returns
-  // (getAve=2,getMax=3) and MS generic-JNI float packing fixed for FI/IF.
-  // Keep F/D methods on switch interpreter until that path is fixed.
+  // Residual (2026-07-18): CharsetEncoderICU/Hello under full nterp still IAE
+  // averageBytesPerChar exceeds maxBytesPerChar. Native getAve/getMax and
+  // simple VLFF packing/NFlow mimic are OK; keep F/D methods on switch.
   {
     const char* shorty = method->GetShorty();
     if (shorty != nullptr &&
