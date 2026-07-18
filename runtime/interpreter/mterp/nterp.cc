@@ -48,6 +48,7 @@ extern "C" NTERP_C_ABI Thread* art_nterp_current_thread() {
   return Thread::Current();
 }
 
+
 bool IsNterpSupported() {
 #ifdef ART_USE_RESTRICTED_MODE
   // TODO(Simulator): Support Nterp.

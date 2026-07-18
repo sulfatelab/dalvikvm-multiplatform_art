@@ -1857,21 +1857,27 @@ OAT_ENTRY ExecuteNterpImpl
     movq -8(rREFS), %r11
     // TODO: Get shorty in a better way and remove above
 
-    movq $$0, %r14
-    testl $$ART_METHOD_IS_STATIC_FLAG, ART_METHOD_ACCESS_FLAGS_OFFSET(%rdi)
 
-    // Available: rdi, r10
-    // Note the leaq below don't change the flags.
+    movq $$0, %r14
+    // CRITICAL (Win CE residual): test static while %rdi is still ArtMethod*.
+    // The old addq/leaq between testl and jne cleared ZF, so instance methods
+    // took the static store path and shifted VLFF* args.
+    testl $$ART_METHOD_IS_STATIC_FLAG, ART_METHOD_ACCESS_FLAGS_OFFSET(%rdi)
+    jnz .Lsetup_static_bases
+    // Instance method: bases at first IN, then skip `this` for shorty args.
     movq -16(rREFS), %r10
     addq $$1, %r10  // shorty + 1
     leaq (rFP, %rbx, 1), %rdi
     leaq (rREFS, %rbx, 1), %rbx
-    jne .Lhandle_static_method
     addq $$4, %rdi
     addq $$4, %rbx
     addq $$4, %r11
     jmp .Lcontinue_setup_gprs
-.Lhandle_static_method:
+.Lsetup_static_bases:
+    movq -16(rREFS), %r10
+    addq $$1, %r10  // shorty + 1
+    leaq (rFP, %rbx, 1), %rdi
+    leaq (rREFS, %rbx, 1), %rbx
     LOOP_OVER_SHORTY_STORING_GPRS rsi, esi, r10, r14, rdi, rbx, .Lgpr_setup_finished
 .Lcontinue_setup_gprs:
     LOOP_OVER_SHORTY_STORING_GPRS rdx, edx, r10, r14, rdi, rbx, .Lgpr_setup_finished
@@ -1894,7 +1900,6 @@ OAT_ENTRY ExecuteNterpImpl
     LOOP_OVER_FPs r10, r14, rdi, r11, .Lxmm_setup_finished
 .Lxmm_setup_finished:
     CFI_DEFINE_DEX_PC_WITH_OFFSET(CFI_TMP, CFI_DEX, 0)
-
     // Set rIBASE
     leaq artNterpAsmInstructionStart(%rip), rIBASE
     /* start executing the instruction at rPC */
