@@ -171,6 +171,6 @@
 %def op_throw():
   EXPORT_PC
   GET_VREG %edi, rINSTq                   # edi<- vAA (exception object)
-  movq rSELF:THREAD_SELF_OFFSET, %rsi
+  movq NTERP_TF(THREAD_SELF_OFFSET), %rsi
   call SYMBOL(art_quick_deliver_exception)
   int3

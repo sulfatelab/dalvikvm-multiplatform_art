@@ -26,7 +26,7 @@
    movl (%esi), %eax
    jmp $helper
 2:
-   movq rSELF:THREAD_SELF_OFFSET, %rdi
+   movq NTERP_TF(THREAD_SELF_OFFSET), %rdi
    movq 0(%rsp), %rsi
    movq rPC, %rdx
    movq rFP, %rcx
@@ -110,7 +110,7 @@
    jmp 1b
 
 %def op_invoke_interface_slow_path():
-   movq rSELF:THREAD_SELF_OFFSET, %rdi
+   movq NTERP_TF(THREAD_SELF_OFFSET), %rdi
    movq 0(%rsp), %rsi
    movq rPC, %rdx
    movq rFP, %rcx
@@ -129,7 +129,7 @@
 %  fetch_from_thread_cache("%rdi", miss_label="1f")
    jmp $helper
 1:
-   movq rSELF:THREAD_SELF_OFFSET, %rdi
+   movq NTERP_TF(THREAD_SELF_OFFSET), %rdi
    movq 0(%rsp), %rsi
    movq rPC, %rdx
    movq rFP, %rcx
@@ -166,7 +166,7 @@
    movq MIRROR_CLASS_VTABLE_OFFSET_64(%edx, %edi, 8), %rdi
    jmp $helper
 2:
-   movq rSELF:THREAD_SELF_OFFSET, %rdi
+   movq NTERP_TF(THREAD_SELF_OFFSET), %rdi
    movq 0(%rsp), %rsi
    movq rPC, %rdx
    movq rFP, %rcx

@@ -32,7 +32,7 @@
 %  slow_path = add_slow_path(op_const_object_slow_path, helper)
    // Fast-path which gets the object from thread-local cache.
 %  fetch_from_thread_cache("%rax", miss_label=slow_path)
-   cmpq MACRO_LITERAL(0), rSELF:THREAD_READ_BARRIER_MARK_REG00_OFFSET
+   cmpq MACRO_LITERAL(0), NTERP_TF(THREAD_READ_BARRIER_MARK_REG00_OFFSET)
    jne 1f
 .L${opcode}_resume:
    SET_VREG_OBJECT %eax, rINSTq            # vAA <- value
@@ -48,7 +48,7 @@
 
 %def op_const_object_slow_path(helper):
    EXPORT_PC
-   movq rSELF:THREAD_SELF_OFFSET, %rdi
+   movq NTERP_TF(THREAD_SELF_OFFSET), %rdi
    movq 0(%rsp), %rsi
    movq rPC, %rdx
    call SYMBOL($helper)
@@ -149,9 +149,9 @@
 
 %def op_move_exception():
     /* move-exception vAA */
-    movl    rSELF:THREAD_EXCEPTION_OFFSET, %eax
+    movl    NTERP_TF(THREAD_EXCEPTION_OFFSET), %eax
     SET_VREG_OBJECT %eax, rINSTq            # fp[AA] <- exception object
-    movl    $$0, rSELF:THREAD_EXCEPTION_OFFSET
+    movl    $$0, NTERP_TF(THREAD_EXCEPTION_OFFSET)
     ADVANCE_PC_FETCH_AND_GOTO_NEXT 1
 
 %def op_move_from16(is_object="0"):

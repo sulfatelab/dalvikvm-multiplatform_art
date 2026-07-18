@@ -30,9 +30,18 @@
 #include "interpreter/shadow_frame-inl.h"
 #include "mirror/string-alloc-inl.h"
 #include "nterp_helpers.h"
+#include "thread-current-inl.h"
+#include "base/macros.h"
+#include <cstdlib>
 
 namespace art HIDDEN {
 namespace interpreter {
+
+
+// Win nterp entry helper: materialize Thread* after callee spill (sysv_abi for asm call).
+extern "C" ART_QUICK_ENTRYPOINT_ABI Thread* art_nterp_current_thread() {
+  return Thread::Current();
+}
 
 bool IsNterpSupported() {
 #ifdef ART_USE_RESTRICTED_MODE
@@ -41,11 +50,15 @@ bool IsNterpSupported() {
   // for the simulator mode. We should use switch interpreter only for now.
   return false;
 #elif defined(_WIN32)
-  // WinNT: generated mterp_x86_64 still addresses Thread via %gs (TEB on Windows)
-  // and reserves r15 as rREFS, conflicting with managed rSELF=r15
-  // (win32_tls_jit_entrypoints.md). Stay on switch interpreter until mterp is
-  // ported to THREAD_* macros + a free refs register.
-  return false;
+  // WinNT N-1: rSELF=r15, rREFS=rbp (see win32_tls_jit_entrypoints.md §15/§17).
+  // Default off until wine matrix is green; opt-in ART_WIN64_NTERP=1.
+  {
+    const char* e = getenv("ART_WIN64_NTERP");
+    if (e == nullptr || e[0] == '\0' || (e[0] == '0' && e[1] == '\0')) {
+      return false;
+    }
+  }
+  return !kUseTableLookupReadBarrier;
 #else
   switch (kRuntimeQuickCodeISA) {
     case InstructionSet::kArm:

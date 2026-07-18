@@ -14,7 +14,7 @@
    ADVANCE_PC_FETCH_AND_GOTO_NEXT 2
 2:
    EXPORT_PC
-   movq rSELF:THREAD_SELF_OFFSET, %rdi
+   movq NTERP_TF(THREAD_SELF_OFFSET), %rdi
    movq 0(%rsp), %rsi
    movq rPC, %rdx
    call nterp_get_class
@@ -37,7 +37,7 @@
    testl %eax, %eax
    jne 1b
 2:
-   cmpq $$0, rSELF:THREAD_READ_BARRIER_MARK_REG00_OFFSET
+   cmpq $$0, NTERP_TF(THREAD_READ_BARRIER_MARK_REG00_OFFSET)
    jne 4f
 3:
    EXPORT_PC
@@ -110,7 +110,7 @@
    UNPOISON_HEAP_REF esi  // Unpoison class reference poisoned in main path.
    // Go slow path if we are marking. Checking now allows
    // not going to slow path if the super class hierarchy check fails.
-   cmpq $$0, rSELF:THREAD_READ_BARRIER_MARK_REG00_OFFSET
+   cmpq $$0, NTERP_TF(THREAD_READ_BARRIER_MARK_REG00_OFFSET)
    jne 4f
    testl $$MIRROR_CLASS_IS_INTERFACE_FLAG, MIRROR_CLASS_ACCESS_FLAGS_OFFSET(%rsi)
    jne 5f
@@ -158,7 +158,7 @@
 
 .L${opcode}_init:
    EXPORT_PC
-   movq rSELF:THREAD_SELF_OFFSET, %rdi
+   movq NTERP_TF(THREAD_SELF_OFFSET), %rdi
    movq 0(%rsp), %rsi
    movq rPC, %rdx
    call nterp_get_class

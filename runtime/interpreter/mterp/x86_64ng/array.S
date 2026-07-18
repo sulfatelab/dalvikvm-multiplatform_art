@@ -140,7 +140,7 @@
     /* op vB, {vD, vE, vF, vG, vA}, class@CCCC */
     /* op {vCCCC..v(CCCC+AA-1)}, type@BBBB */
     EXPORT_PC
-    movq    rSELF:THREAD_SELF_OFFSET, OUT_ARG0
+    movq    NTERP_TF(THREAD_SELF_OFFSET), OUT_ARG0
     movq    (%rsp), OUT_ARG1
     movq    rFP, OUT_ARG2
     movq    rPC, OUT_ARG3
