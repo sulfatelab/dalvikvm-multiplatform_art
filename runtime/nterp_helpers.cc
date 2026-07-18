@@ -20,7 +20,6 @@
 #include "entrypoints/quick/callee_save_frame.h"
 #include "interpreter/mterp/nterp.h"
 #include "nterp_helpers.h"
-#include <cstring>
 #include "oat/oat_quick_method_header.h"
 #include "quick/quick_method_frame_info.h"
 
@@ -237,18 +236,6 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
       method->IsProxyMethod()) {
     return false;
   }
-#if defined(_WIN32)
-  // Residual (2026-07-18): CharsetEncoderICU/Hello under full nterp still IAE
-  // averageBytesPerChar exceeds maxBytesPerChar. Native getAve/getMax and
-  // simple VLFF packing/NFlow mimic are OK; keep F/D methods on switch.
-  {
-    const char* shorty = method->GetShorty();
-    if (shorty != nullptr &&
-        (strchr(shorty, 'F') != nullptr || strchr(shorty, 'D') != nullptr)) {
-      return false;
-    }
-  }
-#endif
   // There is no need to add the alignment padding size for comparison with aligned limit.
   size_t frame_size_without_padding = NterpGetFrameSizeWithoutPadding(method, isa);
   DCHECK_EQ(NterpGetFrameSize(method, isa), RoundUp(frame_size_without_padding, kStackAlignment));

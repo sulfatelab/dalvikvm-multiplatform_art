@@ -1078,10 +1078,20 @@ END_FUNCTION \name
 // Uses r9 as temporary.
 .macro DO_ENTRY_POINT_CHECK call_compiled_code
    // On entry, the method is %rdi, the instance is %rsi
+   // Treat both nterp entries as nterp-to-nterp. WithClinit is used when the
+   // callee still needs a class-init check; going through register packing for
+   // that case broke Win float/ref mixes (CharsetEncoder residual).
    leaq ExecuteNterpImpl(%rip), %r9
    cmpq %r9, ART_METHOD_QUICK_CODE_OFFSET_64(%rdi)
+   je  1f
+#if defined(_WIN32)
+   leaq ExecuteNterpWithClinitImpl(%rip), %r9
+   cmpq %r9, ART_METHOD_QUICK_CODE_OFFSET_64(%rdi)
    jne  VAR(call_compiled_code)
-
+#else
+   jne  VAR(call_compiled_code)
+#endif
+1:
    movq ART_METHOD_DATA_OFFSET_64(%rdi), %rax
 .endm
 
@@ -1275,10 +1285,20 @@ END_FUNCTION \name
    cmpb LITERAL(70), (rINSTq)       // Test if result type char == 'F'.
    jne .Ldone_return_\suffix
 .Lreturn_float_\suffix:
+#if defined(_WIN32)
+   // Win PE helpers (e.g. LOAD_RUNTIME_INSTANCE / MS call ABI) may clobber
+   // xmm0 while leaving the ART float bits in rax. Prefer rax, then sync xmm0.
+   movd %eax, %xmm0
+#else
    movd %xmm0, %eax
+#endif
    jmp .Ldone_return_\suffix
 .Lreturn_double_\suffix:
+#if defined(_WIN32)
+   movq %rax, %xmm0
+#else
    movq %xmm0, %rax
+#endif
 .Ldone_return_\suffix:
    /* resume execution of caller */
    .if \is_string_init
@@ -1489,10 +1509,18 @@ END_FUNCTION \name
    ADVANCE_PC_FETCH_AND_GOTO_NEXT 3
    .endif
 .Lreturn_range_double_\suffix:
+#if defined(_WIN32)
+    movq %rax, %xmm0
+#else
     movq %xmm0, %rax
+#endif
     jmp .Ldone_return_range_\suffix
 .Lreturn_range_float_\suffix:
+#if defined(_WIN32)
+    movd %eax, %xmm0
+#else
     movd %xmm0, %eax
+#endif
     jmp .Ldone_return_range_\suffix
 .endm
 

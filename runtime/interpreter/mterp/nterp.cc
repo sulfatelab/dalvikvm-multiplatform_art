@@ -84,11 +84,10 @@ bool IsNterpSupported() {
 bool CanRuntimeUseNterp() REQUIRES_SHARED(Locks::mutator_lock_) {
   Runtime* runtime = Runtime::Current();
   instrumentation::Instrumentation* instr = runtime->GetInstrumentation();
-  // Win64: nterp during early boot loses app classpath (empty File path /
-  // DexPathList[[]]) and also crashes after ClassLoader is fixed once nterp
-  // is re-enabled mid-Start. Defer nterp until Runtime::Start completes
-  // (finished_starting_), so boot + PathClassLoader use switch interp; app
-  // methods verified after that can still take nterp when ART_WIN64_NTERP=1.
+  // Win64: keep switch for early boot / ClassLoader setup (empty classpath if
+  // nterp is on too early). After Runtime::Start, finished_starting_ is true and
+  // UpgradeToNterpVisitor re-points eligible methods; late-loaded classes also
+  // take nterp via normal verification once this returns true.
   if (!runtime->IsFinishedStarting()) {
     return false;
   }

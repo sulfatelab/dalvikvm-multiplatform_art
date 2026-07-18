@@ -1195,6 +1195,56 @@ bool Runtime::Start() {
   LOG(INFO) << "Win64 Runtime::Start finished_starting_=true"
             << " can_use_nterp=" << interpreter::CanRuntimeUseNterp();
 
+#if defined(_WIN32) && defined(__x86_64__)
+  // Boot/app methods verified while CanRuntimeUseNterp() was false stay on the
+  // switch-interpreter bridge. After start, re-point eligible methods at nterp.
+  // Also force nterp when ReinitializeMethodsCode leaves the method on the
+  // switch bridge despite CanMethodUseNterp (imageless boot may report
+  // !IsDeclaringClassVerifiedMayBeDead for visibly-initialized classes).
+  if (interpreter::CanRuntimeUseNterp()) {
+    class UpgradeToNterpVisitor : public ClassVisitor {
+     public:
+      bool operator()(ObjPtr<mirror::Class> klass) override
+          REQUIRES_SHARED(Locks::mutator_lock_) {
+        PointerSize pointer_size = Runtime::Current()->GetClassLinker()->GetImagePointerSize();
+        for (ArtMethod& m : klass->GetMethods(pointer_size)) {
+          if (!m.IsInvokable() || m.IsNative() || m.IsProxyMethod()) {
+            continue;
+          }
+          if (!CanMethodUseNterp(&m)) {
+            continue;
+          }
+          instrumentation_->ReinitializeMethodsCode(&m);
+          const void* after = m.GetEntryPointFromQuickCompiledCode();
+          if (!(after == interpreter::GetNterpEntryPoint() ||
+                after == interpreter::GetNterpWithClinitEntryPoint()) &&
+              class_linker_->IsQuickToInterpreterBridge(after) &&
+              !m.StillNeedsClinitCheckMayBeDead()) {
+            m.SetEntryPointFromQuickCompiledCode(interpreter::GetNterpEntryPoint());
+            after = m.GetEntryPointFromQuickCompiledCode();
+          }
+          if (after == interpreter::GetNterpEntryPoint() ||
+              after == interpreter::GetNterpWithClinitEntryPoint()) {
+            ++upgraded_;
+          }
+        }
+        return true;
+      }
+      explicit UpgradeToNterpVisitor(ClassLinker* cl, instrumentation::Instrumentation* instr)
+          : class_linker_(cl), instrumentation_(instr), upgraded_(0) {}
+      size_t upgraded() const { return upgraded_; }
+     private:
+      ClassLinker* const class_linker_;
+      instrumentation::Instrumentation* const instrumentation_;
+      size_t upgraded_;
+    };
+    UpgradeToNterpVisitor visitor(GetClassLinker(), GetInstrumentation());
+    GetClassLinker()->VisitClasses(&visitor);
+    LOG(INFO) << "Win64 Runtime::Start upgraded eligible methods to nterp"
+              << " count=" << visitor.upgraded();
+  }
+#endif
+
   if (trace_config_.get() != nullptr && trace_config_->trace_file != "") {
     ScopedThreadStateChange tsc(self, ThreadState::kWaitingForMethodTracingStart);
     int flags = 0;

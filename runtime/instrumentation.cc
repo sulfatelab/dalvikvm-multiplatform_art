@@ -316,9 +316,24 @@ bool Instrumentation::InterpretOnly(ArtMethod* method) REQUIRES_SHARED(Locks::mu
 }
 
 static bool CanUseNterp(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_) {
-  return interpreter::CanRuntimeUseNterp() &&
-      CanMethodUseNterp(method) &&
-      method->IsDeclaringClassVerifiedMayBeDead();
+  if (!interpreter::CanRuntimeUseNterp() || !CanMethodUseNterp(method)) {
+    return false;
+  }
+  // Normal: class must be verified (lock-counting / verifier constraints).
+  if (method->IsDeclaringClassVerifiedMayBeDead()) {
+    return true;
+  }
+#if defined(_WIN32)
+  // Win imageless boot: some fully-initialized classes still report
+  // !IsVerified via the may-be-dead class path (stale from-space status),
+  // which pins them on the switch bridge and breaks nterp↔switch float
+  // packing (CharsetEncoderICU residual). If the class is already visibly
+  // initialized, treat as nterp-eligible.
+  if (!method->StillNeedsClinitCheckMayBeDead()) {
+    return true;
+  }
+#endif
+  return false;
 }
 
 const void* Instrumentation::GetOptimizedCodeFor(ArtMethod* method) {
