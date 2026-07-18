@@ -1156,6 +1156,9 @@ bool Runtime::Start() {
   }
 
   system_class_loader_ = CreateSystemClassLoader(this);
+  LOG(INFO) << "Win64 Runtime::Start after CreateSystemClassLoader"
+            << " can_use_nterp=" << interpreter::CanRuntimeUseNterp()
+            << " finished=" << IsFinishedStarting();
 
   if (!is_zygote_) {
     if (is_native_bridge_loaded_) {
@@ -1164,26 +1167,33 @@ bool Runtime::Start() {
     NativeBridgeAction action = force_native_bridge_
         ? NativeBridgeAction::kInitialize
         : NativeBridgeAction::kUnload;
+    LOG(INFO) << "Win64 Runtime::Start before InitNonZygoteOrPostFork";
     InitNonZygoteOrPostFork(self->GetJniEnv(),
                             /* is_system_server= */ false,
                             /* is_child_zygote= */ false,
                             action,
                             GetInstructionSetString(kRuntimeISA));
+    LOG(INFO) << "Win64 Runtime::Start after InitNonZygoteOrPostFork";
   }
 
   {
     ScopedObjectAccess soa(self);
+    LOG(INFO) << "Win64 Runtime::Start before StartDaemonThreads";
     StartDaemonThreads();
+    LOG(INFO) << "Win64 Runtime::Start after StartDaemonThreads";
     self->GetJniEnv()->AssertLocalsEmpty();
 
     // Send the initialized phase event. Send it after starting the Daemon threads so that agents
     // cannot delay the daemon threads from starting forever.
     callbacks_->NextRuntimePhase(RuntimePhaseCallback::RuntimePhase::kInit);
     self->GetJniEnv()->AssertLocalsEmpty();
+    LOG(INFO) << "Win64 Runtime::Start after kInit phase";
   }
 
   VLOG(startup) << "Runtime::Start exiting";
   finished_starting_ = true;
+  LOG(INFO) << "Win64 Runtime::Start finished_starting_=true"
+            << " can_use_nterp=" << interpreter::CanRuntimeUseNterp();
 
   if (trace_config_.get() != nullptr && trace_config_->trace_file != "") {
     ScopedThreadStateChange tsc(self, ThreadState::kWaitingForMethodTracingStart);

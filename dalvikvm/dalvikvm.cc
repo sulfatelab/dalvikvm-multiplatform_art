@@ -109,12 +109,16 @@ static int InvokeMain(JNIEnv* env, char** argv) {
   std::string class_name(argv[0]);
   std::replace(class_name.begin(), class_name.end(), '.', '/');
 
+  fprintf(stderr, "Win64 InvokeMain: FindClass('%s')\n", class_name.c_str());
+  fflush(stderr);
   ScopedLocalRef<jclass> klass(env, env->FindClass(class_name.c_str()));
   if (klass.get() == nullptr) {
     fprintf(stderr, "Unable to locate class '%s'\n", class_name.c_str());
     env->ExceptionDescribe();
     return EXIT_FAILURE;
   }
+  fprintf(stderr, "Win64 InvokeMain: found class, GetStaticMethodID main\n");
+  fflush(stderr);
 
   jmethodID method = env->GetStaticMethodID(klass.get(), "main", "([Ljava/lang/String;)V");
   if (method == nullptr) {
@@ -131,8 +135,37 @@ static int InvokeMain(JNIEnv* env, char** argv) {
     return EXIT_FAILURE;
   }
 
+  fprintf(stderr, "Win64 InvokeMain: CallStaticVoidMethod main begin\n");
+  fflush(stderr);
   // Invoke main().
   env->CallStaticVoidMethod(klass.get(), method, args.get());
+  const bool pending = env->ExceptionCheck();
+  fprintf(stderr, "Win64 InvokeMain: CallStaticVoidMethod main end exception=%d\n",
+          pending ? 1 : 0);
+  fflush(stderr);
+  if (pending) {
+    jthrowable thr = env->ExceptionOccurred();
+    env->ExceptionClear();
+    jclass thr_cls = env->GetObjectClass(thr);
+    jmethodID get_msg = env->GetMethodID(thr_cls, "getMessage", "()Ljava/lang/String;");
+    // class name via thr_cls.getName
+    jclass class_class = env->FindClass("java/lang/Class");
+    jmethodID class_get_name =
+        env->GetMethodID(class_class, "getName", "()Ljava/lang/String;");
+    jstring jname = reinterpret_cast<jstring>(env->CallObjectMethod(thr_cls, class_get_name));
+    const char* name = jname ? env->GetStringUTFChars(jname, nullptr) : "unknown";
+    jstring jmsg = get_msg
+        ? reinterpret_cast<jstring>(env->CallObjectMethod(thr, get_msg))
+        : nullptr;
+    const char* msg = jmsg ? env->GetStringUTFChars(jmsg, nullptr) : nullptr;
+    fprintf(stderr, "Win64 InvokeMain: exception type=%s msg=%s\n",
+            name ? name : "?", msg ? msg : "(null)");
+    fflush(stderr);
+    if (name && jname) env->ReleaseStringUTFChars(jname, name);
+    if (msg && jmsg) env->ReleaseStringUTFChars(jmsg, msg);
+    // rethrow for detach logging
+    env->Throw(thr);
+  }
 
   // Check whether there was an uncaught exception. We don't log any uncaught exception here;
   // detaching this thread will do that for us, but it will clear the exception (and invalidate

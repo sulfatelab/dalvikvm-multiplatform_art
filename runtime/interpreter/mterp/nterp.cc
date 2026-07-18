@@ -84,6 +84,14 @@ bool IsNterpSupported() {
 bool CanRuntimeUseNterp() REQUIRES_SHARED(Locks::mutator_lock_) {
   Runtime* runtime = Runtime::Current();
   instrumentation::Instrumentation* instr = runtime->GetInstrumentation();
+  // Win64: nterp during early boot loses app classpath (empty File path /
+  // DexPathList[[]]) and also crashes after ClassLoader is fixed once nterp
+  // is re-enabled mid-Start. Defer nterp until Runtime::Start completes
+  // (finished_starting_), so boot + PathClassLoader use switch interp; app
+  // methods verified after that can still take nterp when ART_WIN64_NTERP=1.
+  if (!runtime->IsFinishedStarting()) {
+    return false;
+  }
   // If the runtime is interpreter only, we currently don't use nterp as some
   // parts of the runtime (like instrumentation) make assumption on an
   // interpreter-only runtime to always be in a switch-like interpreter.

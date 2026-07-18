@@ -22,6 +22,7 @@
 #include "nterp_helpers.h"
 #include "oat/oat_quick_method_header.h"
 #include "quick/quick_method_frame_info.h"
+#include <cstring>
 
 namespace art HIDDEN {
 
@@ -236,6 +237,18 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
       method->IsProxyMethod()) {
     return false;
   }
+#if defined(_WIN32)
+  // Temporary: Win nterp float/double arg packing is incorrect (CharsetEncoder
+  // ctors throw "averageBytesPerChar exceeds maxBytesPerChar" under nterp while
+  // switch interp is fine). Exclude float-bearing methods until N-1 float ABI is fixed.
+  {
+    const char* shorty = method->GetShorty();
+    if (shorty != nullptr &&
+        (strchr(shorty, 'F') != nullptr || strchr(shorty, 'D') != nullptr)) {
+      return false;
+    }
+  }
+#endif
   // There is no need to add the alignment padding size for comparison with aligned limit.
   size_t frame_size_without_padding = NterpGetFrameSizeWithoutPadding(method, isa);
   DCHECK_EQ(NterpGetFrameSize(method, isa), RoundUp(frame_size_without_padding, kStackAlignment));

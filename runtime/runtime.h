@@ -308,6 +308,8 @@ class Runtime {
 
   // Returns the system ClassLoader which represents the CLASSPATH.
   EXPORT jobject GetSystemClassLoader() const;
+  // Safe for early startup (no CHECK); used to defer nterp until app ClassLoader exists.
+  bool HasSystemClassLoader() const { return system_class_loader_ != nullptr; }
 
   // Attaches the calling native thread to the runtime.
   EXPORT bool AttachCurrentThread(const char* thread_name,
