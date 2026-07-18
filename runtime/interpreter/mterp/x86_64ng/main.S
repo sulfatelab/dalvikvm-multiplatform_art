@@ -812,6 +812,59 @@ END_FUNCTION \name
     POP r15
 .endm
 
+// Win N-1: materialize Thread* into rSELF=r15 via C++ TLS helper.
+// Caller-save float args live in xmm0–7 under ART quick ABI (same on Win for
+// managed/nterp edges). The helper is sysv_abi and may clobber all xmm caller
+// saves — must spill them. Also preserve GP args rdi/rsi/rdx/rcx/r8/r9.
+// Optional: preserve r10 if caller holds a temp (clinit TID path).
+.macro NTERP_MATERIALIZE_RSELF_WIN preserve_r10=0
+    // GP args (method/this/args). rbx free after SPILL_ALL_CALLEE_SAVES (or unused
+    // on clinit probe path) and is callee-save — safe across the helper call.
+    pushq %rdi
+    pushq %rsi
+    pushq %rdx
+    pushq %rcx
+    pushq %r8
+    pushq %r9
+    .if \preserve_r10
+    pushq %r10
+    .endif
+    // Spill xmm0–7: ART hard-float args. C++ helper clobbers caller-save xmms.
+    subq MACRO_LITERAL(8 * 8), %rsp
+    movq %xmm0, 0(%rsp)
+    movq %xmm1, 8(%rsp)
+    movq %xmm2, 16(%rsp)
+    movq %xmm3, 24(%rsp)
+    movq %xmm4, 32(%rsp)
+    movq %xmm5, 40(%rsp)
+    movq %xmm6, 48(%rsp)
+    movq %xmm7, 56(%rsp)
+    // Must NOT keep spill base in r11: call clobbers r10/r11. Use rbx (saved).
+    movq %rsp, %rbx
+    andq $$-16, %rsp
+    call SYMBOL(art_nterp_current_thread)
+    movq %rbx, %rsp
+    movq 0(%rsp), %xmm0
+    movq 8(%rsp), %xmm1
+    movq 16(%rsp), %xmm2
+    movq 24(%rsp), %xmm3
+    movq 32(%rsp), %xmm4
+    movq 40(%rsp), %xmm5
+    movq 48(%rsp), %xmm6
+    movq 56(%rsp), %xmm7
+    addq MACRO_LITERAL(8 * 8), %rsp
+    .if \preserve_r10
+    popq %r10
+    .endif
+    popq %r9
+    popq %r8
+    popq %rcx
+    popq %rdx
+    popq %rsi
+    popq %rdi
+    movq %rax, rSELF
+.endm
+
 // Helper to setup the stack after doing a nterp to nterp call. This will setup:
 // - rNEW_FP: the new pointer to dex registers
 // - rNEW_REFS: the new pointer to references
@@ -1667,25 +1720,9 @@ OAT_ENTRY ExecuteNterpWithClinitImpl
     movl MIRROR_CLASS_CLINIT_THREAD_ID_OFFSET(%r10d), %r10d
 #if defined(_WIN32)
     // No GS Thread*; compare TID via C++ TLS helper without assuming rSELF yet.
-    pushq %rdi
-    pushq %rsi
-    pushq %rdx
-    pushq %rcx
-    pushq %r8
-    pushq %r9
-    pushq %r10
-    subq $$8, %rsp                 // 16-byte align
-    call SYMBOL(art_nterp_current_thread)
-    addq $$8, %rsp
-    movl THREAD_TID_OFFSET(%rax), %eax
-    popq %r10
-    popq %r9
-    popq %r8
-    popq %rcx
-    popq %rdx
-    popq %rsi
-    popq %rdi
-    cmpl %r10d, %eax
+    // Preserve xmm float args — may fall through to ExecuteNterpImpl.
+    NTERP_MATERIALIZE_RSELF_WIN preserve_r10=1
+    cmpl %r10d, THREAD_TID_OFFSET(rSELF)
 #else
     cmpl %r10d, NTERP_TF(THREAD_TID_OFFSET)
 #endif
@@ -1703,23 +1740,10 @@ OAT_ENTRY ExecuteNterpImpl
     SPILL_ALL_CALLEE_SAVES
 
 #if defined(_WIN32)
-    // N-1: rSELF=r15. Materialize Thread* after callee spill (r15 saved).
-    // Preserve method/args across helper (sysv_abi). After SPILL + these 6
-    // pushes, rsp is 8-mod-16 (SysV call alignment) — do not pad further.
-    pushq %rdi
-    pushq %rsi
-    pushq %rdx
-    pushq %rcx
-    pushq %r8
-    pushq %r9
-    call SYMBOL(art_nterp_current_thread)
-    movq %rax, rSELF
-    popq %r9
-    popq %r8
-    popq %rcx
-    popq %rdx
-    popq %rsi
-    popq %rdi
+    // N-1: rSELF=r15 after callee spill. Preserve GP + xmm0–7: float args for
+    // slow-path shorty entry live in xmm (ART hard-float); C++ TLS helper
+    // may clobber them (was: averageBytesPerChar exceeds maxBytesPerChar).
+    NTERP_MATERIALIZE_RSELF_WIN preserve_r10=0
 #endif
 
     movq ART_METHOD_DATA_OFFSET_64(%rdi), rPC

@@ -1529,6 +1529,10 @@ template<class T> class BuildNativeCallFrameStateMachine {
       gpr_index_--;
       if (kNativeMsX64Abi) {
         fpr_index_--;  // unified MS x64 arg slot
+        // Reserved-area FPRs are loaded as xmm0..xmm3 by index. On MS x64 the
+        // Nth parameter uses xmmN when floating, so integer/pointer params must
+        // also advance the FPR packing cursor (skip a dummy xmm slot).
+        PushFpr8(0);
       }
       PushGpr(reinterpret_cast<uintptr_t>(val));
     } else {
@@ -1550,6 +1554,7 @@ template<class T> class BuildNativeCallFrameStateMachine {
       gpr_index_--;
       if (kNativeMsX64Abi) {
         fpr_index_--;
+        PushFpr8(0);  // skip matching xmmN (MS unified slot)
       }
       if (kMultiGPRegistersWidened) {
         DCHECK_EQ(sizeof(uintptr_t), sizeof(int64_t));
@@ -1603,6 +1608,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
       gpr_index_ -= kRegistersNeededForLong;
       if (kNativeMsX64Abi) {
         fpr_index_ -= kRegistersNeededForLong;
+        for (size_t i = 0; i < kRegistersNeededForLong; ++i) {
+          PushFpr8(0);  // skip matching xmmN (MS unified slot)
+        }
       }
     } else {
       if (LongStackNeedsPadding()) {
@@ -1635,6 +1643,7 @@ template<class T> class BuildNativeCallFrameStateMachine {
       fpr_index_--;
       if (kNativeMsX64Abi) {
         gpr_index_--;  // unified MS x64 arg slot
+        PushGpr(0);  // skip matching gprN so FPR index matches param slot
       }
       if (kRegistersNeededForDouble == 1) {
         if (kNaNBoxing) {
@@ -1689,6 +1698,9 @@ template<class T> class BuildNativeCallFrameStateMachine {
       fpr_index_ -= kRegistersNeededForDouble;
       if (kNativeMsX64Abi) {
         gpr_index_ -= kRegistersNeededForDouble;
+        for (size_t i = 0; i < kRegistersNeededForDouble; ++i) {
+          PushGpr(0);  // skip matching gprN (MS unified slot)
+        }
       }
     } else if (kNativeSoftFloatAfterHardFloat) {
       // After using FP arg registers, pass FP args in general purpose registers or on the stack.

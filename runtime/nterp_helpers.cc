@@ -20,9 +20,9 @@
 #include "entrypoints/quick/callee_save_frame.h"
 #include "interpreter/mterp/nterp.h"
 #include "nterp_helpers.h"
+#include <cstring>
 #include "oat/oat_quick_method_header.h"
 #include "quick/quick_method_frame_info.h"
-#include <cstring>
 
 namespace art HIDDEN {
 
@@ -238,9 +238,10 @@ bool CanMethodUseNterp(ArtMethod* method, InstructionSet isa) {
     return false;
   }
 #if defined(_WIN32)
-  // Temporary: Win nterp float/double arg packing is incorrect (CharsetEncoder
-  // ctors throw "averageBytesPerChar exceeds maxBytesPerChar" under nterp while
-  // switch interp is fine). Exclude float-bearing methods until N-1 float ABI is fixed.
+  // Residual: CharsetEncoderICU.newInstance under nterp still ends with
+  // averageBytesPerChar exceeds maxBytesPerChar despite correct native returns
+  // (getAve=2,getMax=3) and MS generic-JNI float packing fixed for FI/IF.
+  // Keep F/D methods on switch interpreter until that path is fixed.
   {
     const char* shorty = method->GetShorty();
     if (shorty != nullptr &&
