@@ -284,13 +284,13 @@ ALWAYS_INLINE static JValue GetFieldValue(const ShadowFrame& shadow_frame, uint3
 }
 
 LIBART_PROTECTED
-extern "C" size_t NterpGetStaticField(Thread* self,
+extern "C" ART_QUICK_ENTRYPOINT_ABI size_t NterpGetStaticField(Thread* self,
                                       ArtMethod* caller,
                                       const uint16_t* dex_pc_ptr,
                                       size_t resolve_field_type);
 
 LIBART_PROTECTED
-extern "C" uint32_t NterpGetInstanceFieldOffset(Thread* self,
+extern "C" ART_QUICK_ENTRYPOINT_ABI uint32_t NterpGetInstanceFieldOffset(Thread* self,
                                                 ArtMethod* caller,
                                                 const uint16_t* dex_pc_ptr,
                                                 uint32_t* registers);

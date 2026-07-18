@@ -275,17 +275,18 @@ END_MACRO
 
 MACRO1(LOAD_RUNTIME_INSTANCE, reg)
 #if defined(_WIN32)
-    // PE helper returns Runtime** ; clobber only target reg via xchg dance.
-    // Prefer lea/mov of imported data later; helper is Phase-1 safe.
-    pushq %rcx
-    movq REG_VAR(reg), %rcx
+    // PE helper art_Runtime_instance_ptr (MS x64, no args) returns Runtime**.
+    // Stash Runtime* in r11 so restoring rax/rcx cannot wipe the destination
+    // (bug: when reg==rcx, pop %rcx overwrote the loaded Runtime* → AV at +0x340).
     pushq %rax
-    subq $40, %rsp          // shadow space + align
+    pushq %rcx
+    subq $40, %rsp          // shadow space + 16-byte align for MS call
     call art_Runtime_instance_ptr
-    movq (%rax), REG_VAR(reg)
+    movq (%rax), %r11       // Runtime*
     addq $40, %rsp
-    popq %rax
     popq %rcx
+    popq %rax
+    movq %r11, REG_VAR(reg)
 #else
     movq _ZN3art7Runtime9instance_E@GOTPCREL(%rip), REG_VAR(reg)
     movq (REG_VAR(reg)), REG_VAR(reg)

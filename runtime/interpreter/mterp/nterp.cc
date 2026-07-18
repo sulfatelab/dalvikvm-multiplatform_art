@@ -37,9 +37,14 @@
 namespace art HIDDEN {
 namespace interpreter {
 
+// Asm nterp bodies call these helpers with SysV register args on all platforms.
+// On Win64 C++ defaults to MS x64; force sysv_abi to match ART_QUICK_ENTRYPOINT_ABI.
+#define NTERP_C_ABI ART_QUICK_ENTRYPOINT_ABI
+
+
 
 // Win nterp entry helper: materialize Thread* after callee spill (sysv_abi for asm call).
-extern "C" ART_QUICK_ENTRYPOINT_ABI Thread* art_nterp_current_thread() {
+extern "C" NTERP_C_ABI Thread* art_nterp_current_thread() {
   return Thread::Current();
 }
 
@@ -142,7 +147,7 @@ void CheckNterpAsmConstants() {
   }
 }
 
-extern "C" void NterpTryFastCompile(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_) {
+extern "C" NTERP_C_ABI void NterpTryFastCompile(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_) {
   // It is important this method is not suspended because it can be called on
   // method entry and async deoptimization does not expect runtime methods other than the
   // suspend entrypoint before executing the first instruction of a Java
@@ -180,7 +185,7 @@ inline void UpdateCache(Thread* self, const uint16_t* dex_pc_ptr, T* value) {
 
 #ifdef __arm__
 
-extern "C" void NterpStoreArm32Fprs(const char* shorty,
+extern "C" NTERP_C_ABI void NterpStoreArm32Fprs(const char* shorty,
                                     uint32_t* registers,
                                     uint32_t* stack_args,
                                     const uint32_t* fprs) {
@@ -229,7 +234,7 @@ extern "C" void NterpStoreArm32Fprs(const char* shorty,
   }
 }
 
-extern "C" void NterpSetupArm32Fprs(const char* shorty,
+extern "C" NTERP_C_ABI void NterpSetupArm32Fprs(const char* shorty,
                                     uint32_t dex_register,
                                     uint32_t stack_index,
                                     uint32_t* fprs,
@@ -283,25 +288,25 @@ extern "C" void NterpSetupArm32Fprs(const char* shorty,
 
 #endif
 
-extern "C" const dex::CodeItem* NterpGetCodeItem(ArtMethod* method)
+extern "C" NTERP_C_ABI const dex::CodeItem* NterpGetCodeItem(ArtMethod* method)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
   return method->GetCodeItem();
 }
 
-extern "C" const char* NterpGetShorty(ArtMethod* method)
+extern "C" NTERP_C_ABI const char* NterpGetShorty(ArtMethod* method)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
   return method->GetInterfaceMethodIfProxy(kRuntimePointerSize)->GetShorty();
 }
 
-extern "C" const char* NterpGetShortyFromMethodId(ArtMethod* caller, uint32_t method_index)
+extern "C" NTERP_C_ABI const char* NterpGetShortyFromMethodId(ArtMethod* caller, uint32_t method_index)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
   return caller->GetDexFile()->GetMethodShorty(method_index);
 }
 
-extern "C" const char* NterpGetShortyFromInvokePolymorphic(ArtMethod* caller, uint16_t* dex_pc_ptr)
+extern "C" NTERP_C_ABI const char* NterpGetShortyFromInvokePolymorphic(ArtMethod* caller, uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
   const Instruction* inst = Instruction::At(dex_pc_ptr);
@@ -311,7 +316,7 @@ extern "C" const char* NterpGetShortyFromInvokePolymorphic(ArtMethod* caller, ui
   return caller->GetDexFile()->GetShorty(proto_idx);
 }
 
-extern "C" const char* NterpGetShortyFromInvokeCustom(ArtMethod* caller, uint16_t* dex_pc_ptr)
+extern "C" NTERP_C_ABI const char* NterpGetShortyFromInvokeCustom(ArtMethod* caller, uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
   const Instruction* inst = Instruction::At(dex_pc_ptr);
@@ -461,7 +466,7 @@ static ArtMethod* FindMethodFast(ArtMethod* caller,
 static constexpr std::array<uint8_t, 256u> kOpcodeInvokeTypes = GenerateOpcodeInvokeTypes();
 
 LIBART_PROTECTED FLATTEN
-extern "C" size_t NterpGetMethod(Thread* self,
+extern "C" NTERP_C_ABI size_t NterpGetMethod(Thread* self,
                                  ArtMethod* caller,
                                  const uint16_t* dex_pc_ptr,
                                  uint32_t* registers)
@@ -617,7 +622,7 @@ static ArtField* FindFieldSlow(Thread* self,
 }
 
 LIBART_PROTECTED
-extern "C" size_t NterpGetStaticField(Thread* self,
+extern "C" NTERP_C_ABI size_t NterpGetStaticField(Thread* self,
                                       ArtMethod* caller,
                                       const uint16_t* dex_pc_ptr,
                                       size_t resolve_field_type)  // Resolve if not zero
@@ -702,7 +707,7 @@ static size_t NterpGetLocalStaticFieldInternal(mirror::Class* cls, const uint16_
 
 // `cls` can be a from-space, see comment in `NterpGetLocalStaticFieldInternal`.
 FLATTEN
-extern "C" size_t NterpGetLocalStaticField(mirror::Class* cls, const uint16_t* dex_pc_ptr)
+extern "C" NTERP_C_ABI size_t NterpGetLocalStaticField(mirror::Class* cls, const uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
   return NterpGetLocalStaticFieldInternal(cls, dex_pc_ptr);
@@ -710,7 +715,7 @@ extern "C" size_t NterpGetLocalStaticField(mirror::Class* cls, const uint16_t* d
 
 // `cls` can be a from-space, see comment in `NterpGetLocalStaticFieldInternal`.
 FLATTEN
-extern "C" size_t NterpGetLocalStaticFieldForSPutObject(mirror::Class* cls,
+extern "C" NTERP_C_ABI size_t NterpGetLocalStaticFieldForSPutObject(mirror::Class* cls,
                                                         const uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
@@ -739,13 +744,13 @@ static size_t NterpGetLocalInstanceFieldInternal(mirror::Class* cls, const uint1
 }
 
 FLATTEN
-extern "C" size_t NterpGetLocalInstanceField(mirror::Class* cls, const uint16_t* dex_pc_ptr)
+extern "C" NTERP_C_ABI size_t NterpGetLocalInstanceField(mirror::Class* cls, const uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   return NterpGetLocalInstanceFieldInternal(cls, dex_pc_ptr);
 }
 
 FLATTEN
-extern "C" size_t NterpGetLocalInstanceFieldForIPutObject(mirror::Class* cls,
+extern "C" NTERP_C_ABI size_t NterpGetLocalInstanceFieldForIPutObject(mirror::Class* cls,
                                                           const uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   if (cls->HasTypeChecksFailure()) {
@@ -755,7 +760,7 @@ extern "C" size_t NterpGetLocalInstanceFieldForIPutObject(mirror::Class* cls,
 }
 
 LIBART_PROTECTED
-extern "C" uint32_t NterpGetInstanceFieldOffset(Thread* self,
+extern "C" NTERP_C_ABI uint32_t NterpGetInstanceFieldOffset(Thread* self,
                                                 ArtMethod* caller,
                                                 const uint16_t* dex_pc_ptr,
                                                 uint32_t* registers)
@@ -803,7 +808,7 @@ extern "C" uint32_t NterpGetInstanceFieldOffset(Thread* self,
   return resolved_field->GetOffset().Uint32Value();
 }
 
-extern "C" mirror::Object* NterpGetClass(Thread* self, ArtMethod* caller, uint16_t* dex_pc_ptr)
+extern "C" NTERP_C_ABI mirror::Object* NterpGetClass(Thread* self, ArtMethod* caller, uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   UpdateHotness(self, caller);
   const Instruction* inst = Instruction::At(dex_pc_ptr);
@@ -835,7 +840,7 @@ extern "C" mirror::Object* NterpGetClass(Thread* self, ArtMethod* caller, uint16
   return c.Ptr();
 }
 
-extern "C" mirror::Object* NterpAllocateObject(Thread* self,
+extern "C" NTERP_C_ABI mirror::Object* NterpAllocateObject(Thread* self,
                                                ArtMethod* caller,
                                                uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -868,7 +873,7 @@ extern "C" mirror::Object* NterpAllocateObject(Thread* self,
   }
 }
 
-extern "C" mirror::Object* NterpLoadObject(Thread* self, ArtMethod* caller, uint16_t* dex_pc_ptr)
+extern "C" NTERP_C_ABI mirror::Object* NterpLoadObject(Thread* self, ArtMethod* caller, uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   const Instruction* inst = Instruction::At(dex_pc_ptr);
   ClassLinker* const class_linker = Runtime::Current()->GetClassLinker();
@@ -905,7 +910,7 @@ extern "C" mirror::Object* NterpLoadObject(Thread* self, ArtMethod* caller, uint
   return nullptr;
 }
 
-extern "C" void NterpUnimplemented() {
+extern "C" NTERP_C_ABI void NterpUnimplemented() {
   LOG(FATAL) << "Unimplemented";
 }
 
@@ -984,7 +989,7 @@ static mirror::Object* DoFilledNewArray(Thread* self,
   return new_array.Ptr();
 }
 
-extern "C" mirror::Object* NterpFilledNewArray(Thread* self,
+extern "C" NTERP_C_ABI mirror::Object* NterpFilledNewArray(Thread* self,
                                                ArtMethod* caller,
                                                uint32_t* registers,
                                                uint16_t* dex_pc_ptr)
@@ -992,7 +997,7 @@ extern "C" mirror::Object* NterpFilledNewArray(Thread* self,
   return DoFilledNewArray(self, caller, dex_pc_ptr, registers, /* is_range= */ false);
 }
 
-extern "C" mirror::Object* NterpFilledNewArrayRange(Thread* self,
+extern "C" NTERP_C_ABI mirror::Object* NterpFilledNewArrayRange(Thread* self,
                                                     ArtMethod* caller,
                                                     uint32_t* registers,
                                                     uint16_t* dex_pc_ptr)
@@ -1000,7 +1005,7 @@ extern "C" mirror::Object* NterpFilledNewArrayRange(Thread* self,
   return DoFilledNewArray(self, caller, dex_pc_ptr, registers, /* is_range= */ true);
 }
 
-extern "C" jit::OsrData* NterpHotMethod(ArtMethod* method, uint16_t* dex_pc_ptr, uint32_t* vregs)
+extern "C" NTERP_C_ABI jit::OsrData* NterpHotMethod(ArtMethod* method, uint16_t* dex_pc_ptr, uint32_t* vregs)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // It is important this method is not suspended because it can be called on
   // method entry and async deoptimization does not expect runtime methods other than the
@@ -1038,7 +1043,7 @@ extern "C" jit::OsrData* NterpHotMethod(ArtMethod* method, uint16_t* dex_pc_ptr,
   return nullptr;
 }
 
-extern "C" ssize_t NterpDoPackedSwitch(const uint16_t* switchData, int32_t testVal)
+extern "C" NTERP_C_ABI ssize_t NterpDoPackedSwitch(const uint16_t* switchData, int32_t testVal)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
   const int kInstrLen = 3;
@@ -1079,7 +1084,7 @@ extern "C" ssize_t NterpDoPackedSwitch(const uint16_t* switchData, int32_t testV
  * Returns 3 if we don't find a match (it's the size of the sparse-switch
  * instruction).
  */
-extern "C" ssize_t NterpDoSparseSwitch(const uint16_t* switchData, int32_t testVal)
+extern "C" NTERP_C_ABI ssize_t NterpDoSparseSwitch(const uint16_t* switchData, int32_t testVal)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
   const int kInstrLen = 3;
@@ -1133,7 +1138,7 @@ extern "C" ssize_t NterpDoSparseSwitch(const uint16_t* switchData, int32_t testV
   return kInstrLen;
 }
 
-extern "C" void NterpFree(void* val) {
+extern "C" NTERP_C_ABI void NterpFree(void* val) {
   free(val);
 }
 

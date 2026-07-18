@@ -23,6 +23,7 @@
 
 #include "art_field-inl.h"
 #include "art_method-inl.h"
+#include "base/macros.h"
 #include "base/pointer_size.h"
 #include "base/sdk_version.h"
 #include "class_linker-inl.h"
@@ -508,7 +509,7 @@ static inline bool IsStringInit(const Instruction& instr, ArtMethod* caller)
 }
 
 LIBART_PROTECTED
-extern "C" size_t NterpGetMethod(
+extern "C" ART_QUICK_ENTRYPOINT_ABI size_t NterpGetMethod(
     Thread* self, ArtMethod* caller, const uint16_t* dex_pc_ptr, uint32_t* registers);
 
 template <InvokeType type>
