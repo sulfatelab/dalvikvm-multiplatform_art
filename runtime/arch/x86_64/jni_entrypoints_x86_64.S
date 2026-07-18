@@ -55,6 +55,15 @@ MACRO0(RESTORE_MANAGED_ARGS_DECREASE_FRAME)
     POP_ARG r9
 END_MACRO
 
+// Move Thread* into dst (SysV first arg). Win: r15; Linux: %gs:THREAD_SELF_OFFSET.
+MACRO1(MOV_THREAD_SELF, dst)
+#if defined(_WIN32)
+    movq %r15, REG_VAR(dst)
+#else
+    movq %gs:THREAD_SELF_OFFSET, REG_VAR(dst)
+#endif
+END_MACRO
+
 MACRO3(JNI_SAVE_MANAGED_ARGS_TRAMPOLINE, name, cxx_name, arg1)
 DEFINE_FUNCTION \name
     // Note: Managed callee-save registers have been saved by the JNI stub.
@@ -62,7 +71,11 @@ DEFINE_FUNCTION \name
     SAVE_MANAGED_ARGS_INCREASE_FRAME
     // Call `cxx_name()`.
     .ifnc \arg1, none
-        mov REG_VAR(arg1), %rdi     // Pass arg1.
+        .ifc \arg1, thread_self
+            MOV_THREAD_SELF rdi
+        .else
+            mov REG_VAR(arg1), %rdi     // Pass arg1.
+        .endif
     .endif
     call CALLVAR(cxx_name)          // Call cxx_name(...).
     // Restore register args RDI, RSI, RDX, RCX, R8, R9, mmx0-mmx7 and return.
@@ -78,9 +91,17 @@ DEFINE_FUNCTION \name
     INCREASE_FRAME /*mmx0*/ 8 + /*padding*/ 8
     movsd %xmm0, 0(%rsp)
     // Call `cxx_name()`.
-    mov REG_VAR(arg1), %rdi         // Pass arg1.
+    .ifc \arg1, thread_self
+        MOV_THREAD_SELF rdi
+    .else
+        mov REG_VAR(arg1), %rdi         // Pass arg1.
+    .endif
     .ifnc \arg2, none
-        mov REG_VAR(arg2), %rsi     // Pass arg2.
+        .ifc \arg2, thread_self
+            MOV_THREAD_SELF rsi
+        .else
+            mov REG_VAR(arg2), %rsi     // Pass arg2.
+        .endif
     .endif
     call CALLVAR(cxx_name)          // Call cxx_name(...).
     // Restore return registers and return.
@@ -336,30 +357,30 @@ JNI_SAVE_MANAGED_ARGS_TRAMPOLINE art_jni_read_barrier, artJniReadBarrier, none
     /*
      * Trampoline to `artJniMethodStart()` that preserves all managed arguments.
      */
-JNI_SAVE_MANAGED_ARGS_TRAMPOLINE art_jni_method_start, artJniMethodStart, gs:THREAD_SELF_OFFSET
+JNI_SAVE_MANAGED_ARGS_TRAMPOLINE art_jni_method_start, artJniMethodStart, thread_self
 
     /*
      * Trampoline to `artJniMethodEntryHook` that preserves all managed arguments.
      */
 JNI_SAVE_MANAGED_ARGS_TRAMPOLINE \
-    art_jni_method_entry_hook, artJniMethodEntryHook, gs:THREAD_SELF_OFFSET
+    art_jni_method_entry_hook, artJniMethodEntryHook, thread_self
 
     /*
      * Trampoline to `artJniMonitoredMethodStart()` that preserves all managed arguments.
      */
 JNI_SAVE_MANAGED_ARGS_TRAMPOLINE \
-    art_jni_monitored_method_start, artJniMonitoredMethodStart, gs:THREAD_SELF_OFFSET
+    art_jni_monitored_method_start, artJniMonitoredMethodStart, thread_self
 
     /*
      * Trampoline to `artJniMethodEnd()` that preserves all return registers.
      */
-JNI_SAVE_RETURN_VALUE_TRAMPOLINE art_jni_method_end, artJniMethodEnd, gs:THREAD_SELF_OFFSET, none
+JNI_SAVE_RETURN_VALUE_TRAMPOLINE art_jni_method_end, artJniMethodEnd, thread_self, none
 
     /*
      * Trampoline to `artJniMonitoredMethodEnd()` that preserves all return registers.
      */
 JNI_SAVE_RETURN_VALUE_TRAMPOLINE \
-    art_jni_monitored_method_end, artJniMonitoredMethodEnd, gs:THREAD_SELF_OFFSET, none
+    art_jni_monitored_method_end, artJniMonitoredMethodEnd, thread_self, none
 
     /*
      * Entry from JNI stub that tries to lock the object in a fast path and
@@ -439,4 +460,4 @@ END_FUNCTION art_jni_unlock_object
      */
     // This is also the slow path for art_jni_unlock_object.
 JNI_SAVE_RETURN_VALUE_TRAMPOLINE \
-    art_jni_unlock_object_no_inline, artJniUnlockObject, rbx, gs:THREAD_SELF_OFFSET
+    art_jni_unlock_object_no_inline, artJniUnlockObject, rbx, thread_self

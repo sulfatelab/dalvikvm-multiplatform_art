@@ -1549,6 +1549,14 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     // (Thread*, managed_sp, reserved_area)
     //    rdi       rsi           rdx   <= C calling convention
     //  gs:...      rbp           rsp   <= where they are
+#if defined(_WIN32)
+    // Ensure rSELF is live Thread* (C++ TLS), not a stale managed value.
+    // SysV helper; rsp after subq of reserved area is 16-byte aligned for call?
+    // After SETUP frame + push return, + subq reserved — keep alignment by testing:
+    // Prefer explicit align: sub 8 if needed. art_nterp_current_thread is sysv_abi no-arg.
+    call SYMBOL(art_nterp_current_thread)
+    movq %rax, %r15
+#endif
     THREAD_GET_SELF rdi  // Pass Thread::Current().
     movq %rbp, %rsi                    // Pass managed frame SP.
     movq %rsp, %rdx                    // Pass reserved area.
