@@ -57,10 +57,10 @@ bool IsNterpSupported() {
   return false;
 #elif defined(_WIN32)
   // WinNT N-1: rSELF=r15, rREFS=rbp (see win32_tls_jit_entrypoints.md §15/§17).
-  // Default off until wine matrix is green; opt-in ART_WIN64_NTERP=1.
+  // Product default ON (Linux-like). Opt-out with ART_WIN64_NTERP=0.
   {
     const char* e = getenv("ART_WIN64_NTERP");
-    if (e == nullptr || e[0] == '\0' || (e[0] == '0' && e[1] == '\0')) {
+    if (e != nullptr && e[0] == '0' && e[1] == '\0') {
       return false;
     }
   }

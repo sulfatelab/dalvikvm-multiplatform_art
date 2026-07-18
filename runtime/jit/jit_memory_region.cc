@@ -213,6 +213,9 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
     // In this configuration code updates are written to the executable view of the code cache,
     // and the executable view of the code cache transitions RX to RWX for the update and then
     // back to RX after the update.
+    //
+    // Win64 note: VirtualAlloc cannot MAP_FIXED-split a committed region (RemapAtEnd fails).
+    // Until win32_jit_memory.md lands, CreateJit soft-fails on that path and nterp still runs.
     base_flags = MAP_PRIVATE | MAP_ANON;
     data_pages = MemMap::MapAnonymous(
         data_cache_name.c_str(),

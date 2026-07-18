@@ -396,9 +396,8 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
   // Invocation by the interpreter, explicitly forcing interpretation over JIT to prevent
   // cycling around the various JIT/Interpreter methods that handle method invocation.
   //
-  // Win64: default still forces interpreter invoke (W-001) until quick entrypoints are
-  // product-validated. Set ART_WIN64_QUICK_INVOKE=1 to use art_quick_invoke_* which
-  // publish rSELF=r15 and bridge into quick/interpreter entrypoints.
+  // Win64: product default uses art_quick_invoke_* (rSELF=r15), matching Linux.
+  // Opt-out with ART_WIN64_QUICK_INVOKE=0 to force EnterInterpreterFromInvoke (W-001).
   bool use_interpreter_invoke =
       !runtime->IsStarted() ||
       (self->IsForceInterpreter() && !IsNative() && !IsProxyMethod() && IsInvokable());
@@ -406,7 +405,8 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
   if (IsInvokable() && !IsProxyMethod()) {
     static const bool kWin64QuickInvoke = []() {
       const char* e = getenv("ART_WIN64_QUICK_INVOKE");
-      return e != nullptr && e[0] == '1' && e[1] == '\0';
+      // Default ON; only explicit "0" forces interpreter invoke.
+      return !(e != nullptr && e[0] == '0' && e[1] == '\0');
     }();
     if (!kWin64QuickInvoke) {
       use_interpreter_invoke = true;
