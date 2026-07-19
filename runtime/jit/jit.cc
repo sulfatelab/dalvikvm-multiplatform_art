@@ -159,22 +159,52 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
                                 CompilationKind compilation_kind,
                                 bool prejit) {
 #if defined(_WIN32)
-  // D-1 residual: compiled code still NPEs Hello/System paths under wine
-  // (see win32_jit_memory.md). Create/J-1 is green; gate compile until residual closed.
-  // Opt-in: ART_WIN64_JIT=1
+  // Residual (win32_jit_memory.md §13): JIT of BOTH
+  //   StringBuilder.toString + StringFactory.newStringFromBytes
+  // yields Hello NPE data==null. Each alone is OK. Keep Create/J-1 and
+  // general D-1 compile, but skip StringFactory until that pair is fixed.
+  // Override: ART_WIN64_JIT_ALLOW_STRINGFACTORY=1
+  // Debug: ART_WIN64_JIT=0 disables all compile; ART_WIN64_JIT_EXCLUDE=...
   {
     static const bool kWin64JitCompile = []() {
       const char* e = getenv("ART_WIN64_JIT");
-      return e != nullptr && e[0] == '1' && e[1] == '\0';
+      // Default ON; only explicit "0" disables compile (Create still runs).
+      return !(e != nullptr && e[0] == '0' && e[1] == '\0');
     }();
     if (!kWin64JitCompile) {
       return false;
     }
-    static std::atomic<int> g_win_compile_logs{0};
-    if (g_win_compile_logs.fetch_add(1) < 20) {
-      LOG(INFO) << "Win64 CompileMethodInternal enter method=" << method->PrettyMethod()
-                << " kind=" << static_cast<int>(compilation_kind)
-                << " prejit=" << prejit;
+    auto match_any = [](const std::string& name, const char* list) -> bool {
+      if (list == nullptr || list[0] == '\0') return false;
+      std::string f(list);
+      size_t start = 0;
+      while (start <= f.size()) {
+        size_t comma = f.find(',', start);
+        std::string part = f.substr(
+            start, comma == std::string::npos ? std::string::npos : comma - start);
+        if (!part.empty() && name.find(part) != std::string::npos) {
+          return true;
+        }
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+      }
+      return false;
+    };
+    std::string name = method->PrettyMethod();
+    const char* filt = getenv("ART_WIN64_JIT_FILTER");
+    if (filt != nullptr && filt[0] != '\0' && !match_any(name, filt)) {
+      return false;
+    }
+    const char* excl = getenv("ART_WIN64_JIT_EXCLUDE");
+    if (excl != nullptr && excl[0] != '\0' && match_any(name, excl)) {
+      return false;
+    }
+    static const bool kAllowStringFactory = []() {
+      const char* e = getenv("ART_WIN64_JIT_ALLOW_STRINGFACTORY");
+      return e != nullptr && e[0] == '1' && e[1] == '\0';
+    }();
+    if (!kAllowStringFactory && name.find("StringFactory") != std::string::npos) {
+      return false;
     }
   }
 #endif
@@ -256,6 +286,17 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
               << ArtMethod::PrettyMethod(method_to_compile)
               << " kind=" << compilation_kind;
   }
+#if defined(_WIN32)
+  {
+    static std::atomic<int> g_win_compile_done_logs{0};
+    if (g_win_compile_done_logs.fetch_add(1) < 40) {
+      LOG(INFO) << "Win64 CompileMethod done success=" << success
+                << " method=" << ArtMethod::PrettyMethod(method_to_compile)
+                << " kind=" << compilation_kind
+                << " entry=" << method_to_compile->GetEntryPointFromQuickCompiledCode();
+    }
+  }
+#endif
   if (kIsDebugBuild) {
     if (self->IsExceptionPending()) {
       mirror::Throwable* exception = self->GetException();
