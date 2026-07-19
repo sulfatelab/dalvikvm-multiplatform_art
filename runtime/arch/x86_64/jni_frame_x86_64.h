@@ -39,16 +39,33 @@ static_assert(kNativeStackAlignment == kStackAlignment);
 constexpr size_t kMmxSpillSize = 8u;
 constexpr size_t kAlwaysSpilledMmxRegisters = 4;
 
-// XMM0..XMM7 can be used to pass the first 8 floating args. The rest must go on the stack.
-// -- Managed and JNI calling conventions.
+// Floating / integer register arg limits for the **native** (JNI) ABI used by
+// compiled FastNative stubs when calling C/C++ natives.
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+// Microsoft x64: RCX,RDX,R8,R9 and XMM0..XMM3 with unified 4-slot layout;
+// always reserve 32-byte shadow home for the callee.
+constexpr size_t kMaxFloatOrDoubleRegisterArguments = 4u;
+constexpr size_t kMaxIntLikeRegisterArguments = 4u;
+constexpr size_t kNativeShadowSpaceSize = 32u;
+#else
+// SysV AMD64: XMM0..XMM7 and RDI,RSI,RDX,RCX,R8,R9.
 constexpr size_t kMaxFloatOrDoubleRegisterArguments = 8u;
-// Up to how many integer-like (pointers, objects, longs, int, short, bool, etc) args can be
-// enregistered. The rest of the args must go on the stack.
-// -- JNI calling convention only (Managed excludes RDI, so it's actually 5).
+// JNI only (managed excludes RDI for method*, so managed uses 5).
 constexpr size_t kMaxIntLikeRegisterArguments = 6u;
+constexpr size_t kNativeShadowSpaceSize = 0u;
+#endif
 
-// Get the size of the arguments for a native call.
+// Get the size of the arguments for a native call (stack portion + shadow).
 inline size_t GetNativeOutArgsSize(size_t num_fp_args, size_t num_non_fp_args) {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  // MS x64 unified slots: each argument takes one of 4 register slots (int or
+  // float), then spills to stack. Count total args for spill math.
+  size_t total_args = num_fp_args + num_non_fp_args;
+  size_t num_stack_args =
+      total_args - std::min(kMaxIntLikeRegisterArguments, total_args);
+  static_assert(kFramePointerSize == kMmxSpillSize);
+  return kNativeShadowSpaceSize + num_stack_args * kFramePointerSize;
+#else
   // Account for FP arguments passed through Xmm0..Xmm7.
   size_t num_stack_fp_args =
       num_fp_args - std::min(kMaxFloatOrDoubleRegisterArguments, num_fp_args);
@@ -57,6 +74,7 @@ inline size_t GetNativeOutArgsSize(size_t num_fp_args, size_t num_non_fp_args) {
       num_non_fp_args - std::min(kMaxIntLikeRegisterArguments, num_non_fp_args);
   static_assert(kFramePointerSize == kMmxSpillSize);
   return (num_stack_fp_args + num_stack_non_fp_args) * kFramePointerSize;
+#endif
 }
 
 // Get stack args size for @CriticalNative method calls.

@@ -199,9 +199,9 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
     if (excl != nullptr && excl[0] != '\0' && match_any(name, excl)) {
       return false;
     }
-    // Residual pair: StringBuilder.toString + StringFactory.newStringFromBytes
-    // (native data==null / arraycopy dst==null). Skip StringFactory by default.
-    // Repro: ART_WIN64_JIT_ALLOW_STRINGFACTORY=1
+    // Residual: JIT StringFactory + StringBuilder.toString still NPE (data==null)
+    // even after Win FastNative MS ABI (intrinsic/quick path may still be involved).
+    // Default skip StringFactory; allow with ART_WIN64_JIT_ALLOW_STRINGFACTORY=1.
     static const bool kAllowStringFactory = []() {
       const char* e = getenv("ART_WIN64_JIT_ALLOW_STRINGFACTORY");
       return e != nullptr && e[0] == '1' && e[1] == '\0';

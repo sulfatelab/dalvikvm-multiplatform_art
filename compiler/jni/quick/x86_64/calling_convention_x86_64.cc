@@ -26,6 +26,14 @@
 namespace art HIDDEN {
 namespace x86_64 {
 
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+static constexpr ManagedRegister kCoreArgumentRegisters[] = {
+    X86_64ManagedRegister::FromCpuRegister(RCX),
+    X86_64ManagedRegister::FromCpuRegister(RDX),
+    X86_64ManagedRegister::FromCpuRegister(R8),
+    X86_64ManagedRegister::FromCpuRegister(R9),
+};
+#else
 static constexpr ManagedRegister kCoreArgumentRegisters[] = {
     X86_64ManagedRegister::FromCpuRegister(RDI),
     X86_64ManagedRegister::FromCpuRegister(RSI),
@@ -34,6 +42,7 @@ static constexpr ManagedRegister kCoreArgumentRegisters[] = {
     X86_64ManagedRegister::FromCpuRegister(R8),
     X86_64ManagedRegister::FromCpuRegister(R9),
 };
+#endif
 static_assert(kMaxIntLikeRegisterArguments == arraysize(kCoreArgumentRegisters));
 
 static constexpr ManagedRegister kCalleeSaveRegisters[] = {
@@ -278,6 +287,19 @@ bool X86_64JniCallingConvention::IsCurrentParamOnStack() {
 
 ManagedRegister X86_64JniCallingConvention::CurrentParamRegister() {
   ManagedRegister res = ManagedRegister::NoRegister();
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  // Microsoft x64 native ABI (matches generic-JNI packing on Win):
+  // unified 4 slots → RCX/RDX/R8/R9 or XMM0..XMM3 by argument index.
+  if (itr_args_ < kMaxIntLikeRegisterArguments) {
+    if (!IsCurrentParamAFloatOrDouble()) {
+      static constexpr Register kMsGprs[] = { RCX, RDX, R8, R9 };
+      res = X86_64ManagedRegister::FromCpuRegister(kMsGprs[itr_args_]);
+    } else {
+      res = X86_64ManagedRegister::FromXmmRegister(
+          static_cast<FloatRegister>(XMM0 + itr_args_));
+    }
+  }
+#else
   if (!IsCurrentParamAFloatOrDouble()) {
     switch (itr_args_ - itr_float_and_doubles_) {
     case 0: res = X86_64ManagedRegister::FromCpuRegister(RDI); break;
@@ -293,11 +315,18 @@ ManagedRegister X86_64JniCallingConvention::CurrentParamRegister() {
     res = X86_64ManagedRegister::FromXmmRegister(
                                  static_cast<FloatRegister>(XMM0 + itr_float_and_doubles_));
   }
+#endif
   return res;
 }
 
 FrameOffset X86_64JniCallingConvention::CurrentParamStackOffset() {
   CHECK(IsCurrentParamOnStack());
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  // Stack args after 32-byte shadow; unified slot count for spills.
+  size_t args_on_stack = itr_args_ - kMaxIntLikeRegisterArguments;
+  size_t offset = displacement_.Int32Value() - OutFrameSize()
+      + kNativeShadowSpaceSize + (args_on_stack * kFramePointerSize);
+#else
   size_t args_on_stack = itr_args_
       - std::min(kMaxFloatOrDoubleRegisterArguments,
                  static_cast<size_t>(itr_float_and_doubles_))
@@ -306,6 +335,7 @@ FrameOffset X86_64JniCallingConvention::CurrentParamStackOffset() {
                  static_cast<size_t>(itr_args_ - itr_float_and_doubles_));
           // Integer arguments passed through GPR
   size_t offset = displacement_.Int32Value() - OutFrameSize() + (args_on_stack * kFramePointerSize);
+#endif
   CHECK_LT(offset, OutFrameSize());
   return FrameOffset(offset);
 }
