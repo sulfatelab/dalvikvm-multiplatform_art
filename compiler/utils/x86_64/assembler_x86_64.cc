@@ -4942,9 +4942,12 @@ void X86_64Assembler::mfence() {
 
 
 X86_64Assembler* X86_64Assembler::gs() {
-  // TODO: gs is a prefix and not an instruction
+  // Segment override for Thread* TLS on Linux (GS base = Thread*).
+  // Win64: rSELF=r15; ThreadOffsetAddr uses R15 base and must not emit GS (TEB).
+#if !(defined(_WIN32) || defined(ART_TARGET_WINDOWS))
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
   EmitUint8(0x65);
+#endif
   return this;
 }
 

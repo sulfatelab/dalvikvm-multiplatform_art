@@ -253,6 +253,10 @@ JitCodeCache* JitCodeCache::Create(bool used_only_for_profile_data,
             << PrettySize(initial_capacity)
             << ", maximum capacity="
             << PrettySize(max_capacity);
+#if defined(_WIN32)
+  LOG(INFO) << "Win64 JitCodeCache::Create OK initial="
+            << PrettySize(initial_capacity) << " max=" << PrettySize(max_capacity);
+#endif
 
   return jit_code_cache.release();
 }

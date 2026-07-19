@@ -301,6 +301,20 @@ class Address : public Operand {
     return Absolute(addr.Int32Value(), no_rip);
   }
 
+  // Thread-local field access. Linux x86_64: absolute offset with GS base = Thread*.
+  // Win64: rSELF=r15 holds Thread*; use base+disp (see win32_jit_memory.md D-1).
+  static Address ThreadOffsetAddr(int32_t offset) {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+    return Address(CpuRegister(R15), offset);
+#else
+    return Absolute(static_cast<uintptr_t>(offset), /*no_rip=*/true);
+#endif
+  }
+
+  static Address ThreadOffsetAddr(ThreadOffset64 addr) {
+    return ThreadOffsetAddr(addr.Int32Value());
+  }
+
   // Break the address into pieces and reassemble it again with a new displacement.
   // Note that it may require a new addressing mode if displacement size is changed.
   static Address displace(const Address &addr, int32_t disp) {

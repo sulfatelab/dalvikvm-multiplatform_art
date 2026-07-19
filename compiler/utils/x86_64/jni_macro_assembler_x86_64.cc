@@ -206,9 +206,9 @@ void X86_64JNIMacroAssembler::StoreStackPointerToThread(ThreadOffset64 thr_offs,
     CpuRegister reg = GetScratchRegister();
     __ movq(reg, CpuRegister(RSP));
     __ orq(reg, Immediate(0x2));
-    __ gs()->movq(Address::Absolute(thr_offs, true), reg);
+    __ gs()->movq(Address::ThreadOffsetAddr(thr_offs), reg);
   } else {
-    __ gs()->movq(Address::Absolute(thr_offs, true), CpuRegister(RSP));
+    __ gs()->movq(Address::ThreadOffsetAddr(thr_offs), CpuRegister(RSP));
   }
 }
 
@@ -251,7 +251,7 @@ void X86_64JNIMacroAssembler::Load(ManagedRegister mdest,
 void X86_64JNIMacroAssembler::LoadRawPtrFromThread(ManagedRegister mdest, ThreadOffset64 offs) {
   X86_64ManagedRegister dest = mdest.AsX86_64();
   CHECK(dest.IsCpuRegister());
-  __ gs()->movq(dest.AsCpuRegister(), Address::Absolute(offs, true));
+  __ gs()->movq(dest.AsCpuRegister(), Address::ThreadOffsetAddr(offs));
 }
 
 void X86_64JNIMacroAssembler::SignExtend(ManagedRegister mreg, size_t size) {
@@ -500,17 +500,17 @@ void X86_64JNIMacroAssembler::Call(ManagedRegister mbase, Offset offset) {
 }
 
 void X86_64JNIMacroAssembler::CallFromThread(ThreadOffset64 offset) {
-  __ gs()->call(Address::Absolute(offset, true));
+  __ gs()->call(Address::ThreadOffsetAddr(offset));
 }
 
 void X86_64JNIMacroAssembler::GetCurrentThread(ManagedRegister dest) {
   __ gs()->movq(dest.AsX86_64().AsCpuRegister(),
-                Address::Absolute(Thread::SelfOffset<kX86_64PointerSize>(), true));
+                Address::ThreadOffsetAddr(Thread::SelfOffset<kX86_64PointerSize>()));
 }
 
 void X86_64JNIMacroAssembler::GetCurrentThread(FrameOffset offset) {
   CpuRegister scratch = GetScratchRegister();
-  __ gs()->movq(scratch, Address::Absolute(Thread::SelfOffset<kX86_64PointerSize>(), true));
+  __ gs()->movq(scratch, Address::ThreadOffsetAddr(Thread::SelfOffset<kX86_64PointerSize>()));
   __ movq(Address(CpuRegister(RSP), offset), scratch);
 }
 
@@ -529,7 +529,7 @@ void X86_64JNIMacroAssembler::TryToTransitionFromRunnableToNative(
   static_assert(kRunnableStateValue == 0u);
   __ xorl(rax, rax);
   __ movl(scratch, Immediate(kNativeStateValue));
-  __ gs()->LockCmpxchgl(Address::Absolute(thread_flags_offset.Uint32Value(), /*no_rip=*/ true),
+  __ gs()->LockCmpxchgl(Address::ThreadOffsetAddr(thread_flags_offset.Uint32Value()),
                         scratch);
   // LOCK CMPXCHG has full barrier semantics, so we don't need barriers here.
   // If any flags are set, go to the slow path.
@@ -537,7 +537,7 @@ void X86_64JNIMacroAssembler::TryToTransitionFromRunnableToNative(
 
   // Clear `self->tlsPtr_.held_mutexes[kMutatorLock]`.
   __ gs()->movq(
-      Address::Absolute(thread_held_mutex_mutator_lock_offset.Uint32Value(), /*no_rip=*/ true),
+      Address::ThreadOffsetAddr(thread_held_mutex_mutator_lock_offset.Uint32Value()),
       Immediate(0));
 }
 
@@ -568,7 +568,7 @@ void X86_64JNIMacroAssembler::TryToTransitionFromNativeToRunnable(
   __ movl(rax, Immediate(kNativeStateValue));
   static_assert(kRunnableStateValue == 0u);
   __ xorl(scratch, scratch);
-  __ gs()->LockCmpxchgl(Address::Absolute(thread_flags_offset.Uint32Value(), /*no_rip=*/ true),
+  __ gs()->LockCmpxchgl(Address::ThreadOffsetAddr(thread_flags_offset.Uint32Value()),
                         scratch);
   // LOCK CMPXCHG has full barrier semantics, so we don't need barriers here.
   if (preserve_rax) {
@@ -581,20 +581,20 @@ void X86_64JNIMacroAssembler::TryToTransitionFromNativeToRunnable(
 
   // Set `self->tlsPtr_.held_mutexes[kMutatorLock]` to the mutator lock.
   __ gs()->movq(scratch,
-                Address::Absolute(thread_mutator_lock_offset.Uint32Value(), /*no_rip=*/ true));
+                Address::ThreadOffsetAddr(thread_mutator_lock_offset.Uint32Value()));
   __ gs()->movq(
-      Address::Absolute(thread_held_mutex_mutator_lock_offset.Uint32Value(), /*no_rip=*/ true),
+      Address::ThreadOffsetAddr(thread_held_mutex_mutator_lock_offset.Uint32Value()),
       scratch);
 }
 
 void X86_64JNIMacroAssembler::SuspendCheck(JNIMacroLabel* label) {
-  __ gs()->testl(Address::Absolute(Thread::ThreadFlagsOffset<kX86_64PointerSize>(), true),
+  __ gs()->testl(Address::ThreadOffsetAddr(Thread::ThreadFlagsOffset<kX86_64PointerSize>()),
                  Immediate(Thread::SuspendOrCheckpointRequestFlags()));
   __ j(kNotZero, X86_64JNIMacroLabel::Cast(label)->AsX86_64());
 }
 
 void X86_64JNIMacroAssembler::ExceptionPoll(JNIMacroLabel* label) {
-  __ gs()->cmpl(Address::Absolute(Thread::ExceptionOffset<kX86_64PointerSize>(), true),
+  __ gs()->cmpl(Address::ThreadOffsetAddr(Thread::ExceptionOffset<kX86_64PointerSize>()),
                 Immediate(0));
   __ j(kNotEqual, X86_64JNIMacroLabel::Cast(label)->AsX86_64());
 }
@@ -602,9 +602,9 @@ void X86_64JNIMacroAssembler::ExceptionPoll(JNIMacroLabel* label) {
 void X86_64JNIMacroAssembler::DeliverPendingException() {
   // Pass exception as argument in RDI
   __ gs()->movq(CpuRegister(RDI),
-                Address::Absolute(Thread::ExceptionOffset<kX86_64PointerSize>(), true));
+                Address::ThreadOffsetAddr(Thread::ExceptionOffset<kX86_64PointerSize>()));
   __ gs()->call(
-      Address::Absolute(QUICK_ENTRYPOINT_OFFSET(kX86_64PointerSize, pDeliverException), true));
+      Address::ThreadOffsetAddr(QUICK_ENTRYPOINT_OFFSET(kX86_64PointerSize, pDeliverException)));
   // this call should never return
   __ int3();
 }
@@ -633,7 +633,7 @@ void X86_64JNIMacroAssembler::TestGcMarking(JNIMacroLabel* label, JNIMacroUnaryC
   // CMP self->tls32_.is_gc_marking, 0
   // Jcc <Offset>
   DCHECK_EQ(Thread::IsGcMarkingSize(), 4u);
-  __ gs()->cmpl(Address::Absolute(Thread::IsGcMarkingOffset<kX86_64PointerSize>(), true),
+  __ gs()->cmpl(Address::ThreadOffsetAddr(Thread::IsGcMarkingOffset<kX86_64PointerSize>()),
                 Immediate(0));
   __ j(UnaryConditionToX86_64Condition(cond), X86_64JNIMacroLabel::Cast(label)->AsX86_64());
 }

@@ -798,21 +798,56 @@ MemMap MemMap::RemapAtEnd(uint8_t* new_end,
   DCHECK_ALIGNED_PARAM(tail_base_size, GetPageSize());
 
   MEMORY_TOOL_MAKE_UNDEFINED(tail_base_begin, tail_base_size);
-  // Note: Do not explicitly unmap the tail region, mmap() with MAP_FIXED automatically
-  // removes old mappings for the overlapping region. This makes the operation atomic
-  // and prevents other threads from racing to allocate memory in the requested region.
-  uint8_t* actual = reinterpret_cast<uint8_t*>(TargetMMap(tail_base_begin,
-                                                          tail_base_size,
-                                                          tail_prot,
-                                                          flags,
-                                                          fd,
-                                                          offset));
-  if (actual == MAP_FAILED) {
-    *error_msg = StringPrintf("map(%p, %zd, 0x%x, 0x%x, %d, 0) failed: %s. See process "
-                              "maps in the log.", tail_base_begin, tail_base_size, tail_prot, flags,
-                              fd, strerror(errno));
-    PrintFileToLog("/proc/self/maps", LogSeverity::WARNING);
-    return Invalid();
+
+  uint8_t* actual = nullptr;
+  bool tail_is_reuse_view = false;
+#if defined(_WIN32)
+  // J-1 (win32_jit_memory.md): Windows cannot MAP_FIXED-split a VirtualAlloc region.
+  // For anonymous tails, change protection in place and return a non-owning (reuse)
+  // view. Destroying *this still VirtualFree's the original allocation base and
+  // releases the whole reservation (including the tail).
+  const bool anonymous_tail = (fd < 0) || ((flags & MAP_ANONYMOUS) != 0);
+  if (anonymous_tail) {
+    DWORD old_protect = 0;
+    DWORD np = PAGE_NOACCESS;
+    // Single-view JIT creates an mspace in the exec half right after RemapAtEnd
+    // (writes allocator metadata). Initial RX faults on Win (AV). Keep RWX when
+    // EXEC is requested; ScopedCodeCacheWrite later toggles RX for code pages.
+    if (tail_prot & PROT_EXEC) {
+      np = PAGE_EXECUTE_READWRITE;
+    } else if (tail_prot & PROT_WRITE) {
+      np = PAGE_READWRITE;
+    } else if (tail_prot & PROT_READ) {
+      np = PAGE_READONLY;
+    }
+    if (!::VirtualProtect(tail_base_begin, tail_base_size, np, &old_protect)) {
+      DWORD err = ::GetLastError();
+      *error_msg = StringPrintf(
+          "VirtualProtect RemapAtEnd(%p, %zd, prot=0x%x) failed: %lu",
+          tail_base_begin, tail_base_size, tail_prot, static_cast<unsigned long>(err));
+      return Invalid();
+    }
+    actual = tail_base_begin;
+    tail_is_reuse_view = true;
+  } else
+#endif
+  {
+    // Note: Do not explicitly unmap the tail region, mmap() with MAP_FIXED automatically
+    // removes old mappings for the overlapping region. This makes the operation atomic
+    // and prevents other threads from racing to allocate memory in the requested region.
+    actual = reinterpret_cast<uint8_t*>(TargetMMap(tail_base_begin,
+                                                   tail_base_size,
+                                                   tail_prot,
+                                                   flags,
+                                                   fd,
+                                                   offset));
+    if (actual == MAP_FAILED) {
+      *error_msg = StringPrintf("map(%p, %zd, 0x%x, 0x%x, %d, 0) failed: %s. See process "
+                                "maps in the log.", tail_base_begin, tail_base_size, tail_prot, flags,
+                                fd, strerror(errno));
+      PrintFileToLog("/proc/self/maps", LogSeverity::WARNING);
+      return Invalid();
+    }
   }
   // Update *this.
   if (new_base_size == 0u) {
@@ -827,8 +862,10 @@ MemMap MemMap::RemapAtEnd(uint8_t* new_end,
 
   size_ = new_size;
   base_size_ = new_base_size;
-  // Return the new mapping.
-  return MemMap(tail_name, actual, tail_size, actual, tail_base_size, tail_prot, false);
+  // Return the new mapping. On Windows anonymous tails are reuse views of the
+  // original reservation owned by *this.
+  return MemMap(tail_name, actual, tail_size, actual, tail_base_size, tail_prot,
+                /* reuse= */ tail_is_reuse_view);
 }
 
 MemMap MemMap::TakeReservedMemory(size_t byte_count, bool reuse) {

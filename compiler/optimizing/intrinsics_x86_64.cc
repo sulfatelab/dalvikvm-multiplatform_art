@@ -1844,8 +1844,7 @@ void IntrinsicLocationsBuilderX86_64::VisitThreadCurrentThread(HInvoke* invoke) 
 void IntrinsicCodeGeneratorX86_64::VisitThreadCurrentThread(HInvoke* invoke) {
   CpuRegister out = invoke->GetLocations()->Out().AsRegister<CpuRegister>();
   GetAssembler()->gs()->movl(out,
-                             Address::Absolute(Thread::CurrentPeerOffset<kX86_64PointerSize>(),
-                                               /* no_rip= */ true));
+                             Address::ThreadOffsetAddr(Thread::CurrentPeerOffset<kX86_64PointerSize>()));
 }
 
 static void GenUnsafeGet(HInvoke* invoke,
@@ -3452,7 +3451,7 @@ void IntrinsicCodeGeneratorX86_64::VisitReferenceGetReferent(HInvoke* invoke) {
   if (codegen_->EmitReadBarrier()) {
     // Check self->GetWeakRefAccessEnabled().
     ThreadOffset64 offset = Thread::WeakRefAccessEnabledOffset<kX86_64PointerSize>();
-    __ gs()->cmpl(Address::Absolute(offset, /* no_rip= */ true),
+    __ gs()->cmpl(Address::ThreadOffsetAddr(offset),
                   Immediate(enum_cast<int32_t>(WeakRefAccessState::kVisiblyEnabled)));
     __ j(kNotEqual, slow_path->GetEntryLabel());
   }
@@ -3552,8 +3551,8 @@ void IntrinsicLocationsBuilderX86_64::VisitThreadInterrupted(HInvoke* invoke) {
 void IntrinsicCodeGeneratorX86_64::VisitThreadInterrupted(HInvoke* invoke) {
   X86_64Assembler* assembler = GetAssembler();
   CpuRegister out = invoke->GetLocations()->Out().AsRegister<CpuRegister>();
-  Address address = Address::Absolute
-      (Thread::InterruptedOffset<kX86_64PointerSize>().Int32Value(), /* no_rip= */ true);
+  Address address = Address::ThreadOffsetAddr(
+      Thread::InterruptedOffset<kX86_64PointerSize>().Int32Value());
   NearLabel done;
   __ gs()->movl(out, address);
   __ testl(out, out);

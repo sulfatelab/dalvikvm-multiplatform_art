@@ -183,7 +183,7 @@ static std::unique_ptr<const std::vector<uint8_t>> CreateTrampoline(ArenaAllocat
   x86_64::X86_64Assembler assembler(allocator);
 
   // All x86 trampolines call via the Thread* held in gs.
-  __ gs()->jmp(x86_64::Address::Absolute(offset, true));
+  __ gs()->jmp(x86_64::Address::ThreadOffsetAddr(offset));
   __ int3();
 
   __ FinalizeCode();

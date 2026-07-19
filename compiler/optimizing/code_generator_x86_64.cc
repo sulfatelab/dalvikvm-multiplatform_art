@@ -62,7 +62,12 @@ static constexpr int kCurrentMethodStackOffset = 0;
 // generates less code/data with a small num_entries.
 static constexpr uint32_t kPackedSwitchJumpTableThreshold = 5;
 
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+// R15 is rSELF (Thread*) on Win64 managed code; not a general callee-save.
+static constexpr Register kCoreCalleeSaves[] = { RBX, RBP, R12, R13, R14 };
+#else
 static constexpr Register kCoreCalleeSaves[] = { RBX, RBP, R12, R13, R14, R15 };
+#endif
 static constexpr FloatRegister kFpuCalleeSaves[] = { XMM12, XMM13, XMM14, XMM15 };
 
 static constexpr int kC2ConditionMask = 0x400;
@@ -1165,7 +1170,7 @@ void CodeGeneratorX86_64::GenerateStaticOrDirectCall(
       // temp = thread->string_init_entrypoint
       uint32_t offset =
           GetThreadOffset<kX86_64PointerSize>(invoke->GetStringInitEntryPoint()).Int32Value();
-      __ gs()->movq(temp.AsRegister<CpuRegister>(), Address::Absolute(offset, /* no_rip= */ true));
+      __ gs()->movq(temp.AsRegister<CpuRegister>(), Address::ThreadOffsetAddr(offset));
       break;
     }
     case MethodLoadKind::kRecursive: {
@@ -1562,7 +1567,7 @@ void CodeGeneratorX86_64::InvokeRuntimeWithoutRecordingPcInfo(int32_t entry_poin
 }
 
 void CodeGeneratorX86_64::GenerateInvokeRuntime(int32_t entry_point_offset) {
-  __ gs()->call(Address::Absolute(entry_point_offset, /* no_rip= */ true));
+  __ gs()->call(Address::ThreadOffsetAddr(entry_point_offset));
 }
 
 namespace detail {
@@ -1649,7 +1654,12 @@ inline RegisterSet CodeGeneratorX86_64::ComputeCalleeSaves() {
 inline RegisterSet CodeGeneratorX86_64::ComputeBlockedRegisters() {
   RegisterSet blocked_registers = RegisterSet::Empty();
   // Stack register is always reserved. Block the register used as TMP.
-  blocked_registers.AddCoreRegisterSet((1u << RSP) | (1u << TMP));
+  // Win64: also block R15 (rSELF / Thread*).
+  blocked_registers.AddCoreRegisterSet((1u << RSP) | (1u << TMP)
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+                                       | (1u << R15)
+#endif
+                                       );
   return blocked_registers;
 }
 
@@ -1709,16 +1719,15 @@ void InstructionCodeGeneratorX86_64::GenerateMethodEntryExitHook(HInstruction* i
   uint64_t trace_buffer_curr_entry_offset =
       Thread::TraceBufferCurrPtrOffset<kX86_64PointerSize>().SizeValue();
   __ gs()->movq(CpuRegister(curr_entry),
-                Address::Absolute(trace_buffer_curr_entry_offset, /* no_rip= */ true));
+                Address::ThreadOffsetAddr(trace_buffer_curr_entry_offset));
   __ subq(CpuRegister(curr_entry), Immediate(kNumEntriesForWallClock * sizeof(void*)));
   __ gs()->movq(init_entry,
-                Address::Absolute(Thread::TraceBufferPtrOffset<kX86_64PointerSize>().SizeValue(),
-                                  /* no_rip= */ true));
+                Address::ThreadOffsetAddr(Thread::TraceBufferPtrOffset<kX86_64PointerSize>().SizeValue()));
   __ cmpq(curr_entry, init_entry);
   __ j(kLess, slow_path->GetEntryLabel());
 
   // Update the index in the `Thread`.
-  __ gs()->movq(Address::Absolute(trace_buffer_curr_entry_offset, /* no_rip= */ true),
+  __ gs()->movq(Address::ThreadOffsetAddr(trace_buffer_curr_entry_offset),
                 CpuRegister(curr_entry));
 
   // Record method pointer and action.
@@ -1861,14 +1870,14 @@ void CodeGeneratorX86_64::GenerateFrameEntry() {
             Address(CpuRegister(TMP), mirror::Class::ClinitThreadIdOffset().Int32Value()));
     __ gs()->cmpl(
         CpuRegister(TMP),
-        Address::Absolute(Thread::TidOffset<kX86_64PointerSize>().Int32Value(), /*no_rip=*/ true));
+        Address::ThreadOffsetAddr(Thread::TidOffset<kX86_64PointerSize>().Int32Value()));
     __ j(kEqual, &frame_entry_label_);
     __ Bind(&resolution);
 
     // Jump to the resolution stub.
     ThreadOffset64 entrypoint_offset =
         GetThreadOffset<kX86_64PointerSize>(kQuickQuickResolutionTrampoline);
-    __ gs()->jmp(Address::Absolute(entrypoint_offset, /*no_rip=*/ true));
+    __ gs()->jmp(Address::ThreadOffsetAddr(entrypoint_offset));
   }
 
   __ Bind(&frame_entry_label_);
@@ -6270,8 +6279,7 @@ void CodeGeneratorX86_64::MaybeMarkGCCard(CpuRegister temp,
 void CodeGeneratorX86_64::MarkGCCard(CpuRegister temp, CpuRegister card, CpuRegister object) {
   // Load the address of the card table into `card`.
   __ gs()->movq(card,
-                Address::Absolute(Thread::CardTableOffset<kX86_64PointerSize>().Int32Value(),
-                                  /* no_rip= */ true));
+                Address::ThreadOffsetAddr(Thread::CardTableOffset<kX86_64PointerSize>().Int32Value()));
   // Calculate the offset (in the card table) of the card corresponding to `object`.
   __ movq(temp, object);
   __ shrq(temp, Immediate(gc::accounting::CardTable::kCardShift));
@@ -6297,8 +6305,7 @@ void CodeGeneratorX86_64::CheckGCCardIsValid(CpuRegister temp,
   NearLabel done;
   // Load the address of the card table into `card`.
   __ gs()->movq(card,
-                Address::Absolute(Thread::CardTableOffset<kX86_64PointerSize>().Int32Value(),
-                                  /* no_rip= */ true));
+                Address::ThreadOffsetAddr(Thread::CardTableOffset<kX86_64PointerSize>().Int32Value()));
   // Calculate the offset (in the card table) of the card corresponding to `object`.
   __ movq(temp, object);
   __ shrq(temp, Immediate(gc::accounting::CardTable::kCardShift));
@@ -6306,7 +6313,7 @@ void CodeGeneratorX86_64::CheckGCCardIsValid(CpuRegister temp,
   __ cmpb(Address(temp, card, TIMES_1, 0), Immediate(gc::accounting::CardTable::kCardClean));
   __ j(kNotEqual, &done);
   __ gs()->cmpl(
-      Address::Absolute(Thread::IsGcMarkingOffset<kX86_64PointerSize>(), /* no_rip= */ true),
+      Address::ThreadOffsetAddr(Thread::IsGcMarkingOffset<kX86_64PointerSize>()),
       Immediate(0));
   __ j(kEqual, &done);
   __ int3();
@@ -6368,8 +6375,7 @@ void InstructionCodeGeneratorX86_64::GenerateSuspendCheck(HSuspendCheck* instruc
     DCHECK_EQ(slow_path->GetSuccessor(), successor);
   }
 
-  __ gs()->testl(Address::Absolute(Thread::ThreadFlagsOffset<kX86_64PointerSize>().Int32Value(),
-                                   /* no_rip= */ true),
+  __ gs()->testl(Address::ThreadOffsetAddr(Thread::ThreadFlagsOffset<kX86_64PointerSize>().Int32Value()),
                  Immediate(Thread::SuspendOrCheckpointRequestFlags()));
   if (successor == nullptr) {
     __ j(kNotZero, slow_path->GetEntryLabel());
@@ -7039,8 +7045,7 @@ void InstructionCodeGeneratorX86_64::VisitLoadString(HLoadString* load) NO_THREA
 }
 
 static Address GetExceptionTlsAddress() {
-  return Address::Absolute(Thread::ExceptionOffset<kX86_64PointerSize>().Int32Value(),
-                           /* no_rip= */ true);
+  return Address::ThreadOffsetAddr(Thread::ExceptionOffset<kX86_64PointerSize>().Int32Value());
 }
 
 void LocationsBuilderX86_64::VisitLoadException(HLoadException* load) {
@@ -7343,7 +7348,7 @@ void InstructionCodeGeneratorX86_64::VisitInstanceOf(HInstanceOf* instruction) {
         }
         // For Baker read barrier, take the slow path while marking.
         __ gs()->cmpl(
-            Address::Absolute(Thread::IsGcMarkingOffset<kX86_64PointerSize>(), /* no_rip= */ true),
+            Address::ThreadOffsetAddr(Thread::IsGcMarkingOffset<kX86_64PointerSize>()),
             Immediate(0));
         __ j(kNotEqual, slow_path->GetEntryLabel());
       }
@@ -7981,7 +7986,7 @@ void InstructionCodeGeneratorX86_64::GenerateGcRootFieldLoad(
       // Test the `Thread::Current()->pReadBarrierMarkReg ## root.reg()` entrypoint.
       const int32_t entry_point_offset =
           Thread::ReadBarrierMarkEntryPointsOffset<kX86_64PointerSize>(root.reg());
-      __ gs()->cmpl(Address::Absolute(entry_point_offset, /* no_rip= */ true), Immediate(0));
+      __ gs()->cmpl(Address::ThreadOffsetAddr(entry_point_offset), Immediate(0));
       // The entrypoint is null when the GC is not marking.
       __ j(kNotEqual, slow_path->GetEntryLabel());
       __ Bind(slow_path->GetExitLabel());

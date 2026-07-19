@@ -158,6 +158,27 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
                                 Thread* self,
                                 CompilationKind compilation_kind,
                                 bool prejit) {
+#if defined(_WIN32)
+  // D-1 residual: compiled code still NPEs Hello/System paths under wine
+  // (see win32_jit_memory.md). Create/J-1 is green; gate compile until residual closed.
+  // Opt-in: ART_WIN64_JIT=1
+  {
+    static const bool kWin64JitCompile = []() {
+      const char* e = getenv("ART_WIN64_JIT");
+      return e != nullptr && e[0] == '1' && e[1] == '\0';
+    }();
+    if (!kWin64JitCompile) {
+      return false;
+    }
+    static std::atomic<int> g_win_compile_logs{0};
+    if (g_win_compile_logs.fetch_add(1) < 20) {
+      LOG(INFO) << "Win64 CompileMethodInternal enter method=" << method->PrettyMethod()
+                << " kind=" << static_cast<int>(compilation_kind)
+                << " prejit=" << prejit;
+    }
+  }
+#endif
+
   DCHECK(Runtime::Current()->UseJitCompilation());
   DCHECK(!method->IsRuntimeMethod());
 
