@@ -199,15 +199,18 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
     if (excl != nullptr && excl[0] != '\0' && match_any(name, excl)) {
       return false;
     }
-    // Residual: JIT StringFactory + StringBuilder.toString still NPE (data==null)
-    // even after Win FastNative MS ABI (intrinsic/quick path may still be involved).
-    // Default skip StringFactory; allow with ART_WIN64_JIT_ALLOW_STRINGFACTORY=1.
-    static const bool kAllowStringFactory = []() {
-      const char* e = getenv("ART_WIN64_JIT_ALLOW_STRINGFACTORY");
-      return e != nullptr && e[0] == '1' && e[1] == '\0';
-    }();
-    if (!kAllowStringFactory && name.find("StringFactory") != std::string::npos) {
-      return false;
+    // Compiled FastNative stubs still mangle multi-arg natives on Win
+    // (data==null with garbage high/offset even after MS register layout).
+    // Generic JNI trampoline is correct; skip JIT of natives by default.
+    // Override: ART_WIN64_JIT_NATIVE=1
+    if (method->IsNative()) {
+      static const bool kAllowNative = []() {
+        const char* e = getenv("ART_WIN64_JIT_NATIVE");
+        return e != nullptr && e[0] == '1' && e[1] == '\0';
+      }();
+      if (!kAllowNative) {
+        return false;
+      }
     }
   }
 #endif
