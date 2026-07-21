@@ -292,4 +292,115 @@ int MemMap::TargetMUnmap(void* start, size_t len) {
   return -1;
 }
 
+
+// J-2 pagefile section dual-view helpers (win32_jit_memory.md §14).
+
+void* MemMap::CreatePageFileSection(size_t capacity, std::string* error_msg) {
+  DWORD size_hi = static_cast<DWORD>((capacity >> 32) & 0xFFFFFFFFULL);
+  DWORD size_lo = static_cast<DWORD>(capacity & 0xFFFFFFFFULL);
+
+  HANDLE hSection = ::CreateFileMappingW(
+      INVALID_HANDLE_VALUE,       // paging file
+      nullptr,                    // default security
+      PAGE_EXECUTE_READWRITE,     // allow RX and RW views
+      size_hi,
+      size_lo,
+      nullptr);                   // unnamed
+
+  if (hSection == nullptr) {
+    DWORD error = ::GetLastError();
+    *error_msg = android::base::StringPrintf(
+        "CreateFileMapping(size=%zu) failed: %lu", capacity, error);
+    return nullptr;
+  }
+
+  return static_cast<void*>(hSection);
+}
+
+MemMap MemMap::MapFileSection(void* hSection,
+                              size_t byte_count,
+                              int prot,
+                              bool low_4gb,
+                              size_t start_offset,
+                              const char* name,
+                              std::string* error_msg) {
+  if (hSection == nullptr || byte_count == 0) {
+    *error_msg = "MapFileSection: null handle or zero size";
+    return Invalid();
+  }
+
+  HANDLE h = static_cast<HANDLE>(hSection);
+
+  DWORD desired_access = 0;
+  if ((prot & PROT_WRITE) != 0) {
+    desired_access = FILE_MAP_WRITE;
+  } else if ((prot & PROT_EXEC) != 0) {
+    desired_access = FILE_MAP_EXECUTE | FILE_MAP_READ;
+  } else if ((prot & PROT_READ) != 0) {
+    desired_access = FILE_MAP_READ;
+  } else {
+    desired_access = 0;
+  }
+
+  DWORD offset_high = static_cast<DWORD>((start_offset >> 32) & 0xFFFFFFFFULL);
+  DWORD offset_low  = static_cast<DWORD>(start_offset & 0xFFFFFFFFULL);
+
+  void* view = nullptr;
+
+  if (low_4gb) {
+    // Scan low 4 GB for a free region that fits
+    const uintptr_t gran = allocation_granularity > 0
+                               ? static_cast<uintptr_t>(allocation_granularity)
+                               : 64u * 1024u;
+    const uintptr_t limit = (4ull << 30);
+    uintptr_t addr = gran;
+    MEMORY_BASIC_INFORMATION mbi;
+    while (addr + byte_count <= limit) {
+      SIZE_T q = VirtualQuery(reinterpret_cast<void*>(addr), &mbi, sizeof(mbi));
+      if (q == 0) break;
+      uintptr_t region_base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+      uintptr_t region_end = region_base + static_cast<uintptr_t>(mbi.RegionSize);
+      if (mbi.State == MEM_FREE) {
+        uintptr_t try_addr = (addr + gran - 1u) & ~(gran - 1u);
+        if (try_addr < region_base) {
+          try_addr = (region_base + gran - 1u) & ~(gran - 1u);
+        }
+        if (try_addr >= region_base && try_addr + byte_count <= region_end &&
+            try_addr + byte_count <= limit) {
+          view = MapViewOfFileEx(h, desired_access, offset_high, offset_low,
+                                  byte_count, reinterpret_cast<void*>(try_addr));
+          if (view != nullptr) break;
+        }
+      }
+      uintptr_t next = region_end > addr ? region_end : (addr + gran);
+      if (next <= addr) next = addr + gran;
+      addr = next;
+    }
+  }
+
+  if (view == nullptr) {
+    view = MapViewOfFileEx(h, desired_access, offset_high, offset_low,
+                            byte_count, nullptr);
+    if (view == nullptr) {
+      view = MapViewOfFile(h, desired_access, offset_high, offset_low, byte_count);
+    }
+  }
+
+  if (view == nullptr) {
+    DWORD error = ::GetLastError();
+    *error_msg = android::base::StringPrintf(
+        "MapViewOfFile(offset=%zu, size=%zu, prot=%d) failed: %lu",
+        start_offset, byte_count, prot, error);
+    return Invalid();
+  }
+
+  return MemMap(name,
+                reinterpret_cast<uint8_t*>(view),
+                byte_count,
+                view,
+                byte_count,
+                prot,
+                /*reuse=*/false);
+}
+
 }  // namespace art

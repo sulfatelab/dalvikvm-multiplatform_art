@@ -101,13 +101,84 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
     }
   }
 
+  // J-2 gate: when true, skip single-view allocation (mappings already set up).
+  bool j2_complete = false;
+// j2_complete flag (see below for _WIN32 J-2 block)
   // Map name specific for android_os_Debug.cpp accounting.
   std::string data_cache_name = is_zygote ? "zygote-data-code-cache" : "data-code-cache";
   std::string exec_cache_name = is_zygote ? "zygote-jit-code-cache" : "jit-code-cache";
 
   std::string error_str;
+
+#if defined(_WIN32)
+  // J-2 (win32_jit_memory.md §14): Try pagefile section dual-view when
+  // memfd_create is unavailable (always on Windows). Gate behind env var
+  // ART_WIN64_JIT_DUAL until validated; fall back to J-1 on failure.
+  if (mem_fd.get() < 0 && rwx_memory_allowed) {
+    static const bool kTryJ2 = []() {
+      const char* e = getenv("ART_WIN64_JIT_DUAL");
+      return e != nullptr && e[0] == '1';  // default: off; opt-in with ART_WIN64_JIT_DUAL=1
+    }();
+    if (kTryJ2) {
+      std::string j2_error;
+      void* hSection = MemMap::CreatePageFileSection(capacity, &j2_error);
+      if (hSection != nullptr) {
+        std::string non_exec_name = exec_cache_name + "-rw";
+        non_exec_pages = MemMap::MapFileSection(
+            hSection, exec_capacity, kProtRW, /*low_4gb=*/false,
+            data_capacity, non_exec_name.c_str(), &j2_error);
+        if (non_exec_pages.IsValid()) {
+          std::string writable_data_name = data_cache_name + "-rw";
+          writable_data_pages = MemMap::MapFileSection(
+              hSection, data_capacity, kProtRW, /*low_4gb=*/false,
+              0, writable_data_name.c_str(), &j2_error);
+        }
+        if (non_exec_pages.IsValid() && writable_data_pages.IsValid()) {
+          // Create executable view of code region (RX)
+          std::string exec_name = exec_cache_name + "-rx";
+          exec_pages = MemMap::MapFileSection(
+              hSection, exec_capacity,
+              kProtRX, /*low_4gb=*/false,
+              data_capacity, exec_name.c_str(), &j2_error);
+          if (exec_pages.IsValid()) {
+            // Create primary readable data view in low 4 GB
+            data_pages = MemMap::MapFileSection(
+                hSection, data_capacity + exec_capacity,
+                kProtR, /*low_4gb=*/true,
+                0, data_cache_name.c_str(), &j2_error);
+          }
+        }
+        ::CloseHandle(static_cast<HANDLE>(hSection));
+        if (data_pages.IsValid() && exec_pages.IsValid()) {
+          LOG(INFO) << "Win64 JIT dual-view (J-2) created: capacity="
+                    << (capacity >> 20) << "MiB; falling through to mspace init";
+          // exec_capacity is const; RemapAtEnd on MapAnonymous region is harmless (guard prevents overwrite)
+          // Set up dual-view pointers
+          exec_pages_ = std::move(exec_pages);
+          non_exec_pages_ = std::move(non_exec_pages);
+          if (writable_data_pages.IsValid()) {
+            writable_data_pages_ = std::move(writable_data_pages);
+          }
+          VLOG(jit) << "Created JitMemoryRegion (J-2 dual-view)"
+                    << ", data_pages=" << reinterpret_cast<void*>(data_pages.Begin())
+                    << ", exec_pages=" << reinterpret_cast<void*>(exec_pages_.Begin())
+                    << ", non_exec_pages=" << reinterpret_cast<void*>(non_exec_pages_.Begin());
+          return /*capacity*/ data_pages.BaseSize() - data_pages.Size() +
+                 data_pages.Size();
+        } else {
+          LOG(WARNING) << "Win64 JIT dual-view primary map failed: " << j2_error
+                       << "; falling back to single-view (J-1)";
+        }
+      } else {
+        LOG(WARNING) << "Win64 JIT dual-view CreateFileMapping failed: " << j2_error
+                     << "; falling back to single-view (J-1)";
+      }
+    }
+  }
+#endif
+
   int base_flags;
-  if (mem_fd.get() >= 0) {
+  if (!j2_complete && mem_fd.get() >= 0) {
     // Dual view of JIT code cache case. Create an initial mapping of data pages large enough
     // for data and non-writable view of JIT code pages. We use the memory file descriptor to
     // enable dual mapping - we'll create a second mapping using the descriptor below. The
@@ -140,7 +211,7 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
 
     // Create the writable mappings now, so that in case of the zygote, we can
     // prevent any future writable mappings through sealing.
-    if (exec_capacity > 0) {
+    if (!j2_complete && exec_capacity > 0) {
       // For dual view, create the secondary view of code memory used for updating code. This view
       // is never executable.
       std::string name = exec_cache_name + "-rw";
@@ -225,14 +296,14 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
         &error_str);
   }
 
-  if (!data_pages.IsValid()) {
+  if (!j2_complete && !data_pages.IsValid()) {
     std::ostringstream oss;
     oss << "Failed to create read write cache: " << error_str << " size=" << capacity;
     *error_msg = oss.str();
     return false;
   }
 
-  if (exec_capacity > 0) {
+  if (!j2_complete && exec_capacity > 0) {
     uint8_t* const divider = data_pages.Begin() + data_capacity;
     // Set initial permission for executable view to catch any SELinux permission problems early
     // (for processes that cannot map WX pages). Otherwise, this region does not need to be
@@ -254,10 +325,20 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
     // Profiling only. No memory for code required.
   }
 
-  data_pages_ = std::move(data_pages);
-  exec_pages_ = std::move(exec_pages);
-  non_exec_pages_ = std::move(non_exec_pages);
-  writable_data_pages_ = std::move(writable_data_pages);
+  if (!j2_complete) {
+    if (!data_pages_.IsValid()) {
+      data_pages_ = std::move(data_pages);
+    }
+    if (!exec_pages_.IsValid()) {
+      exec_pages_ = std::move(exec_pages);
+    }
+    if (!non_exec_pages_.IsValid()) {
+      non_exec_pages_ = std::move(non_exec_pages);
+    }
+    if (!writable_data_pages_.IsValid()) {
+      writable_data_pages_ = std::move(writable_data_pages);
+    }
+  }
 
   VLOG(jit) << "Created JitMemoryRegion"
             << ": data_pages=" << reinterpret_cast<void*>(data_pages_.Begin())
@@ -267,7 +348,7 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
 
   // Now that the pages are initialized, initialize the spaces.
 
-  // Initialize the data heap.
+// Initialize the data heap.
   data_mspace_ = create_mspace_with_base(
       HasDualDataMapping() ? writable_data_pages_.Begin() : data_pages_.Begin(),
       data_end_,

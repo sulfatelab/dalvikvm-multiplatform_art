@@ -200,6 +200,23 @@ class MemMap {
   // The region is not considered to be owned and will not be unmmaped.
   static MemMap MapPlaceholder(const char* name, uint8_t* addr, size_t byte_count);
 
+#ifdef _WIN32
+  // J-2 (win32_jit_memory.md §14): Create a file mapping backed by the system
+  // paging file (no on-disk file). Returns NULL on failure.
+  static void* CreatePageFileSection(size_t capacity, std::string* error_msg);
+
+  // J-2: Map a view of a section HANDLE. Mirrors MapFile but takes a section
+  // handle instead of fd. start_offset is relative to section begin.
+  // On success, returns a valid MemMap. On failure, returns an invalid MemMap.
+  static MemMap MapFileSection(void* hSection,
+                               size_t byte_count,
+                               int prot,
+                               bool low_4gb,
+                               size_t start_offset,
+                               const char* name,
+                               std::string* error_msg);
+#endif
+
   // Map part of a file, taking care of non-page aligned offsets. The
   // "start" offset is absolute, not relative.
   //
