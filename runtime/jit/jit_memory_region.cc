@@ -117,7 +117,7 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
   if (mem_fd.get() < 0 && rwx_memory_allowed) {
     static const bool kTryJ2 = []() {
       const char* e = getenv("ART_WIN64_JIT_DUAL");
-      return e != nullptr && e[0] == '1';  // default: off; opt-in with ART_WIN64_JIT_DUAL=1
+      return e == nullptr || e[0] != '0';  // default: on; opt-out with ART_WIN64_JIT_DUAL=0
     }();
     if (kTryJ2) {
       std::string j2_error;
