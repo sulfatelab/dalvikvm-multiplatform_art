@@ -154,6 +154,7 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
                     << (capacity >> 20) << "MiB; falling through to mspace init";
           // exec_capacity is const; RemapAtEnd on MapAnonymous region is harmless (guard prevents overwrite)
           // Set up dual-view pointers
+          data_pages_ = std::move(data_pages);
           exec_pages_ = std::move(exec_pages);
           non_exec_pages_ = std::move(non_exec_pages);
           if (writable_data_pages.IsValid()) {

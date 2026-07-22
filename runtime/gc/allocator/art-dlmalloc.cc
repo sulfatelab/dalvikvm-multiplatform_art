@@ -70,7 +70,33 @@ static void art_heap_usage_error(const char* function, void* p);
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #pragma GCC diagnostic ignored "-Wnull-pointer-arithmetic"
 #pragma GCC diagnostic ignored "-Wexpansion-to-defined"
+// Force GCC-style spin locks: USE_SPIN_LOCKS=1 enables USE_LOCKS,
+// which selects the spin-lock path in dlmalloc.c's lock implementation.
+// Spin locks use pure CPU instructions (lock cmpxchg/xchg) — no system calls,
+// no pthreads, no InitializeCriticalSection. Works on any writable memory
+// including MapViewOfFile section views (J-2 dual-view requirement).
+//
+// clang --target=x86_64-pc-windows-msvc defines _MSC_VER but not __GNUC__,
+// so dlmalloc's spin-lock CAS_LOCK falls to the Win32 interlockedexchange()
+// stub — which uses the wrong case. Fix the symbol before inclusion.
+#ifndef USE_SPIN_LOCKS
+#define USE_SPIN_LOCKS 1
+#endif
+// clang --target=x86_64-pc-windows-msvc defines _MSC_VER but not __GNUC__.
+// Force __GNUC__ so dlmalloc selects the GCC spin-lock path (uses
+// __sync_lock_test_and_set / inline asm on x86_64, which clang supports)
+// instead of the broken Win32 interlockedexchange() path.
+#ifndef __GNUC__
+#define ART_DLMALLOC_TMP_GNUC
+#define __GNUC__ 4
+#define __GNUC_MINOR__ 2
+#endif
 #include "dlmalloc.c"  // NOLINT
+#ifdef ART_DLMALLOC_TMP_GNUC
+#undef __GNUC__
+#undef __GNUC_MINOR__
+#undef ART_DLMALLOC_TMP_GNUC
+#endif
 // Note: dlmalloc.c uses a DEBUG define to drive debug code. This interferes with the DEBUG severity
 //       of libbase, so undefine it now.
 #undef DEBUG
