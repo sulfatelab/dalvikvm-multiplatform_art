@@ -159,12 +159,12 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
           if (writable_data_pages.IsValid()) {
             writable_data_pages_ = std::move(writable_data_pages);
           }
+          j2_complete = true;
           VLOG(jit) << "Created JitMemoryRegion (J-2 dual-view)"
                     << ", data_pages=" << reinterpret_cast<void*>(data_pages.Begin())
                     << ", exec_pages=" << reinterpret_cast<void*>(exec_pages_.Begin())
                     << ", non_exec_pages=" << reinterpret_cast<void*>(non_exec_pages_.Begin());
-          return /*capacity*/ data_pages.BaseSize() - data_pages.Size() +
-                 data_pages.Size();
+          // j2_complete=true → skip single-view, fall through to mspace init
         } else {
           LOG(WARNING) << "Win64 JIT dual-view primary map failed: " << j2_error
                        << "; falling back to single-view (J-1)";
