@@ -42,6 +42,17 @@ namespace jit {
 // TODO: Make this adjustable. Currently must be 2. JitCodeCache relies on that.
 static constexpr size_t kCodeAndDataCapacityDivider = 2;
 
+#if defined(_WIN32)
+static void CheckJitSectionView(const MemMap& map,
+                                const void* allocation_base,
+                                DWORD expected_protect) {
+  MEMORY_BASIC_INFORMATION info = {};
+  CHECK_EQ(::VirtualQuery(map.Begin(), &info, sizeof(info)), sizeof(info));
+  CHECK_EQ(info.AllocationBase, allocation_base);
+  CHECK_EQ(info.Protect, expected_protect);
+}
+#endif
+
 bool JitMemoryRegion::Initialize(size_t initial_capacity,
                                  size_t max_capacity,
                                  bool rwx_memory_allowed,
@@ -64,6 +75,7 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
 
   // File descriptor enabling dual-view mapping of code section.
   unique_fd mem_fd;
+  std::string dual_view_error;
 
 
   // The memory mappings we are going to create.
@@ -86,13 +98,16 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
     if (mem_fd.get() < 0) {
       std::ostringstream oss;
       oss << "Failed to initialize dual view JIT. memfd_create() error: " << strerror(errno);
+      dual_view_error = oss.str();
+#if !defined(_WIN32)
       if (!rwx_memory_allowed) {
         // Without using RWX page permissions, the JIT can not fallback to single mapping as it
         // requires tranitioning the code pages to RWX for updates.
-        *error_msg = oss.str();
+        *error_msg = dual_view_error;
         return false;
       }
-      VLOG(jit) << oss.str();
+#endif
+      VLOG(jit) << dual_view_error;
     } else if (ftruncate(mem_fd, capacity) != 0) {
       std::ostringstream oss;
       oss << "Failed to initialize memory file: " << strerror(errno);
@@ -110,13 +125,12 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
   std::string error_str;
 
 #if defined(_WIN32)
-  // J-2 (win32_jit_memory.md): Try pagefile section dual-view when
-  // memfd_create is unavailable (always on Windows). Gate behind env var
-  // ART_WIN64_JIT_DUAL until validated; fall back to J-1 on failure.
-  if (mem_fd.get() < 0 && rwx_memory_allowed) {
+  // Use a pagefile-section dual view when memfd_create is unavailable (always on Windows).
+  // This is the default; ART_WIN64_JIT_DUAL=0 retains J-1 as a diagnostic fallback.
+  if (mem_fd.get() < 0) {
     static const bool kTryJ2 = []() {
       const char* e = getenv("ART_WIN64_JIT_DUAL");
-      return e != nullptr && e[0] == '1';  // default: off; opt-in with ART_WIN64_JIT_DUAL=1
+      return e == nullptr || e[0] != '0';
     }();
     if (kTryJ2) {
       std::string j2_error;
@@ -170,6 +184,22 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
 
           if (primary.IsValid() && exec.IsValid() &&
               writable.IsValid() && non_exec.IsValid()) {
+            CHECK_EQ(primary.Size(), data_capacity);
+            CHECK_EQ(exec.Size(), exec_capacity);
+            CHECK_EQ(writable.Size(), data_capacity);
+            CHECK_EQ(non_exec.Size(), exec_capacity);
+            CHECK_EQ(primary.End(), exec.Begin());
+            CHECK_EQ(writable.End(), non_exec.Begin());
+            CHECK_LT(reinterpret_cast<uintptr_t>(exec.End()), 4u * GB);
+            CHECK_EQ(primary.GetProtect(), kProtR);
+            CHECK_EQ(exec.GetProtect(), kProtRX);
+            CHECK_EQ(writable.GetProtect(), kProtRW);
+            CHECK_EQ(non_exec.GetProtect(), kProtRW);
+            CheckJitSectionView(primary, primary.Begin(), PAGE_READONLY);
+            CheckJitSectionView(exec, primary.Begin(), PAGE_EXECUTE_READ);
+            CheckJitSectionView(writable, writable.Begin(), PAGE_READWRITE);
+            CheckJitSectionView(non_exec, writable.Begin(), PAGE_READWRITE);
+
             data_pages = std::move(primary);
             exec_pages = std::move(exec);
             writable_data_pages = std::move(writable);
@@ -182,16 +212,23 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
           LOG(INFO) << "Win64 JIT dual-view (J-2) created: capacity="
                     << (capacity >> 20) << "MiB; falling through to mspace init";
         } else {
+          dual_view_error = j2_error;
           LOG(WARNING) << "Win64 JIT dual-view construction failed: " << j2_error
                        << "; falling back to single-view (J-1)";
         }
       } else {
+        dual_view_error = j2_error;
         LOG(WARNING) << "Win64 JIT dual-view CreateFileMapping failed: " << j2_error
                      << "; falling back to single-view (J-1)";
       }
     }
   }
 #endif
+
+  if (!j2_complete && mem_fd.get() < 0 && !rwx_memory_allowed) {
+    *error_msg = dual_view_error;
+    return false;
+  }
 
   int base_flags;
   if (!j2_complete && mem_fd.get() >= 0) {
