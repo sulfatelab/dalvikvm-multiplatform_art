@@ -149,6 +149,15 @@ bool FlushCpuCaches(void* begin, void* end) {
   return true;
 }
 
+#elif defined(_WIN32)
+
+bool FlushCpuCaches(void* begin, void* end) {
+  return ::FlushInstructionCache(
+             ::GetCurrentProcess(),
+             begin,
+             reinterpret_cast<uintptr_t>(end) - reinterpret_cast<uintptr_t>(begin)) != FALSE;
+}
+
 #else
 
 bool FlushCpuCaches(void* begin, void* end) {
