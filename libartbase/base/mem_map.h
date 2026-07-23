@@ -201,12 +201,12 @@ class MemMap {
   static MemMap MapPlaceholder(const char* name, uint8_t* addr, size_t byte_count);
 
 #ifdef _WIN32
-  // J-2 (win32_jit_memory.md §14): Create a file mapping backed by the system
-  // paging file (no on-disk file). Returns NULL on failure.
+  // Create an unnamed mapping backed by the system paging file. Returns NULL
+  // on failure. The mapping object permits separate R, RX, and RW views.
   static void* CreatePageFileSection(size_t capacity, std::string* error_msg);
 
-  // J-2: Map a view of a section HANDLE. Mirrors MapFile but takes a section
-  // handle instead of fd. start_offset is relative to section begin.
+  // Map a view of a section HANDLE. Mirrors MapFile but takes a section handle
+  // instead of an fd. start_offset is relative to the section beginning.
   // On success, returns a valid MemMap. On failure, returns an invalid MemMap.
   static MemMap MapFileSection(void* hSection,
                                size_t byte_count,
@@ -215,6 +215,15 @@ class MemMap {
                                size_t start_offset,
                                const char* name,
                                std::string* error_msg);
+
+  // Split one complete Windows view into an owning prefix and a non-owning
+  // tail. Protections are changed in place; no backing-store remap occurs.
+  // This is used for the JIT's primary R/RX view and complete RW alias.
+  MemMap SplitViewAtEnd(uint8_t* new_end,
+                        const char* tail_name,
+                        int head_prot,
+                        int tail_prot,
+                        std::string* error_msg);
 #endif
 
   // Map part of a file, taking care of non-page aligned offsets. The

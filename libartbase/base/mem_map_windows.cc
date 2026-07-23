@@ -17,6 +17,7 @@
 #include "mem_map.h"
 
 #include <io.h>
+#include <limits>
 #include <windows.h>
 // This include needs to be here due to the coding conventions.  Unfortunately
 // it drags in the definition of the ERROR macro. Similarly to base/utils.cc,
@@ -293,7 +294,7 @@ int MemMap::TargetMUnmap(void* start, size_t len) {
 }
 
 
-// J-2 pagefile section dual-view helpers (win32_jit_memory.md §14).
+// Pagefile-section helpers for the Win64 JIT dual-view mapping.
 
 void* MemMap::CreatePageFileSection(size_t capacity, std::string* error_msg) {
   DWORD size_hi = static_cast<DWORD>((capacity >> 32) & 0xFFFFFFFFULL);
@@ -330,67 +331,52 @@ MemMap MemMap::MapFileSection(void* hSection,
   }
 
   HANDLE h = static_cast<HANDLE>(hSection);
-
-  DWORD desired_access = 0;
-  if ((prot & PROT_WRITE) != 0) {
-    desired_access = FILE_MAP_WRITE;
-  } else if ((prot & PROT_EXEC) != 0) {
-    desired_access = FILE_MAP_EXECUTE | FILE_MAP_READ;
-  } else if ((prot & PROT_READ) != 0) {
-    desired_access = FILE_MAP_READ;
-  } else {
-    desired_access = 0;
-  }
-
-  DWORD offset_high = static_cast<DWORD>((start_offset >> 32) & 0xFFFFFFFFULL);
-  DWORD offset_low  = static_cast<DWORD>(start_offset & 0xFFFFFFFFULL);
-
-  void* view = nullptr;
-
+  MEM_EXTENDED_PARAMETER parameter = {};
+  MEM_ADDRESS_REQUIREMENTS requirements = {};
+  MEM_EXTENDED_PARAMETER* parameters = nullptr;
+  ULONG parameter_count = 0u;
   if (low_4gb) {
-    // Scan low 4 GB for a free region that fits
-    const uintptr_t gran = allocation_granularity > 0
-                               ? static_cast<uintptr_t>(allocation_granularity)
-                               : 64u * 1024u;
-    const uintptr_t limit = (4ull << 30);
-    uintptr_t addr = gran;
-    MEMORY_BASIC_INFORMATION mbi;
-    while (addr + byte_count <= limit) {
-      SIZE_T q = VirtualQuery(reinterpret_cast<void*>(addr), &mbi, sizeof(mbi));
-      if (q == 0) break;
-      uintptr_t region_base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
-      uintptr_t region_end = region_base + static_cast<uintptr_t>(mbi.RegionSize);
-      if (mbi.State == MEM_FREE) {
-        uintptr_t try_addr = (addr + gran - 1u) & ~(gran - 1u);
-        if (try_addr < region_base) {
-          try_addr = (region_base + gran - 1u) & ~(gran - 1u);
-        }
-        if (try_addr >= region_base && try_addr + byte_count <= region_end &&
-            try_addr + byte_count <= limit) {
-          view = MapViewOfFileEx(h, desired_access, offset_high, offset_low,
-                                  byte_count, reinterpret_cast<void*>(try_addr));
-          if (view != nullptr) break;
-        }
-      }
-      uintptr_t next = region_end > addr ? region_end : (addr + gran);
-      if (next <= addr) next = addr + gran;
-      addr = next;
-    }
+    const uintptr_t granularity = allocation_granularity > 0
+        ? static_cast<uintptr_t>(allocation_granularity)
+        : 64u * 1024u;
+    requirements.LowestStartingAddress = reinterpret_cast<void*>(granularity);
+    requirements.HighestEndingAddress = reinterpret_cast<void*>(
+        static_cast<uintptr_t>(std::numeric_limits<uint32_t>::max()));
+    requirements.Alignment = 0u;
+    parameter.Type = MemExtendedParameterAddressRequirements;
+    parameter.Pointer = &requirements;
+    parameters = &parameter;
+    parameter_count = 1u;
   }
 
-  if (view == nullptr) {
-    view = MapViewOfFileEx(h, desired_access, offset_high, offset_low,
-                            byte_count, nullptr);
-    if (view == nullptr) {
-      view = MapViewOfFile(h, desired_access, offset_high, offset_low, byte_count);
-    }
-  }
+  void* view = MapViewOfFile3(h,
+                              /* Process= */ nullptr,
+                              /* BaseAddress= */ nullptr,
+                              static_cast<ULONG64>(start_offset),
+                              byte_count,
+                              /* AllocationType= */ 0u,
+                              ProtToPageProtect(prot),
+                              parameters,
+                              parameter_count);
 
   if (view == nullptr) {
     DWORD error = ::GetLastError();
     *error_msg = android::base::StringPrintf(
-        "MapViewOfFile(offset=%zu, size=%zu, prot=%d) failed: %lu",
-        start_offset, byte_count, prot, error);
+        "MapViewOfFile3(offset=%zu, size=%zu, prot=%d, low4g=%d) failed: %lu",
+        start_offset, byte_count, prot, low_4gb ? 1 : 0, error);
+    errno = (error == ERROR_INVALID_ADDRESS || error == ERROR_INVALID_PARAMETER) ? EINVAL : ENOMEM;
+    return Invalid();
+  }
+
+  const uintptr_t begin = reinterpret_cast<uintptr_t>(view);
+  constexpr uintptr_t k4GB = 4ull * GB;
+  if (low_4gb && (begin >= k4GB || byte_count >= k4GB - begin)) {
+    UnmapViewOfFile(view);
+    *error_msg = android::base::StringPrintf(
+        "MapViewOfFile3 returned range [%p, %p) outside ART low-4GB limit",
+        view,
+        reinterpret_cast<void*>(begin + byte_count));
+    errno = ENOMEM;
     return Invalid();
   }
 
@@ -401,6 +387,67 @@ MemMap MemMap::MapFileSection(void* hSection,
                 byte_count,
                 prot,
                 /*reuse=*/false);
+}
+
+MemMap MemMap::SplitViewAtEnd(uint8_t* new_end,
+                              const char* tail_name,
+                              int head_prot,
+                              int tail_prot,
+                              std::string* error_msg) {
+  if (!IsValid() || Begin() != BaseBegin() || Size() != BaseSize() ||
+      new_end <= Begin() || new_end >= End() ||
+      !IsAlignedParam(new_end, GetPageSize())) {
+    *error_msg = StringPrintf(
+        "SplitViewAtEnd invalid range: map=[%p, %p), split=%p",
+        Begin(), End(), new_end);
+    errno = EINVAL;
+    return Invalid();
+  }
+
+  const size_t head_size = static_cast<size_t>(new_end - Begin());
+  const size_t tail_size = static_cast<size_t>(End() - new_end);
+  DWORD old_head_protection = 0;
+  if (!VirtualProtect(Begin(),
+                      head_size,
+                      ProtToPageProtect(head_prot),
+                      &old_head_protection)) {
+    const DWORD error = GetLastError();
+    *error_msg = StringPrintf(
+        "VirtualProtect head(%p, %zu, prot=%d) failed: %lu",
+        Begin(), head_size, head_prot, static_cast<unsigned long>(error));
+    errno = EINVAL;
+    return Invalid();
+  }
+
+  DWORD old_tail_protection = 0;
+  if (!VirtualProtect(new_end,
+                      tail_size,
+                      ProtToPageProtect(tail_prot),
+                      &old_tail_protection)) {
+    const DWORD error = GetLastError();
+    DWORD ignored = 0;
+    const BOOL restored = VirtualProtect(Begin(), head_size, old_head_protection, &ignored);
+    *error_msg = StringPrintf(
+        "VirtualProtect tail(%p, %zu, prot=%d) failed: %lu; head restore=%d",
+        new_end,
+        tail_size,
+        tail_prot,
+        static_cast<unsigned long>(error),
+        restored ? 1 : 0);
+    errno = EINVAL;
+    return Invalid();
+  }
+
+  size_ = head_size;
+  base_size_ = head_size;
+  prot_ = head_prot;
+  return MemMap(tail_name,
+                new_end,
+                tail_size,
+                new_end,
+                tail_size,
+                tail_prot,
+                /*reuse=*/true);
 }
 
 }  // namespace art
