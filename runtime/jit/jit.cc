@@ -159,12 +159,8 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
                                 CompilationKind compilation_kind,
                                 bool prejit) {
 #if defined(_WIN32)
-  // Residual (win32_jit_memory.md §13): JIT of BOTH
-  //   StringBuilder.toString + StringFactory.newStringFromBytes
-  // yields Hello NPE data==null. Each alone is OK. Keep Create/J-1 and
-  // general D-1 compile, but skip StringFactory until that pair is fixed.
-  // Override: ART_WIN64_JIT_ALLOW_STRINGFACTORY=1
-  // Debug: ART_WIN64_JIT=0 disables all compile; ART_WIN64_JIT_EXCLUDE=...
+  // Temporary Win64 policy controls while the remaining W-024 product work is completed.
+  // ART_WIN64_JIT=0 disables all compilation; FILTER/EXCLUDE narrow diagnostic runs.
   {
     static const bool kWin64JitCompile = []() {
       const char* e = getenv("ART_WIN64_JIT");
@@ -199,10 +195,9 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
     if (excl != nullptr && excl[0] != '\0' && match_any(name, excl)) {
       return false;
     }
-    // Compiled FastNative stubs still mangle multi-arg natives on Win
-    // (data==null with garbage high/offset even after MS register layout).
-    // Generic JNI trampoline is correct; skip JIT of natives by default.
-    // Override: ART_WIN64_JIT_NATIVE=1
+    // The normal/Fast/Critical ABI matrices pass under the override. Keep native compilation
+    // product-gated until the remaining state-transition, libcore-demotion, and real-Windows
+    // acceptance work in W-024 is complete.
     if (method->IsNative()) {
       static const bool kAllowNative = []() {
         const char* e = getenv("ART_WIN64_JIT_NATIVE");

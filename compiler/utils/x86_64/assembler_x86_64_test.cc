@@ -3841,4 +3841,20 @@ TEST_F(JNIMacroAssemblerX86_64Test, DecreaseFrame) {
   DriverFn(&decreaseframe_test_fn, "DecreaseFrame");
 }
 
+std::string move_xmm_register_test_fn(
+    [[maybe_unused]] JNIMacroAssemblerX86_64Test::Base* assembler_test,
+    x86_64::X86_64JNIMacroAssembler* assembler) {
+  assembler->Move(
+      ManagedFromFpu(x86_64::XMM3), ManagedFromFpu(x86_64::XMM0), /* size= */ 8u);
+  assembler->Move(
+      ManagedFromFpu(x86_64::XMM2), ManagedFromFpu(x86_64::XMM1), /* size= */ 4u);
+
+  return "movsd %xmm0, %xmm3\n"
+         "movss %xmm1, %xmm2\n";
+}
+
+TEST_F(JNIMacroAssemblerX86_64Test, MoveXmmRegister) {
+  DriverFn(&move_xmm_register_test_fn, "MoveXmmRegister");
+}
+
 }  // namespace art

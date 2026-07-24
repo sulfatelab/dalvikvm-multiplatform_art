@@ -381,6 +381,13 @@ void X86_64JNIMacroAssembler::Move(ManagedRegister mdest, ManagedRegister msrc, 
   if (!dest.Equals(src)) {
     if (dest.IsCpuRegister() && src.IsCpuRegister()) {
       __ movq(dest.AsCpuRegister(), src.AsCpuRegister());
+    } else if (dest.IsXmmRegister() && src.IsXmmRegister()) {
+      DCHECK(size == 4u || size == 8u) << size;
+      if (size == 4u) {
+        __ movss(dest.AsXmmRegister(), src.AsXmmRegister());
+      } else {
+        __ movsd(dest.AsXmmRegister(), src.AsXmmRegister());
+      }
     } else if (src.IsX87Register() && dest.IsXmmRegister()) {
       // Pass via stack and pop X87 register
       __ subl(CpuRegister(RSP), Immediate(16));
