@@ -1013,7 +1013,13 @@ void EnterInterpreterFromInvoke(Thread* self,
     if (!Runtime::Current()->IsStarted()) {
       UnstartedRuntime::Jni(self, method, receiver.Ptr(), args, result);
     } else {
+#if defined(ART_WIN64_INTERPRETER_JNI_TRIPWIRE)
+      LOG(FATAL) << "Win64 InterpreterJni tripwire: runtime-started "
+                 << "EnterInterpreterFromInvoke " << method->PrettyMethod()
+                 << " shorty=" << shorty;
+#else
       InterpreterJni(self, method, shorty, receiver, args, result);
+#endif
     }
   }
   self->PopShadowFrame();
@@ -1183,9 +1189,16 @@ void ArtInterpreterToInterpreterBridge(Thread* self,
     if (!Runtime::Current()->IsStarted()) {
       UnstartedRuntime::Jni(self, shadow_frame->GetMethod(), receiver.Ptr(), args, result);
     } else {
+#if defined(ART_WIN64_INTERPRETER_JNI_TRIPWIRE)
+      LOG(FATAL) << "Win64 InterpreterJni tripwire: runtime-started "
+                 << "ArtInterpreterToInterpreterBridge "
+                 << shadow_frame->GetMethod()->PrettyMethod()
+                 << " shorty=" << shadow_frame->GetMethod()->GetShorty();
+#else
       InterpreterJni(self, shadow_frame->GetMethod(),
                      shadow_frame->GetMethod()->GetShorty(),
                      receiver, args, result);
+#endif
     }
   }
 
