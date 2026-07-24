@@ -2,6 +2,8 @@
 // Full OpenjdkJvm.cc is POSIX-heavy; Phase 3 only needs heap queries + explicit GC.
 
 #include "gc/heap.h"
+#include "jni/java_vm_ext.h"
+#include "nativehelper/scoped_utf_chars.h"
 #include "runtime.h"
 
 #include <jni.h>
@@ -41,6 +43,27 @@ __declspec(dllexport) void JVM_GC(void) {
     return;
   }
   runtime->GetHeap()->CollectGarbage(/* clear_soft_references */ false);
+}
+
+__declspec(dllexport) jstring ART_LoadNativeLibrary(JNIEnv* env,
+                                                    jstring java_filename,
+                                                    jobject java_loader,
+                                                    jclass caller) {
+  // The standalone Win64 openjdkjvm DLL delegates JVM_NativeLoad here so ART
+  // retains library ownership and unresolved Java_* lookup works normally.
+  ScopedUtfChars filename(env, java_filename);
+  if (filename.c_str() == nullptr) {
+    return nullptr;
+  }
+
+  std::string error_msg;
+  art::JavaVMExt* vm = art::Runtime::Current()->GetJavaVM();
+  if (vm->LoadNativeLibrary(env, filename.c_str(), java_loader, caller, &error_msg)) {
+    return nullptr;
+  }
+
+  env->ExceptionClear();
+  return env->NewStringUTF(error_msg.c_str());
 }
 
 }  // extern "C"

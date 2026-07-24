@@ -475,11 +475,23 @@ void* OpenNativeLibrary(JNIEnv* env,
   //
   // Note: null has a special meaning and must be preserved.
   std::string library_path;  // Empty string by default.
-  if (library_path_j != nullptr && path != nullptr && path[0] != '/') {
+  bool path_is_absolute = path != nullptr && path[0] == '/';
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  if (path != nullptr) {
+    const char drive = path[0];
+    const bool has_drive_prefix =
+        drive != '\0' && path[1] == ':' &&
+        ((drive >= 'A' && drive <= 'Z') || (drive >= 'a' && drive <= 'z'));
+    path_is_absolute = path_is_absolute || path[0] == '\\' || has_drive_prefix;
+  }
+#endif
+  if (library_path_j != nullptr && path != nullptr && !path_is_absolute) {
     ScopedUtfChars library_path_utf_chars(env, library_path_j);
     library_path = library_path_utf_chars.c_str();
   }
 
+  // This is an internal ART search list, normalized by DexPathList to ':' on
+  // every host after it has parsed the platform-facing java.library.path.
   std::vector<std::string> library_paths = base::Split(library_path, ":");
 
   for (const std::string& lib_path : library_paths) {
