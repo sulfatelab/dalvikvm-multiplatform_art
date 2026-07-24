@@ -498,7 +498,7 @@ class RosAlloc {
   // The numbers of pages that are used for runs for each size bracket.
   static size_t numOfPages[kNumOfSizeBrackets];
   // The numbers of slots of the runs for each size bracket.
-  EXPORT static size_t numOfSlots[kNumOfSizeBrackets];
+  EXPORT LIBART_PE_DATA static size_t numOfSlots[kNumOfSizeBrackets];
   // The header sizes in bytes of the runs for each size bracket.
   static size_t headerSizes[kNumOfSizeBrackets];
 

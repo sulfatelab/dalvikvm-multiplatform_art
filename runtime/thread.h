@@ -1904,7 +1904,7 @@ class EXPORT Thread {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Out-of-line conveniences for debugging in gdb.
-  static Thread* CurrentFromGdb();  // Like Thread::Current.
+  LIBART_PE_API static Thread* CurrentFromGdb();  // Like Thread::Current.
   // Like Thread::Dump(std::cerr).
   void DumpFromGdb() const REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -2158,7 +2158,8 @@ class EXPORT Thread {
 
   // Used to notify threads that they should attempt to resume, they will suspend again if
   // their suspend count is > 0.
-  static ConditionVariable* resume_cond_ GUARDED_BY(Locks::thread_suspend_count_lock_);
+  LIBART_PE_DATA static ConditionVariable* resume_cond_
+      GUARDED_BY(Locks::thread_suspend_count_lock_);
 
   // Hook passed by framework which returns true
   // when StrictMode events are traced for the current thread.

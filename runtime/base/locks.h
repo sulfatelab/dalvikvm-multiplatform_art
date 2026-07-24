@@ -188,7 +188,7 @@ class EXPORT Locks {
   // Guards code that deals with user-code suspension. This mutex must be held when suspending or
   // resuming threads with SuspendReason::kForUserCode. It may be held by a suspended thread, but
   // only if the suspension is not due to SuspendReason::kForUserCode.
-  static Mutex* user_code_suspension_lock_;
+  LIBART_PE_DATA static Mutex* user_code_suspension_lock_;
 
   // Guards allocation entrypoint instrumenting.
   static Mutex* instrument_entrypoints_lock_ ACQUIRED_AFTER(user_code_suspension_lock_);
@@ -228,13 +228,13 @@ class EXPORT Locks {
   //    state is changed                           |  .. running ..
   //  - if the CAS operation fails then goto x     |  .. running ..
   //  .. running ..                                |  .. running ..
-  static MutatorMutex* mutator_lock_ ACQUIRED_AFTER(instrument_entrypoints_lock_);
+  LIBART_PE_DATA static MutatorMutex* mutator_lock_ ACQUIRED_AFTER(instrument_entrypoints_lock_);
 
   // Allow reader-writer mutual exclusion on the mark and live bitmaps of the heap.
-  static ReaderWriterMutex* heap_bitmap_lock_ ACQUIRED_AFTER(mutator_lock_);
+  LIBART_PE_DATA static ReaderWriterMutex* heap_bitmap_lock_ ACQUIRED_AFTER(mutator_lock_);
 
   // Guards shutdown of the runtime.
-  static Mutex* runtime_shutdown_lock_ ACQUIRED_AFTER(heap_bitmap_lock_);
+  LIBART_PE_DATA static Mutex* runtime_shutdown_lock_ ACQUIRED_AFTER(heap_bitmap_lock_);
 
   // Runtime thread pool lock.
   static Mutex* runtime_thread_pool_lock_ ACQUIRED_AFTER(runtime_shutdown_lock_);
@@ -261,7 +261,7 @@ class EXPORT Locks {
 
   // The thread_list_lock_ guards ThreadList::list_. It is also commonly held to stop threads
   // attaching and detaching.
-  static Mutex* thread_list_lock_ ACQUIRED_AFTER(subtype_check_lock_);
+  LIBART_PE_DATA static Mutex* thread_list_lock_ ACQUIRED_AFTER(subtype_check_lock_);
 
   // Signaled when threads terminate. Used to determine when all non-daemons have terminated.
   static ConditionVariable* thread_exit_cond_ GUARDED_BY(Locks::thread_list_lock_);
@@ -273,7 +273,7 @@ class EXPORT Locks {
   static ReaderWriterMutex* breakpoint_lock_ ACQUIRED_AFTER(jni_libraries_lock_);
 
   // Guards lists of classes within the class linker.
-  static ReaderWriterMutex* classlinker_classes_lock_ ACQUIRED_AFTER(breakpoint_lock_);
+  LIBART_PE_DATA static ReaderWriterMutex* classlinker_classes_lock_ ACQUIRED_AFTER(breakpoint_lock_);
 
   // When declaring any Mutex add DEFAULT_MUTEX_ACQUIRED_AFTER to use annotalysis to check the code
   // doesn't try to hold a higher level Mutex.
@@ -287,7 +287,7 @@ class EXPORT Locks {
   // Guards modification of the LDT on x86.
   static Mutex* modify_ldt_lock_ ACQUIRED_AFTER(allocated_thread_ids_lock_);
 
-  static ReaderWriterMutex* dex_lock_ ACQUIRED_AFTER(modify_ldt_lock_);
+  LIBART_PE_DATA static ReaderWriterMutex* dex_lock_ ACQUIRED_AFTER(modify_ldt_lock_);
 
   static Mutex* dex_cache_lock_ ACQUIRED_AFTER(dex_lock_);
 
@@ -328,7 +328,7 @@ class EXPORT Locks {
   static Mutex* jni_weak_globals_lock_ ACQUIRED_AFTER(jni_globals_lock_);
 
   // Guard accesses to the JNI function table override.
-  static Mutex* jni_function_table_lock_ ACQUIRED_AFTER(jni_weak_globals_lock_);
+  LIBART_PE_DATA static Mutex* jni_function_table_lock_ ACQUIRED_AFTER(jni_weak_globals_lock_);
 
   // Guard accesses to the Thread::custom_tls_. We use this to allow the TLS of other threads to be
   // read (the reader must hold the ThreadListLock or have some other way of ensuring the thread
@@ -340,7 +340,7 @@ class EXPORT Locks {
   static Mutex* jit_lock_ ACQUIRED_AFTER(custom_tls_lock_);
 
   // Guard access to any JIT data structure that mutators can also access.
-  static ReaderWriterMutex* jit_mutator_lock_ ACQUIRED_AFTER(custom_tls_lock_);
+  LIBART_PE_DATA static ReaderWriterMutex* jit_mutator_lock_ ACQUIRED_AFTER(custom_tls_lock_);
 
   // Guards Class Hierarchy Analysis (CHA).
   static Mutex* cha_lock_ ACQUIRED_AFTER(jit_lock_);
@@ -356,7 +356,7 @@ class EXPORT Locks {
 
   // Allow mutual exclusion when manipulating Thread::suspend_count_.
   // TODO: Does the trade-off of a per-thread lock make sense?
-  static Mutex* thread_suspend_count_lock_ ACQUIRED_AFTER(abort_lock_);
+  LIBART_PE_DATA static Mutex* thread_suspend_count_lock_ ACQUIRED_AFTER(abort_lock_);
 
   // One unexpected signal at a time lock.
   static Mutex* unexpected_signal_lock_ ACQUIRED_AFTER(thread_suspend_count_lock_);

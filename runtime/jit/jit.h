@@ -437,7 +437,7 @@ class Jit {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // JIT compiler
-  EXPORT static JitCompilerInterface* jit_compiler_;
+  EXPORT LIBART_PE_DATA static JitCompilerInterface* jit_compiler_;
 
   // JIT resources owned by runtime.
   jit::JitCodeCache* const code_cache_;

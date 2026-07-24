@@ -28,6 +28,11 @@
 namespace art HIDDEN {
 
 inline Thread* Thread::Current() {
+#if defined(_WIN32) && defined(ART_CONSUMING_LIBART)
+  // PE cannot import C++ thread_local data. Keep ART's direct TLS path inside
+  // art.dll and use its narrow accessor from optional runtime plugins.
+  return CurrentFromGdb();
+#else
   // We rely on Thread::Current returning null for a detached thread, so it's not obvious
   // that we can replace this with a direct %fs access on x86.
   if (!is_started_) {
@@ -40,6 +45,7 @@ inline Thread* Thread::Current() {
 #endif
     return reinterpret_cast<Thread*>(thread);
   }
+#endif
 }
 
 }  // namespace art

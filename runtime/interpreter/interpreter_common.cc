@@ -93,13 +93,6 @@ bool ShouldStayInSwitchInterpreter(ArtMethod* method)
   }
 
   if (UNLIKELY(method->IsNative() || method->IsProxyMethod())) {
-#if defined(_WIN32)
-    // Win64 -Xint: keep natives on the interpreter bridge so we never enter
-    // quick generic-JNI trampolines that require %gs Thread TLS.
-    if (method->IsNative()) {
-      return true;
-    }
-#endif
     return false;
   }
 

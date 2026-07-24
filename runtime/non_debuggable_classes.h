@@ -35,7 +35,7 @@ struct NonDebuggableClasses {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
-  EXPORT static std::vector<jclass> non_debuggable_classes;
+  EXPORT LIBART_PE_DATA static std::vector<jclass> non_debuggable_classes;
 };
 
 }  // namespace art

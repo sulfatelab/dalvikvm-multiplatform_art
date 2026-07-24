@@ -101,7 +101,7 @@ struct EXPORT WellKnownClasses {
   static jclass java_lang_Record;
   static jclass java_lang_reflect_Parameter__array;
   static jclass java_lang_StringFactory;
-  static jclass java_lang_System;
+  LIBART_PE_DATA static jclass java_lang_System;
   static jclass java_lang_Void;
   static jclass libcore_reflect_AnnotationMember__array;
 
@@ -112,14 +112,14 @@ struct EXPORT WellKnownClasses {
   static ArtMethod* dalvik_system_PathClassLoader_init;  // Only for the declaring class.
   static ArtMethod* dalvik_system_VMRuntime_hiddenApiUsed;
   static ArtMethod* java_lang_Boolean_valueOf;
-  static ArtMethod* java_lang_BootClassLoader_init;  // Only for the declaring class.
+  LIBART_PE_DATA static ArtMethod* java_lang_BootClassLoader_init;  // Only for the declaring class.
   static ArtMethod* java_lang_Byte_valueOf;
   static ArtMethod* java_lang_Character_valueOf;
   static ArtMethod* java_lang_ClassLoader_loadClass;
   static ArtMethod* java_lang_ClassNotFoundException_init;
   static ArtMethod* java_lang_Daemons_start;
   static ArtMethod* java_lang_Daemons_stop;
-  static ArtMethod* java_lang_Daemons_waitForDaemonStart;
+  LIBART_PE_DATA static ArtMethod* java_lang_Daemons_waitForDaemonStart;
   static ArtMethod* java_lang_Double_doubleToRawLongBits;
   static ArtMethod* java_lang_Double_valueOf;
   static ArtMethod* java_lang_Error_init;  // Only for the declaring class.
@@ -170,13 +170,13 @@ struct EXPORT WellKnownClasses {
   static ArtMethod* org_apache_harmony_dalvik_ddmc_DdmServer_broadcast;
   static ArtMethod* org_apache_harmony_dalvik_ddmc_DdmServer_dispatch;
 
-  static ArtField* dalvik_system_BaseDexClassLoader_pathList;
+  LIBART_PE_DATA static ArtField* dalvik_system_BaseDexClassLoader_pathList;
   static ArtField* dalvik_system_BaseDexClassLoader_sharedLibraryLoaders;
   static ArtField* dalvik_system_BaseDexClassLoader_sharedLibraryLoadersAfter;
-  static ArtField* dalvik_system_DexFile_cookie;
+  LIBART_PE_DATA static ArtField* dalvik_system_DexFile_cookie;
   static ArtField* dalvik_system_DexFile_fileName;
-  static ArtField* dalvik_system_DexPathList_dexElements;
-  static ArtField* dalvik_system_DexPathList__Element_dexFile;
+  LIBART_PE_DATA static ArtField* dalvik_system_DexPathList_dexElements;
+  LIBART_PE_DATA static ArtField* dalvik_system_DexPathList__Element_dexFile;
   static ArtField* dalvik_system_VMRuntime_nonSdkApiUsageConsumer;
   static ArtField* dalvik_system_VirtualThreadContext_parkedStates;
   static ArtField* dalvik_system_VirtualThreadContext_pinnedCarrierThread;
@@ -188,29 +188,29 @@ struct EXPORT WellKnownClasses {
   static ArtField* java_io_FileDescriptor_descriptor;
   static ArtField* java_lang_ref_Reference_disableIntrinsic;
   static ArtField* java_lang_ref_Reference_slowPathEnabled;
-  static ArtField* java_lang_ClassLoader_parent;
+  LIBART_PE_DATA static ArtField* java_lang_ClassLoader_parent;
   static ArtField* java_lang_Object_shadowKlass;
   static ArtField* java_lang_String_EMPTY;
   static ArtField* java_lang_System_in;
   static ArtField* java_lang_System_out;
   static ArtField* java_lang_System_err;
   static ArtField* java_lang_Thread_cont;
-  static ArtField* java_lang_Thread_parkBlocker;
-  static ArtField* java_lang_Thread_daemon;
-  static ArtField* java_lang_Thread_group;
+  LIBART_PE_DATA static ArtField* java_lang_Thread_parkBlocker;
+  LIBART_PE_DATA static ArtField* java_lang_Thread_daemon;
+  LIBART_PE_DATA static ArtField* java_lang_Thread_group;
   static ArtField* java_lang_Thread_lock;
-  static ArtField* java_lang_Thread_name;
-  static ArtField* java_lang_Thread_niceness;
+  LIBART_PE_DATA static ArtField* java_lang_Thread_name;
+  LIBART_PE_DATA static ArtField* java_lang_Thread_niceness;
   static ArtField* java_lang_Thread_nativePeer;
   static ArtField* java_lang_Thread_priority;
   static ArtField* java_lang_Thread_systemDaemon;
   static ArtField* java_lang_Thread_target;
   static ArtField* java_lang_Thread_unparkedBeforeStart;
-  static ArtField* java_lang_ThreadGroup_groups;
+  LIBART_PE_DATA static ArtField* java_lang_ThreadGroup_groups;
   static ArtField* java_lang_ThreadGroup_ngroups;
   static ArtField* java_lang_ThreadGroup_mainThreadGroup;
-  static ArtField* java_lang_ThreadGroup_name;
-  static ArtField* java_lang_ThreadGroup_parent;
+  LIBART_PE_DATA static ArtField* java_lang_ThreadGroup_name;
+  LIBART_PE_DATA static ArtField* java_lang_ThreadGroup_parent;
   static ArtField* java_lang_ThreadGroup_systemThreadGroup;
   static ArtField* java_lang_Throwable_cause;
   static ArtField* java_lang_Throwable_detailMessage;

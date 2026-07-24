@@ -127,10 +127,35 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 // building the library and "default" visibility when referred to from external
 // libraries/binaries. Otherwise, the external code will expect the symbol to be
 // defined locally and fail to link.
+#if defined(_WIN32)
+#if defined(BUILDING_LIBART)
+#define LIBART_PROTECTED __declspec(dllexport)
+#elif defined(ART_CONSUMING_LIBART)
+#define LIBART_PROTECTED __declspec(dllimport)
+#else
+#define LIBART_PROTECTED
+#endif
+#else
 #ifdef BUILDING_LIBART
 #define LIBART_PROTECTED PROTECTED
 #else
 #define LIBART_PROTECTED EXPORT
+#endif
+#endif
+
+// PE data imports require explicit dllimport/dllexport annotations. CMake's
+// WINDOWS_EXPORT_ALL_SYMBOLS handles functions and initialized data, but it
+// does not provide the consumer-side indirection required for zero-initialized
+// runtime data used by optional ART plugins.
+#if defined(_WIN32) && defined(BUILDING_LIBART)
+#define LIBART_PE_DATA __declspec(dllexport)
+#define LIBART_PE_API __declspec(dllexport)
+#elif defined(_WIN32) && defined(ART_CONSUMING_LIBART)
+#define LIBART_PE_DATA __declspec(dllimport)
+#define LIBART_PE_API __declspec(dllimport)
+#else
+#define LIBART_PE_DATA
+#define LIBART_PE_API
 #endif
 
 // Some global variables shouldn't be visible outside libraries declaring them.
