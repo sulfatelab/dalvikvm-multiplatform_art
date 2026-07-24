@@ -3043,10 +3043,43 @@ Location InvokeDexCallingConventionVisitorX86_64::GetNextLocation(DataType::Type
   return Location::NoLocation();
 }
 
+CriticalNativeCallingConventionVisitorX86_64::CriticalNativeCallingConventionVisitorX86_64(
+    bool for_register_allocation)
+    : for_register_allocation_(for_register_allocation),
+      stack_offset_(kNativeShadowSpaceSize) {}
+
 Location CriticalNativeCallingConventionVisitorX86_64::GetNextLocation(DataType::Type type) {
   DCHECK_NE(type, DataType::Type::kReference);
 
   Location location = Location::NoLocation();
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  // Microsoft x64: RCX/RDX/R8/R9 or XMM0..XMM3 by unified argument ordinal, then
+  // stack arguments after the mandatory 32-byte shadow/home area.
+  if (arg_index_ < kMaxIntLikeRegisterArguments) {
+    if (DataType::IsFloatingPointType(type)) {
+      location = Location::FpuRegisterLocation(
+          static_cast<FloatRegister>(XMM0 + arg_index_));
+    } else {
+      static constexpr Register kMsGprs[] = { RCX, RDX, R8, R9 };
+      static_assert(arraysize(kMsGprs) == kMaxIntLikeRegisterArguments);
+      location = Location::RegisterLocation(kMsGprs[arg_index_]);
+    }
+    ++arg_index_;
+  }
+  if (location.IsInvalid()) {
+    if (DataType::Is64BitType(type)) {
+      location = Location::DoubleStackSlot(stack_offset_);
+    } else {
+      location = Location::StackSlot(stack_offset_);
+    }
+    stack_offset_ += kFramePointerSize;
+    ++arg_index_;
+
+    if (for_register_allocation_) {
+      location = Location::Any();
+    }
+  }
+#else
   if (DataType::IsFloatingPointType(type)) {
     if (fpr_index_ < kParameterFloatRegistersLength) {
       location = Location::FpuRegisterLocation(kParameterFloatRegisters[fpr_index_]);
@@ -3073,6 +3106,7 @@ Location CriticalNativeCallingConventionVisitorX86_64::GetNextLocation(DataType:
       location = Location::Any();
     }
   }
+#endif
   return location;
 }
 

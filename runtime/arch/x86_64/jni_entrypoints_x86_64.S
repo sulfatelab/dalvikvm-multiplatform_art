@@ -246,6 +246,11 @@ DEFINE_FUNCTION art_jni_dlsym_lookup_critical_stub
 
     // Replace the target method with the SaveRefsAndArgs runtime method.
     LOAD_RUNTIME_INSTANCE r10
+#if defined(_WIN32)
+    // PE LOAD_RUNTIME_INSTANCE uses r11 as scratch and would clobber the caller PC
+    // that this stub keeps live in r11. Reload from the frame slot just saved above.
+    movq FRAME_SIZE_SAVE_REFS_AND_ARGS - __SIZEOF_POINTER__(%rbp), %r11
+#endif
     movq RUNTIME_SAVE_REFS_AND_ARGS_METHOD_OFFSET(%r10), %r10
 
     movq %rbp, %rax               // Prepare untagged managed SP for the runtime method.

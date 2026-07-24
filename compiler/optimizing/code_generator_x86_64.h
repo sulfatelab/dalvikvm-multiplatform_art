@@ -128,8 +128,7 @@ class InvokeDexCallingConvention : public CallingConvention<Register, FloatRegis
 
 class CriticalNativeCallingConventionVisitorX86_64 : public InvokeDexCallingConventionVisitor {
  public:
-  explicit CriticalNativeCallingConventionVisitorX86_64(bool for_register_allocation)
-      : for_register_allocation_(for_register_allocation) {}
+  explicit CriticalNativeCallingConventionVisitorX86_64(bool for_register_allocation);
 
   virtual ~CriticalNativeCallingConventionVisitorX86_64() {}
 
@@ -144,8 +143,16 @@ class CriticalNativeCallingConventionVisitorX86_64 : public InvokeDexCallingConv
   // of stack arguments for register allocation. We ask the register allocator for any location and
   // move these arguments to the right place after adjusting the SP when generating the call.
   const bool for_register_allocation_;
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  // Microsoft x64 uses one argument ordinal for GPR and FPR selection.
+  size_t arg_index_ = 0u;
+#else
+  // SysV uses separate GPR and FPR sequences.
   size_t gpr_index_ = 0u;
   size_t fpr_index_ = 0u;
+#endif
+  // Starts at kNativeShadowSpaceSize (32 on Win64, 0 on SysV) so zero-arg direct
+  // calls still reserve the Microsoft home area when required.
   size_t stack_offset_ = 0u;
 
   DISALLOW_COPY_AND_ASSIGN(CriticalNativeCallingConventionVisitorX86_64);
