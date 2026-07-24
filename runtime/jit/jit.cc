@@ -195,18 +195,6 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
     if (excl != nullptr && excl[0] != '\0' && match_any(name, excl)) {
       return false;
     }
-    // The normal/Fast/Critical ABI matrices pass under the override. Keep native compilation
-    // product-gated until the remaining state-transition, libcore-demotion, and real-Windows
-    // acceptance work in W-024 is complete.
-    if (method->IsNative()) {
-      static const bool kAllowNative = []() {
-        const char* e = getenv("ART_WIN64_JIT_NATIVE");
-        return e != nullptr && e[0] == '1' && e[1] == '\0';
-      }();
-      if (!kAllowNative) {
-        return false;
-      }
-    }
   }
 #endif
 
