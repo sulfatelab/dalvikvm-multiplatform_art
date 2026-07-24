@@ -289,8 +289,13 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
   }
 #if defined(_WIN32)
   {
+    // Detailed method records are acceptance diagnostics, not product logging.
+    static const bool kLogCompileDone = []() {
+      const char* value = getenv("ART_WIN64_JIT_LOG_COMPILES");
+      return value != nullptr && value[0] == '1' && value[1] == '\0';
+    }();
     static std::atomic<int> g_win_compile_done_logs{0};
-    if (g_win_compile_done_logs.fetch_add(1) < 40) {
+    if (kLogCompileDone && g_win_compile_done_logs.fetch_add(1) < 40) {
       LOG(INFO) << "Win64 CompileMethod done success=" << success
                 << " method=" << ArtMethod::PrettyMethod(method_to_compile)
                 << " kind=" << compilation_kind
