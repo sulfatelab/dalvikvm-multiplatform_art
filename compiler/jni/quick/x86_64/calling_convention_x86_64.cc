@@ -26,15 +26,30 @@
 namespace art HIDDEN {
 namespace x86_64 {
 
+// ART's managed x86-64 ABI remains SysV-shaped on Windows. JNI stubs adapt
+// from this convention to the platform native ABI at the native call boundary.
+static constexpr ManagedRegister kManagedCoreArgumentRegisters[] = {
+    X86_64ManagedRegister::FromCpuRegister(RDI),
+    X86_64ManagedRegister::FromCpuRegister(RSI),
+    X86_64ManagedRegister::FromCpuRegister(RDX),
+    X86_64ManagedRegister::FromCpuRegister(RCX),
+    X86_64ManagedRegister::FromCpuRegister(R8),
+    X86_64ManagedRegister::FromCpuRegister(R9),
+};
+static constexpr size_t kManagedMaxFloatOrDoubleRegisterArguments = 8u;
+static constexpr size_t kManagedMaxIntLikeRegisterArguments = 6u;
+static_assert(kManagedMaxIntLikeRegisterArguments ==
+              arraysize(kManagedCoreArgumentRegisters));
+
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-static constexpr ManagedRegister kCoreArgumentRegisters[] = {
+static constexpr ManagedRegister kNativeCoreArgumentRegisters[] = {
     X86_64ManagedRegister::FromCpuRegister(RCX),
     X86_64ManagedRegister::FromCpuRegister(RDX),
     X86_64ManagedRegister::FromCpuRegister(R8),
     X86_64ManagedRegister::FromCpuRegister(R9),
 };
 #else
-static constexpr ManagedRegister kCoreArgumentRegisters[] = {
+static constexpr ManagedRegister kNativeCoreArgumentRegisters[] = {
     X86_64ManagedRegister::FromCpuRegister(RDI),
     X86_64ManagedRegister::FromCpuRegister(RSI),
     X86_64ManagedRegister::FromCpuRegister(RDX),
@@ -43,7 +58,7 @@ static constexpr ManagedRegister kCoreArgumentRegisters[] = {
     X86_64ManagedRegister::FromCpuRegister(R9),
 };
 #endif
-static_assert(kMaxIntLikeRegisterArguments == arraysize(kCoreArgumentRegisters));
+static_assert(kMaxIntLikeRegisterArguments == arraysize(kNativeCoreArgumentRegisters));
 
 static constexpr ManagedRegister kCalleeSaveRegisters[] = {
     // Core registers.
@@ -115,7 +130,7 @@ ArrayRef<const ManagedRegister> X86_64JniCallingConvention::CalleeSaveScratchReg
 
 ArrayRef<const ManagedRegister> X86_64JniCallingConvention::ArgumentScratchRegisters() const {
   DCHECK(!IsCriticalNative());
-  ArrayRef<const ManagedRegister> scratch_regs(kCoreArgumentRegisters);
+  ArrayRef<const ManagedRegister> scratch_regs(kNativeCoreArgumentRegisters);
   DCHECK(std::none_of(scratch_regs.begin(),
                       scratch_regs.end(),
                       [return_reg = ReturnRegister().AsX86_64()](ManagedRegister reg) {
@@ -160,10 +175,10 @@ ManagedRegister X86_64ManagedRuntimeCallingConvention::ArgumentRegisterForMethod
 
 bool X86_64ManagedRuntimeCallingConvention::IsCurrentParamInRegister() {
   if (IsCurrentParamAFloatOrDouble()) {
-    return itr_float_and_doubles_ < kMaxFloatOrDoubleRegisterArguments;
+    return itr_float_and_doubles_ < kManagedMaxFloatOrDoubleRegisterArguments;
   } else {
     size_t non_fp_arg_number = itr_args_ - itr_float_and_doubles_;
-    return /* method */ 1u + non_fp_arg_number < kMaxIntLikeRegisterArguments;
+    return /* method */ 1u + non_fp_arg_number < kManagedMaxIntLikeRegisterArguments;
   }
 }
 
@@ -179,7 +194,7 @@ ManagedRegister X86_64ManagedRuntimeCallingConvention::CurrentParamRegister() {
     return X86_64ManagedRegister::FromXmmRegister(fp_reg);
   } else {
     size_t non_fp_arg_number = itr_args_ - itr_float_and_doubles_;
-    return kCoreArgumentRegisters[/* method */ 1u + non_fp_arg_number];
+    return kManagedCoreArgumentRegisters[/* method */ 1u + non_fp_arg_number];
   }
 }
 
