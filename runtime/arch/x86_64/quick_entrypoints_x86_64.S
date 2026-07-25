@@ -2001,6 +2001,24 @@ END_FUNCTION art_quick_read_barrier_for_root_slow
      * Note that the native C ABI already aligned the stack to 16-byte.
      */
 DEFINE_FUNCTION art_quick_osr_stub
+#if defined(_WIN32)
+    // Microsoft x64 entry:
+    //   RCX = stack, RDX = stack_size, R8 = native_pc, R9 = result
+    //   [RSP+0x28] = shorty, [RSP+0x30] = Thread* self.
+    // Preserve the additional Microsoft non-volatiles before reshaping the
+    // arguments for the shared SysV-shaped body.
+    PUSH rdi
+    PUSH rsi
+    // Stack grew 16 bytes: 5th/6th args are now at 0x38 / 0x40.
+    movq 0x38(%rsp), %r10         // shorty
+    movq 0x40(%rsp), %r11         // Thread* self
+    movq %rcx, %rdi               // stack
+    movq %rdx, %rsi               // stack_size
+    movq %r8, %rdx                // native_pc
+    movq %r9, %rcx                // result
+    movq %r10, %r8                // shorty
+    movq %r11, %r9                // Thread* self
+#endif
     // Save the non-volatiles.
     PUSH rbp                      // Save rbp.
     PUSH rcx                      // Save rcx/result*.
@@ -2012,6 +2030,11 @@ DEFINE_FUNCTION art_quick_osr_stub
     PUSH r13
     PUSH r14
     PUSH r15
+#if defined(_WIN32)
+    // The native caller's r15 is saved. Publish managed rSELF before jumping
+    // to the OSR compiled-code entry.
+    movq %r9, %r15
+#endif
 
     pushq LITERAL(0)              // Push null for ArtMethod*.
     CFI_ADJUST_CFA_OFFSET(8)
@@ -2032,10 +2055,18 @@ DEFINE_FUNCTION art_quick_osr_stub
     POP r8
     POP rcx
     POP rbp
+#if defined(_WIN32)
+    POP rsi
+    POP rdi
+#endif
     movq %rax, (%rcx)              // Store the result.
     ret
 .Losr_entry:
+#if defined(_WIN32)
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 96
+#else
     CFI_RESTORE_STATE_AND_DEF_CFA rsp, 80
+#endif
     // Since the call has pushed the return address we need to switch the CFA register to RBP.
     CFI_DEF_CFA_REGISTER(rbp)
 

@@ -2323,6 +2323,54 @@ NterpHotnessCheck:
     testq %rax, %rax
     je 2b
 
+#if defined(_WIN32)
+    // The Linux transition reuses the nterp callee-save block as the top of
+    // the compiled OSR frame. That relies on the two register-save layouts
+    // matching. Win64 pins r15 as rSELF, so the compiled spill layout can no
+    // longer be assumed to match the nterp frame.
+    //
+    // Keep the nterp save block as a separate return adapter, copy the full
+    // compiled frame below it, and let the compiled method return here. The
+    // adapter then restores the native caller's callee-saves and returns with
+    // the compiled result still in rax/xmm0.
+    movq -8(rREFS), %rsp
+    CFI_DEF_CFA(rsp, CALLEE_SAVES_SIZE)
+    movq %rsp, %r14
+    CFI_DEF_CFA_REGISTER(r14)
+
+    // Preserve the jump target across NterpFree. The original rbx/r14 values
+    // are already present in the nterp save block restored below.
+    movq OSR_DATA_NATIVE_PC(%rax), %rbx
+
+    // Match art_quick_osr_stub alignment: padding, local return address, then
+    // the copied compiled frame excluding its return-address slot.
+    pushq LITERAL(0)
+    CFI_REMEMBER_STATE
+    call .Lnterp_osr_entry_win
+
+    // The OSR compiled method returned. Drop alignment padding, restore the
+    // original nterp/native callee-saves, and return to the managed caller.
+    CFI_DEF_CFA(rsp, CALLEE_SAVES_SIZE + 8)
+    addq LITERAL(8), %rsp
+    CFI_ADJUST_CFA_OFFSET(-8)
+    RESTORE_ALL_CALLEE_SAVES
+    ret
+
+.Lnterp_osr_entry_win:
+    CFI_RESTORE_STATE
+    movq OSR_DATA_FRAME_SIZE(%rax), %rcx
+    subq $$8, %rcx
+    subq %rcx, %rsp
+    movq %rsp, %rdi
+    leaq OSR_DATA_MEMORY(%rax), %rsi
+    rep movsb
+
+    // NterpFree has the assembly-facing SysV ABI and calls UCRT free through
+    // the Microsoft x64 ABI, including its required shadow space.
+    movq %rax, %rdi
+    call SYMBOL(NterpFree)
+    jmp *%rbx
+#else
     // Drop the current frame.
     movq -8(rREFS), %rsp
     CFI_DEF_CFA(rsp, CALLEE_SAVES_SIZE)
@@ -2350,6 +2398,7 @@ NterpHotnessCheck:
 
     // Jump to the compiled code.
     jmp *%rbx
+#endif
 
 NterpHandleInvokeInterfaceOnObjectMethodRange:
    shrl $$16, %eax
