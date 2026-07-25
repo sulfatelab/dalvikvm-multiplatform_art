@@ -2053,27 +2053,19 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 
   // Use MemMap arena pool for jit, malloc otherwise. Malloc arenas are faster to allocate but
   // can't be trimmed as easily.
-  // On Win64 keep arena/linear-alloc in low 4GB so ArtMethod* and related metadata stay
-  // compatible with compressed-ref / card-table assumptions during imageless boot.
   const bool use_malloc = IsAotCompiler();
-#if defined(_WIN32)
-  const bool win64_low_4gb = Is64BitInstructionSet(kRuntimeISA);
-#else
-  const bool win64_low_4gb = false;
-#endif
   if (use_malloc) {
     arena_pool_.reset(new CallocArenaPool());
     jit_arena_pool_.reset(new CallocArenaPool());
   } else {
-    arena_pool_.reset(new MemMapArenaPool(/* low_4gb= */ win64_low_4gb));
-    jit_arena_pool_.reset(new MemMapArenaPool(/* low_4gb= */ win64_low_4gb, "CompilerMetadata"));
+    arena_pool_.reset(new MemMapArenaPool(/* low_4gb= */ false));
+    jit_arena_pool_.reset(new MemMapArenaPool(/* low_4gb= */ false, "CompilerMetadata"));
   }
 
   // For 64 bit compilers, it needs to be in low 4GB in the case where we are cross compiling for a
   // 32 bit target. In this case, we have 32 bit pointers in the dex cache arrays which can't hold
   // when we have 64 bit ArtMethod pointers.
-  // Also force low_4gb for Win64 runtime (not only AOT) — LinearAlloc hosts ArtMethods/IMT tables.
-  const bool low_4gb = (IsAotCompiler() && Is64BitInstructionSet(kRuntimeISA)) || win64_low_4gb;
+  const bool low_4gb = IsAotCompiler() && Is64BitInstructionSet(kRuntimeISA);
   if (gUseUserfaultfd) {
     linear_alloc_arena_pool_.reset(new GcVisitedArenaPool(low_4gb, IsZygote()));
   } else if (low_4gb) {
@@ -2081,12 +2073,6 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   }
   linear_alloc_.reset(CreateLinearAlloc());
   startup_linear_alloc_.store(CreateLinearAlloc(), std::memory_order_relaxed);
-#ifdef _WIN32
-  LOG(INFO) << "Runtime::Init linear_alloc low_4gb=" << low_4gb
-            << " win64_low_4gb=" << win64_low_4gb
-            << " linear_pool=" << (linear_alloc_arena_pool_ != nullptr)
-            << " arena_pool=" << (arena_pool_ != nullptr);
-#endif
 
   small_lrt_allocator_ = new jni::SmallLrtAllocator();
 #ifdef _WIN32

@@ -62,7 +62,7 @@ CardTable* CardTable::Create(const uint8_t* heap_begin, size_t heap_capacity) {
   MemMap mem_map = MemMap::MapAnonymous("card table",
                                         capacity + 256,
                                         PROT_READ | PROT_WRITE,
-                                        /*low_4gb=*/ true,  // Win64 ART: must match low-4g heap
+                                        /*low_4gb=*/ false,
                                         &error_msg);
   CHECK(mem_map.IsValid()) << "couldn't allocate card table: " << error_msg;
   // All zeros is the correct initial value; all clean. Anonymous mmaps are initialized to zero, we
@@ -84,14 +84,6 @@ CardTable* CardTable::Create(const uint8_t* heap_begin, size_t heap_capacity) {
     biased_begin += offset;
   }
   CHECK_EQ(reinterpret_cast<uintptr_t>(biased_begin) & 0xff, kCardDirty);
-#ifdef _WIN32
-  LOG(INFO) << "CardTable::Create heap_begin=" << static_cast<const void*>(heap_begin)
-            << " capacity=" << heap_capacity
-            << " map=[" << static_cast<const void*>(cardtable_begin) << ","
-            << static_cast<const void*>(mem_map.End()) << ")"
-            << " biased_begin=" << static_cast<const void*>(biased_begin)
-            << " offset=" << offset;
-#endif
   return new CardTable(std::move(mem_map), biased_begin, offset);
 }
 
