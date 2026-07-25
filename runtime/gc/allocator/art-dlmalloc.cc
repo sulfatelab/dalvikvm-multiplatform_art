@@ -16,6 +16,8 @@
 
 #include "art-dlmalloc.h"
 
+#include <cerrno>
+
 #include <android-base/logging.h>
 
 #include "base/bit_utils.h"
@@ -31,36 +33,17 @@ static void art_heap_corruption(const char* function);
 static void art_heap_usage_error(const char* function, void* p);
 #define CORRUPTION_ERROR_ACTION(m) art_heap_corruption(__FUNCTION__)
 #define USAGE_ERROR_ACTION(m, p) art_heap_usage_error(__FUNCTION__, p)
+#define MALLOC_FAILURE_ACTION errno = ENOMEM;
 
 // Ugly inclusion of C file so that ART specific #defines configure dlmalloc for our use for
 // mspaces (regular dlmalloc is still declared in bionic).
 //
-// dlmalloc.c's `#ifdef WIN32` block force-sets HAVE_MMAP=1 / HAVE_MORECORE=0 and uses
-// VirtualAlloc for growth. That returns high 64-bit addresses outside ART's MemMap, which
-// breaks compressed heap references (32-bit). Keep ART MORECORE (mprotect within the
-// non-moving MemMap) by temporarily hiding WIN32/_WIN32 so that configure block is skipped.
-// dlmalloc.c also does `#ifndef WIN32` / `#ifdef _WIN32` / `#define WIN32 1`, so both
-// macros must be cleared before the include.
-#if defined(_WIN32) || defined(WIN32)
-#define ART_DLMALLOC_RESTORE_WIN32 1
-#ifdef WIN32
-#undef WIN32
-#endif
-#ifdef _WIN32
-#undef _WIN32
-#endif
-#endif
-// ART mspace configuration (must win over any later platform defaults inside dlmalloc.c).
-// Note: dlmalloc.c may still #define HAVE_* inside a WIN32 block; with WIN32/_WIN32 cleared
-// that block is inactive.
-#undef HAVE_MMAP
-#define HAVE_MMAP 0
-#undef HAVE_MREMAP
-#define HAVE_MREMAP 0
-#undef HAVE_MORECORE
-#define HAVE_MORECORE 1
-// MORECORE already defined above as art_heap_morecore.
-// Avoid accidental sbrk dependency when WIN32 is suppressed.
+// ART supplies the complete mspace policy in art-dlmalloc.h. dlmalloc's Win32
+// defaults respect embedding-provided HAVE_* values, so keep the real platform
+// macros visible while selecting ART-owned MORECORE instead of dlmalloc-owned
+// VirtualAlloc mappings.
+// MORECORE is defined above as art_heap_morecore. Avoid an accidental sbrk
+// dependency on non-Windows hosts as well.
 #ifndef LACKS_UNISTD_H
 #define LACKS_UNISTD_H 1
 #endif
@@ -70,30 +53,34 @@ static void art_heap_usage_error(const char* function, void* p);
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #pragma GCC diagnostic ignored "-Wnull-pointer-arithmetic"
 #pragma GCC diagnostic ignored "-Wexpansion-to-defined"
-// ART dlmalloc lock configuration: USE_LOCKS=0 (default when WIN32 is undefed).
-// No locks needed for mspaces: heap uses ART-level mutexes; JIT mspaces are
-// protected by Locks::jit_lock_. Pure memory operations work on any writable
-// memory including MapViewOfFile section views (J-2 dual-view).
+// ART dlmalloc lock configuration is explicitly USE_LOCKS=0. Heap mspaces use
+// ART-level mutexes and JIT mspaces use Locks::jit_lock_.
 #include "dlmalloc.c"  // NOLINT
 // Note: dlmalloc.c uses a DEBUG define to drive debug code. This interferes with the DEBUG severity
 //       of libbase, so undefine it now.
 #undef DEBUG
 #pragma GCC diagnostic pop
-#if defined(ART_DLMALLOC_RESTORE_WIN32)
-#ifndef _WIN32
-#define _WIN32 1
-#endif
-#ifndef WIN32
-#define WIN32 1
-#endif
-#undef ART_DLMALLOC_RESTORE_WIN32
-#endif
-// Sanity: if someone reintroduces WIN32 mmap mode, fail the build.
-#if HAVE_MMAP
+// Keep the embedded configuration explicit and fail the build on drift.
+#if HAVE_MMAP != 0
 #error "ART dlmalloc must be built with HAVE_MMAP 0 (use MORECORE within MemMap)"
 #endif
-#if !HAVE_MORECORE
+#if HAVE_MREMAP != 0
+#error "ART dlmalloc must be built with HAVE_MREMAP 0"
+#endif
+#if HAVE_MORECORE != 1
 #error "ART dlmalloc must be built with HAVE_MORECORE 1"
+#endif
+#if MORECORE_CONTIGUOUS != 1
+#error "ART dlmalloc must use page-granular contiguous MORECORE configuration"
+#endif
+#if USE_LOCKS != 0
+#error "ART dlmalloc mspaces must use ART-owned external locks"
+#endif
+#if ONLY_MSPACES != 1 || MSPACES != 1
+#error "ART dlmalloc must be built for mspaces only"
+#endif
+#if defined(_WIN32) && !defined(WIN32)
+#error "dlmalloc must retain Win32 platform detection in ART builds"
 #endif
 
 static void* art_heap_morecore(void* m, intptr_t increment) {

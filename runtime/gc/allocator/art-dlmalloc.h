@@ -23,11 +23,21 @@
 // Avoid a collision with one used in llvm.
 #undef HAVE_MMAP
 #define HAVE_MMAP 0
+#undef HAVE_MREMAP
 #define HAVE_MREMAP 0
+#undef HAVE_MORECORE
 #define HAVE_MORECORE 1
+#undef MORECORE_CONTIGUOUS
+#define MORECORE_CONTIGUOUS 1
+#undef USE_LOCKS
+#define USE_LOCKS 0
+#undef MSPACES
 #define MSPACES 1
+#undef NO_MALLINFO
 #define NO_MALLINFO 1
+#undef ONLY_MSPACES
 #define ONLY_MSPACES 1
+#undef MALLOC_INSPECT_ALL
 #define MALLOC_INSPECT_ALL 1
 
 #pragma GCC diagnostic push
