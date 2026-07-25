@@ -176,12 +176,23 @@ class RosAllocSpace : public MallocSpace {
   mirror::Object* AllocCommon(Thread* self, size_t num_bytes, size_t* bytes_allocated,
                               size_t* usable_size, size_t* bytes_tl_bulk_allocated);
 
-  void* CreateAllocator(void* base, size_t morecore_start, size_t initial_size,
+  void* CreateAllocator(MemMap* mem_map,
+                        void* base,
+                        size_t morecore_start,
+                        size_t initial_size,
                         size_t maximum_size, bool low_memory_mode) override {
-    return CreateRosAlloc(
-        base, morecore_start, initial_size, maximum_size, low_memory_mode, kRunningOnMemoryTool);
+    return CreateRosAlloc(mem_map,
+                          base,
+                          morecore_start,
+                          initial_size,
+                          maximum_size,
+                          low_memory_mode,
+                          kRunningOnMemoryTool);
   }
-  static allocator::RosAlloc* CreateRosAlloc(void* base, size_t morecore_start, size_t initial_size,
+  static allocator::RosAlloc* CreateRosAlloc(MemMap* mem_map,
+                                             void* base,
+                                             size_t morecore_start,
+                                             size_t initial_size,
                                              size_t maximum_size, bool low_memory_mode,
                                              bool running_on_memory_tool);
 

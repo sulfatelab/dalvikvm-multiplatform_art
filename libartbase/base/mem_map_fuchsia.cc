@@ -148,4 +148,12 @@ int MemMap::TargetMUnmap(void* start, size_t len) {
   return 0;
 }
 
+int MemMap::TargetMProtect(void* start, size_t len, int prot) {
+  return mprotect(start, len, prot);
+}
+
+int MemMap::TargetMDiscard(void* start, size_t len) {
+  return madvise(start, len, MADV_DONTNEED);
+}
+
 }  // namespace art

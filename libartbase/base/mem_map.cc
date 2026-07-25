@@ -1030,35 +1030,70 @@ bool MemMap::Protect(int prot) {
     return true;
   }
 
-#ifdef _WIN32
-  DWORD old_protect = 0;
-  DWORD np = PAGE_NOACCESS;
-  if ((prot & PROT_EXEC) && (prot & PROT_WRITE)) {
-    np = PAGE_EXECUTE_READWRITE;
-  } else if (prot & PROT_EXEC) {
-    np = (prot & PROT_READ) ? PAGE_EXECUTE_READ : PAGE_EXECUTE;
-  } else if (prot & PROT_WRITE) {
-    np = PAGE_READWRITE;
-  } else if (prot & PROT_READ) {
-    np = PAGE_READONLY;
-  }
-  if (VirtualProtect(base_begin_, base_size_, np, &old_protect)) {
-    prot_ = prot;
-    return true;
-  }
-  PLOG(ERROR) << "VirtualProtect(" << reinterpret_cast<void*>(base_begin_) << ", " << base_size_
-              << ", " << prot << ") failed";
-  return false;
-#else
-  if (mprotect(base_begin_, base_size_, prot) == 0) {
+  if (TargetMProtect(base_begin_, base_size_, prot) == 0) {
     prot_ = prot;
     return true;
   }
 
-  PLOG(ERROR) << "mprotect(" << reinterpret_cast<void*>(base_begin_) << ", " << base_size_ << ", "
+  PLOG(ERROR) << "Protect(" << reinterpret_cast<void*>(base_begin_) << ", " << base_size_ << ", "
               << prot << ") failed";
   return false;
-#endif
+}
+
+static bool IsValidMemMapRange(const MemMap& map, void* start, size_t size) {
+  if (!map.IsValid() || start == nullptr) {
+    return false;
+  }
+  const uintptr_t map_begin = reinterpret_cast<uintptr_t>(map.BaseBegin());
+  const uintptr_t map_end = map_begin + map.BaseSize();
+  const uintptr_t range_begin = reinterpret_cast<uintptr_t>(start);
+  if (range_begin < map_begin || range_begin > map_end || size > map_end - range_begin) {
+    return false;
+  }
+  return IsAlignedParam(range_begin, MemMap::GetPageSize()) &&
+         IsAlignedParam(size, MemMap::GetPageSize());
+}
+
+bool MemMap::ProtectRange(void* start, size_t size, int prot) const {
+  if (!IsValidMemMapRange(*this, start, size)) {
+    errno = EINVAL;
+    LOG(ERROR) << "Invalid MemMap protection range at " << start << " size " << size
+               << " for " << *this;
+    return false;
+  }
+  if (size == 0u) {
+    return true;
+  }
+  if (TargetMProtect(start, size, prot) == 0) {
+    return true;
+  }
+  PLOG(ERROR) << "ProtectRange(" << start << ", " << size << ", " << prot << ") failed";
+  return false;
+}
+
+bool MemMap::ActivateRange(void* start, size_t size) const {
+  return ProtectRange(start, size, PROT_READ | PROT_WRITE);
+}
+
+bool MemMap::DeactivateRange(void* start, size_t size) const {
+  return ProtectRange(start, size, PROT_NONE);
+}
+
+bool MemMap::DiscardRange(void* start, size_t size) const {
+  if (!IsValidMemMapRange(*this, start, size)) {
+    errno = EINVAL;
+    LOG(ERROR) << "Invalid MemMap discard range at " << start << " size " << size
+               << " for " << *this;
+    return false;
+  }
+  if (size == 0u) {
+    return true;
+  }
+  if (TargetMDiscard(start, size) == 0) {
+    return true;
+  }
+  PLOG(ERROR) << "DiscardRange(" << start << ", " << size << ") failed";
+  return false;
 }
 
 bool MemMap::CheckNoGaps(MemMap& begin_map, MemMap& end_map) {
@@ -1232,7 +1267,12 @@ void MemMap::SetSize(size_t new_size) {
       base_size_ - new_base_size);
 #ifdef _WIN32
   // VirtualAlloc reservations cannot be partially released. Keep the owner
-  // reservation and shrink only the logical MemMap range.
+  // reservation, discard and deactivate the excluded pages, and shrink only
+  // the logical MemMap range.
+  void* tail = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(BaseBegin()) + new_base_size);
+  const size_t tail_size = base_size_ - new_base_size;
+  CHECK(DiscardRange(tail, tail_size));
+  CHECK(DeactivateRange(tail, tail_size));
   base_size_ = new_base_size;
   size_ = new_size;
   return;
@@ -1543,7 +1583,10 @@ void MemMap::AlignBy(size_t alignment, bool align_both_ends) {
   CHECK_LE(base_begin, aligned_base_begin);
   if (base_begin < aligned_base_begin) {
     MEMORY_TOOL_MAKE_UNDEFINED(base_begin, aligned_base_begin - base_begin);
-#ifndef _WIN32
+#ifdef _WIN32
+    CHECK(DiscardRange(base_begin, aligned_base_begin - base_begin));
+    CHECK(DeactivateRange(base_begin, aligned_base_begin - base_begin));
+#else
     CHECK_EQ(TargetMUnmap(base_begin, aligned_base_begin - base_begin), 0)
         << "base_begin=" << reinterpret_cast<void*>(base_begin)
         << " aligned_base_begin=" << reinterpret_cast<void*>(aligned_base_begin);
@@ -1561,7 +1604,10 @@ void MemMap::AlignBy(size_t alignment, bool align_both_ends) {
     CHECK_GE(aligned_base_size, alignment);
     if (aligned_base_end < base_end) {
       MEMORY_TOOL_MAKE_UNDEFINED(aligned_base_end, base_end - aligned_base_end);
-#ifndef _WIN32
+#ifdef _WIN32
+      CHECK(DiscardRange(aligned_base_end, base_end - aligned_base_end));
+      CHECK(DeactivateRange(aligned_base_end, base_end - aligned_base_end));
+#else
       CHECK_EQ(TargetMUnmap(aligned_base_end, base_end - aligned_base_end), 0)
           << "base_end=" << reinterpret_cast<void*>(base_end)
           << " aligned_base_end=" << reinterpret_cast<void*>(aligned_base_end);

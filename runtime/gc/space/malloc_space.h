@@ -163,7 +163,10 @@ class MallocSpace : public ContinuousMemMapAllocSpace {
 
   // When true the low memory mode argument specifies that the heap wishes the created allocator to
   // be more aggressive in releasing unused pages.
-  virtual void* CreateAllocator(void* base, size_t morecore_start, size_t initial_size,
+  virtual void* CreateAllocator(MemMap* mem_map,
+                                void* base,
+                                size_t morecore_start,
+                                size_t initial_size,
                                 size_t maximum_size, bool low_memory_mode) = 0;
 
   virtual void RegisterRecentFree(mirror::Object* ptr)

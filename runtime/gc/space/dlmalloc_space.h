@@ -175,7 +175,10 @@ class DlMallocSpace : public MallocSpace, public allocator::MspaceMoreCoreProvid
                                            size_t* bytes_tl_bulk_allocated)
       REQUIRES(lock_);
 
-  void* CreateAllocator(void* base, size_t morecore_start, size_t initial_size,
+  void* CreateAllocator(MemMap* /*mem_map*/,
+                        void* base,
+                        size_t morecore_start,
+                        size_t initial_size,
                         size_t /*maximum_size*/, bool /*low_memory_mode*/) override {
     return CreateMspace(base, morecore_start, initial_size, /*provider=*/nullptr);
   }

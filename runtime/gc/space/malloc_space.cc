@@ -157,7 +157,8 @@ void* MallocSpace::MoreCore(intptr_t increment) {
       // Should never be asked to increase the allocation beyond the capacity of the space. Enforced
       // by mspace_set_footprint_limit.
       CHECK_LE(new_end, Begin() + Capacity());
-      CheckedCall(mprotect, GetName(), original_end, increment, PROT_READ | PROT_WRITE);
+      CHECK(GetMemMap()->ActivateRange(original_end, static_cast<size_t>(increment)))
+          << "Failed to activate pages for " << GetName();
     } else {
       // Should never be asked for negative footprint (ie before begin). Zero footprint is ok.
       CHECK_GE(original_end + increment, Begin());
@@ -167,9 +168,11 @@ void* MallocSpace::MoreCore(intptr_t increment) {
       // page shouldn't be in a TLB). We should investigate performance impact of just
       // removing ignoring the memory protection change here and in Space::CreateAllocSpace. It's
       // likely just a useful debug feature.
-      size_t size = -increment;
-      CheckedCall(madvise, GetName(), new_end, size, MADV_DONTNEED);
-      CheckedCall(mprotect, GetName(), new_end, size, PROT_NONE);
+      const size_t size = 0u - static_cast<size_t>(increment);
+      CHECK(GetMemMap()->DiscardRange(new_end, size))
+          << "Failed to discard pages for " << GetName();
+      CHECK(GetMemMap()->DeactivateRange(new_end, size))
+          << "Failed to deactivate pages for " << GetName();
     }
     // Update end_.
     SetEnd(new_end);
@@ -213,11 +216,12 @@ ZygoteSpace* MallocSpace::CreateZygoteSpace(const char* alloc_space_name, bool l
       End(), alloc_space_name, PROT_READ | PROT_WRITE, &error_msg);
   CHECK(mem_map.IsValid()) << error_msg;
   void* allocator =
-      CreateAllocator(End(), starting_size_, initial_size_, capacity, low_memory_mode);
+      CreateAllocator(&mem_map, End(), starting_size_, initial_size_, capacity, low_memory_mode);
   // Protect memory beyond the initial size.
   uint8_t* end = mem_map.Begin() + starting_size_;
   if (capacity > initial_size_) {
-    CheckedCall(mprotect, alloc_space_name, end, capacity - initial_size_, PROT_NONE);
+    CHECK(mem_map.DeactivateRange(end, capacity - initial_size_))
+        << "Failed to deactivate initial tail for " << alloc_space_name;
   }
   *out_malloc_space = CreateInstance(std::move(mem_map),
                                      alloc_space_name,

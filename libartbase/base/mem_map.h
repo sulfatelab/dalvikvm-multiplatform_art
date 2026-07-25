@@ -310,6 +310,14 @@ class MemMap {
 
   bool Protect(int prot);
 
+  // Change or discard complete pages inside this mapping without changing the
+  // logical MemMap range. Allocators use these operations while retaining the
+  // complete reservation.
+  bool ProtectRange(void* start, size_t size, int prot) const;
+  bool ActivateRange(void* start, size_t size) const;
+  bool DeactivateRange(void* start, size_t size) const;
+  bool DiscardRange(void* start, size_t size) const;
+
   void FillWithZero(bool release_eagerly);
   void MadviseDontNeedAndZero() {
     FillWithZero(/* release_eagerly= */ true);
@@ -526,6 +534,8 @@ class MemMap {
                           off_t fd_off,
                           size_t alignment);
   static int TargetMUnmap(void* start, size_t len);
+  static int TargetMProtect(void* start, size_t len, int prot);
+  static int TargetMDiscard(void* start, size_t len);
 
 #ifdef _WIN32
   void AcquireWindowsMapOwner();

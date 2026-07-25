@@ -37,9 +37,14 @@ namespace space {
 
 static constexpr bool kPrefetchDuringDlMallocFreeList = true;
 
-// Callback for mspace_inspect_all that will madvise(2) unused pages back to
-// the kernel.
-void DlmallocMadviseCallback(void* start, void* end, size_t used_bytes, void* arg) {
+struct DlmallocDiscardContext {
+  MemMap* mem_map;
+  size_t reclaimed;
+};
+
+// Callback for mspace_inspect_all that discards unused pages through the
+// owning MemMap.
+void DlmallocDiscardCallback(void* start, void* end, size_t used_bytes, void* arg) {
   // Is this chunk in use?
   if (used_bytes != 0) {
     return;
@@ -49,13 +54,10 @@ void DlmallocMadviseCallback(void* start, void* end, size_t used_bytes, void* ar
   end = reinterpret_cast<void*>(art::RoundDown(reinterpret_cast<uintptr_t>(end), art::gPageSize));
   if (end > start) {
     size_t length = reinterpret_cast<uint8_t*>(end) - reinterpret_cast<uint8_t*>(start);
-    int rc = madvise(start, length, MADV_DONTNEED);
-    if (UNLIKELY(rc != 0)) {
-      errno = rc;
-      PLOG(FATAL) << "madvise failed during heap trimming";
-    }
-    size_t* reclaimed = reinterpret_cast<size_t*>(arg);
-    *reclaimed += length;
+    DlmallocDiscardContext* context = reinterpret_cast<DlmallocDiscardContext*>(arg);
+    CHECK(context->mem_map->DiscardRange(start, length))
+        << "discard failed during dlmalloc heap trimming";
+    context->reclaimed += length;
   }
 }
 
@@ -131,7 +133,8 @@ DlMallocSpace* DlMallocSpace::CreateFromMemMap(MemMap&& mem_map,
   // Protect memory beyond the starting size. morecore will add r/w permissions when necessory
   uint8_t* end = mem_map.Begin() + starting_size;
   if (capacity - starting_size > 0) {
-    CheckedCall(mprotect, name.c_str(), end, capacity - starting_size, PROT_NONE);
+    CHECK(mem_map.DeactivateRange(end, capacity - starting_size))
+        << "Failed to deactivate initial tail for " << name;
   }
 
   // Everything is set so record in immutable structure and leave
@@ -347,9 +350,9 @@ size_t DlMallocSpace::Trim() {
   // Trim to release memory at the end of the space.
   mspace_trim(mspace_, 0);
   // Visit space looking for page-sized holes to advise the kernel we don't need.
-  size_t reclaimed = 0;
-  mspace_inspect_all(mspace_, DlmallocMadviseCallback, &reclaimed);
-  return reclaimed;
+  DlmallocDiscardContext context = {GetMemMap(), 0u};
+  mspace_inspect_all(mspace_, DlmallocDiscardCallback, &context);
+  return context.reclaimed;
 }
 
 void DlMallocSpace::Walk(void(*callback)(void *start, void *end, size_t num_bytes, void* callback_arg),
@@ -399,7 +402,10 @@ uint64_t DlMallocSpace::GetObjectsAllocated() {
 void DlMallocSpace::Clear() {
   size_t footprint_limit = GetFootprintLimit();
   allocator::ArtDetachMspaceMoreCoreProvider(mspace_, this);
-  madvise(GetMemMap()->Begin(), GetMemMap()->Size(), MADV_DONTNEED);
+  CHECK(GetMemMap()->DiscardRange(GetMemMap()->Begin(), GetMemMap()->Size()));
+  CHECK(GetMemMap()->ActivateRange(Begin(), starting_size_));
+  CHECK(GetMemMap()->DeactivateRange(Begin() + starting_size_,
+                                     GetMemMap()->Size() - starting_size_));
   live_bitmap_.Clear();
   mark_bitmap_.Clear();
   SetEnd(Begin() + starting_size_);

@@ -706,6 +706,10 @@ class RosAlloc {
   // the end of the memory region that's ever managed by this allocator.
   size_t max_capacity_;
 
+  // ART owner of the allocator's backing reservation. Page release operations
+  // use this instead of calling the platform VM API directly.
+  MemMap* mem_map_;
+
   template<class Key, AllocatorTag kTag, class Compare = std::less<Key>>
   using AllocationTrackingSet = std::set<Key, Compare, TrackingAllocator<Key, kTag>>;
 
@@ -827,11 +831,19 @@ class RosAlloc {
   std::string DumpPageMap() REQUIRES(lock_);
 
  public:
-  RosAlloc(void* base, size_t capacity, size_t max_capacity,
+  RosAlloc(MemMap* mem_map, void* base, size_t capacity, size_t max_capacity,
            PageReleaseMode page_release_mode,
            bool running_on_memory_tool,
            size_t page_release_size_threshold = kDefaultPageReleaseSizeThreshold);
   ~RosAlloc();
+
+  void SetMemMap(MemMap* mem_map) {
+    CHECK(mem_map != nullptr);
+    CHECK(mem_map->IsValid());
+    CHECK_LE(mem_map->Begin(), base_);
+    CHECK_LE(base_ + max_capacity_, mem_map->End());
+    mem_map_ = mem_map;
+  }
 
   static constexpr size_t RunFreeListOffset() {
     return OFFSETOF_MEMBER(Run, free_list_);

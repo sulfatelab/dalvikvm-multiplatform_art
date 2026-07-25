@@ -66,6 +66,7 @@ RosAllocSpace::RosAllocSpace(MemMap&& mem_map,
                   starting_size, initial_size),
       rosalloc_(rosalloc), low_memory_mode_(low_memory_mode) {
   CHECK(rosalloc != nullptr);
+  rosalloc_->SetMemMap(GetMemMap());
 }
 
 RosAllocSpace* RosAllocSpace::CreateFromMemMap(MemMap&& mem_map,
@@ -80,7 +81,8 @@ RosAllocSpace* RosAllocSpace::CreateFromMemMap(MemMap&& mem_map,
 
   bool running_on_memory_tool = Runtime::Current()->IsRunningOnMemoryTool();
 
-  allocator::RosAlloc* rosalloc = CreateRosAlloc(mem_map.Begin(),
+  allocator::RosAlloc* rosalloc = CreateRosAlloc(&mem_map,
+                                                 mem_map.Begin(),
                                                  starting_size,
                                                  initial_size,
                                                  capacity,
@@ -94,7 +96,8 @@ RosAllocSpace* RosAllocSpace::CreateFromMemMap(MemMap&& mem_map,
   // Protect memory beyond the starting size. MoreCore will add r/w permissions when necessory
   uint8_t* end = mem_map.Begin() + starting_size;
   if (capacity - starting_size > 0) {
-    CheckedCall(mprotect, name.c_str(), end, capacity - starting_size, PROT_NONE);
+    CHECK(mem_map.DeactivateRange(end, capacity - starting_size))
+        << "Failed to deactivate initial tail for " << name;
   }
 
   // Everything is set so record in immutable structure and leave
@@ -176,7 +179,9 @@ RosAllocSpace* RosAllocSpace::Create(const std::string& name,
   return space;
 }
 
-allocator::RosAlloc* RosAllocSpace::CreateRosAlloc(void* begin, size_t morecore_start,
+allocator::RosAlloc* RosAllocSpace::CreateRosAlloc(MemMap* mem_map,
+                                                   void* begin,
+                                                   size_t morecore_start,
                                                    size_t initial_size,
                                                    size_t maximum_size, bool low_memory_mode,
                                                    bool running_on_memory_tool) {
@@ -186,7 +191,7 @@ allocator::RosAlloc* RosAllocSpace::CreateRosAlloc(void* begin, size_t morecore_
   // with a footprint of morecore_start. When morecore_start bytes of
   // memory is exhaused morecore will be called.
   allocator::RosAlloc* rosalloc = new art::gc::allocator::RosAlloc(
-      begin, morecore_start, maximum_size,
+      mem_map, begin, morecore_start, maximum_size,
       low_memory_mode ?
           art::gc::allocator::RosAlloc::kPageReleaseModeAll :
           art::gc::allocator::RosAlloc::kPageReleaseModeSizeAndEnd,
@@ -426,12 +431,16 @@ void RosAllocSpace::AssertAllThreadLocalBuffersAreRevoked() {
 
 void RosAllocSpace::Clear() {
   size_t footprint_limit = GetFootprintLimit();
-  madvise(GetMemMap()->Begin(), GetMemMap()->Size(), MADV_DONTNEED);
+  CHECK(GetMemMap()->DiscardRange(GetMemMap()->Begin(), GetMemMap()->Size()));
+  CHECK(GetMemMap()->ActivateRange(Begin(), starting_size_));
+  CHECK(GetMemMap()->DeactivateRange(Begin() + starting_size_,
+                                     GetMemMap()->Size() - starting_size_));
   live_bitmap_.Clear();
   mark_bitmap_.Clear();
   SetEnd(begin_ + starting_size_);
   delete rosalloc_;
-  rosalloc_ = CreateRosAlloc(mem_map_.Begin(),
+  rosalloc_ = CreateRosAlloc(&mem_map_,
+                             mem_map_.Begin(),
                              starting_size_,
                              initial_size_,
                              NonGrowthLimitCapacity(),

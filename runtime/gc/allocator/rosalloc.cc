@@ -53,11 +53,11 @@ size_t RosAlloc::dedicated_full_run_storage_[kMaxPageSize / sizeof(size_t)] = { 
 RosAlloc::Run* RosAlloc::dedicated_full_run_ =
     reinterpret_cast<RosAlloc::Run*>(dedicated_full_run_storage_);
 
-RosAlloc::RosAlloc(void* base, size_t capacity, size_t max_capacity,
+RosAlloc::RosAlloc(MemMap* mem_map, void* base, size_t capacity, size_t max_capacity,
                    PageReleaseMode page_release_mode, bool running_on_memory_tool,
                    size_t page_release_size_threshold)
     : base_(reinterpret_cast<uint8_t*>(base)), footprint_(capacity),
-      capacity_(capacity), max_capacity_(max_capacity),
+      capacity_(capacity), max_capacity_(max_capacity), mem_map_(mem_map),
       lock_("rosalloc global lock", kRosAllocGlobalLock),
       bulk_free_lock_("rosalloc bulk free lock", kRosAllocBulkFreeLock),
       page_release_mode_(page_release_mode),
@@ -67,12 +67,13 @@ RosAlloc::RosAlloc(void* base, size_t capacity, size_t max_capacity,
   DCHECK_EQ(RoundUp(capacity, gPageSize), capacity);
   DCHECK_EQ(RoundUp(max_capacity, gPageSize), max_capacity);
   CHECK_LE(capacity, max_capacity);
+  SetMemMap(mem_map);
   CHECK_ALIGNED_PARAM(page_release_size_threshold_, gPageSize);
   // Zero the memory explicitly (don't rely on that the mem map is zero-initialized).
   if (!kMadviseZeroes) {
     memset(base_, 0, max_capacity);
   }
-  CHECK_EQ(madvise(base_, max_capacity, MADV_DONTNEED), 0);
+  CHECK(mem_map_->DiscardRange(base_, max_capacity));
   if (!initialized_) {
     Initialize();
   }
@@ -1370,7 +1371,7 @@ bool RosAlloc::Trim() {
       if (!kMadviseZeroes) {
         memset(madvise_begin, 0, madvise_size);
       }
-      CHECK_EQ(madvise(madvise_begin, madvise_size, MADV_DONTNEED), 0);
+      CHECK(page_map_mem_map_.DiscardRange(madvise_begin, madvise_size));
     }
     if (madvise_begin - zero_begin) {
       memset(zero_begin, 0, madvise_begin - zero_begin);
@@ -2046,7 +2047,7 @@ size_t RosAlloc::ReleasePageRange(uint8_t* start, uint8_t* end) {
     // TODO: Do this when we resurrect the page instead.
     memset(start, 0, end - start);
   }
-  CHECK_EQ(madvise(start, end - start, MADV_DONTNEED), 0);
+  CHECK(mem_map_->DiscardRange(start, end - start));
   size_t pm_idx = ToPageMapIndex(start);
   size_t reclaimed_bytes = 0;
   // Calculate reclaimed bytes and upate page map.

@@ -2620,7 +2620,7 @@ void Heap::PreZygoteFork() {
     zygote_collector.Run(kGcCauseCollectorTransition, false);
     if (reset_main_space) {
       main_space_->GetMemMap()->Protect(PROT_READ | PROT_WRITE);
-      madvise(main_space_->Begin(), main_space_->Capacity(), MADV_DONTNEED);
+      CHECK(main_space_->GetMemMap()->DiscardRange(main_space_->Begin(), main_space_->Capacity()));
       MemMap mem_map = main_space_->ReleaseMemMap();
       RemoveSpace(main_space_);
       space::Space* old_main_space = main_space_;

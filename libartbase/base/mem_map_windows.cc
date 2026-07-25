@@ -382,6 +382,25 @@ int MemMap::TargetMUnmap(void* start, size_t len) {
   return -1;
 }
 
+int MemMap::TargetMProtect(void* start, size_t len, int prot) {
+  DWORD old_protect = 0u;
+  if (::VirtualProtect(start, len, ProtToPageProtect(prot), &old_protect)) {
+    return 0;
+  }
+  errno = EINVAL;
+  return -1;
+}
+
+int MemMap::TargetMDiscard(void* start, size_t len) {
+  const DWORD error = ::DiscardVirtualMemory(start, len);
+  if (error == ERROR_SUCCESS) {
+    return 0;
+  }
+  ::SetLastError(error);
+  errno = error == ERROR_NOT_ENOUGH_MEMORY ? ENOMEM : EINVAL;
+  return -1;
+}
+
 void MemMap::AcquireWindowsMapOwner() {
   CHECK(IsValid());
   MEMORY_BASIC_INFORMATION info = {};
