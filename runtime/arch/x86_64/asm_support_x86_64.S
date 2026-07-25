@@ -275,18 +275,9 @@ END_MACRO
 
 MACRO1(LOAD_RUNTIME_INSTANCE, reg)
 #if defined(_WIN32)
-    // PE helper art_Runtime_instance_ptr (MS x64, no args) returns Runtime**.
-    // Stash Runtime* in r11 so restoring rax/rcx cannot wipe the destination
-    // (bug: when reg==rcx, pop %rcx overwrote the loaded Runtime* → AV at +0x340).
-    pushq %rax
-    pushq %rcx
-    subq $40, %rsp          // shadow space + 16-byte align for MS call
-    call art_Runtime_instance_ptr
-    movq (%rax), %r11       // Runtime*
-    addq $40, %rsp
-    popq %rcx
-    popq %rax
-    movq %r11, REG_VAR(reg)
+    // Runtime::instance_ is defined in this PE image, so use a same-image
+    // RIP-relative load. Keep this free of C ABI calls and scratch registers.
+    movq "?instance_@Runtime@art@@0PEAV12@EA"(%rip), REG_VAR(reg)
 #else
     movq _ZN3art7Runtime9instance_E@GOTPCREL(%rip), REG_VAR(reg)
     movq (REG_VAR(reg)), REG_VAR(reg)

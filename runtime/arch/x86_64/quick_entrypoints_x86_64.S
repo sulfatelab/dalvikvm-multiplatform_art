@@ -1644,9 +1644,6 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     movq %rax, %xmm0
 
     LOAD_RUNTIME_INSTANCE rcx
-    // Win LOAD_RUNTIME_INSTANCE is a call (art_Runtime_instance_ptr) and may
-    // clobber caller-save xmm0. Re-materialize float/double return from rax.
-    movq %rax, %xmm0
     movq RUNTIME_INSTRUMENTATION_OFFSET(%rcx), %rcx
     testq %rcx, %rcx
     jz .Lcall_method_exit_hook_done

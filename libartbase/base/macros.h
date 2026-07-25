@@ -166,8 +166,6 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 // C++ uses the Microsoft x64 ABI. Mark C++ helpers called from quick/nterp asm
 // as sysv_abi so bridges keep a Linux-like managed convention and only convert
 // at pure-C++ OS edges (see win32_tls_jit_entrypoints.md draft lock-in).
-// art_Runtime_instance_ptr and other PE helpers called with MS shadow space
-// must NOT use this attribute.
 #if defined(_WIN32) && defined(__x86_64__)
 #define ART_QUICK_ENTRYPOINT_ABI __attribute__((sysv_abi))
 #else

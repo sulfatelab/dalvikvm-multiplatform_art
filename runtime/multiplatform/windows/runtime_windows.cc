@@ -159,7 +159,3 @@ void Runtime::InitPlatformSignalHandlers() {
 }
 
 }  // namespace art
-
-extern "C" art::Runtime** art_Runtime_instance_ptr() {
-  return art::Runtime::InstanceLocation();
-}
