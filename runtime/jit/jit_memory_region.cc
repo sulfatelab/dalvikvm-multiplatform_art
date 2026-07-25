@@ -64,8 +64,19 @@ JitMemoryRegion::~JitMemoryRegion() {
   DetachMspaceProviders();
 }
 
+void JitMemoryRegion::AttachMspaceProviders() {
+  if (exec_mspace_ != nullptr) {
+    ScopedCodeCacheWrite writable(*this);
+    gc::allocator::ArtAttachMspaceMoreCoreProvider(exec_mspace_, this);
+  }
+  if (data_mspace_ != nullptr) {
+    gc::allocator::ArtAttachMspaceMoreCoreProvider(data_mspace_, this);
+  }
+}
+
 void JitMemoryRegion::DetachMspaceProviders() {
   if (exec_mspace_ != nullptr) {
+    ScopedCodeCacheWrite writable(*this);
     gc::allocator::ArtDetachMspaceMoreCoreProvider(exec_mspace_, this);
   }
   if (data_mspace_ != nullptr) {
@@ -98,12 +109,7 @@ void JitMemoryRegion::MoveFrom(JitMemoryRegion&& other) {
   other.used_memory_for_code_ = 0u;
   other.used_memory_for_data_ = 0u;
 
-  if (exec_mspace_ != nullptr) {
-    gc::allocator::ArtAttachMspaceMoreCoreProvider(exec_mspace_, this);
-  }
-  if (data_mspace_ != nullptr) {
-    gc::allocator::ArtAttachMspaceMoreCoreProvider(data_mspace_, this);
-  }
+  AttachMspaceProviders();
 }
 
 #if defined(_WIN32)

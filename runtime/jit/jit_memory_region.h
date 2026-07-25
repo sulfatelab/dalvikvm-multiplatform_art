@@ -193,6 +193,7 @@ class JitMemoryRegion : public gc::allocator::MspaceMoreCoreProvider {
   }
 
  private:
+  void AttachMspaceProviders() NO_THREAD_SAFETY_ANALYSIS;
   void DetachMspaceProviders() NO_THREAD_SAFETY_ANALYSIS;
   void MoveFrom(JitMemoryRegion&& other) NO_THREAD_SAFETY_ANALYSIS;
 
