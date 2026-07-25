@@ -58,7 +58,14 @@ void MemMap::TargetMMapInit() {
                             &fuchsia_lowmem_base), ZX_OK) << "could not allocate lowmem vmar";
 }
 
-void* MemMap::TargetMMap(void* start, size_t len, int prot, int flags, int fd, off_t fd_off) {
+void* MemMap::TargetMMap(void* start,
+                         size_t len,
+                         int prot,
+                         int flags,
+                         int fd,
+                         off_t fd_off,
+                         size_t alignment) {
+  UNUSED(alignment);
   zx_status_t status;
   uintptr_t mem = 0;
 

@@ -16,8 +16,12 @@
 
 #include "mem_map.h"
 
+#include <algorithm>
 #include <io.h>
 #include <limits>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <windows.h>
 // This include needs to be here due to the coding conventions.  Unfortunately
 // it drags in the definition of the ERROR macro. Similarly to base/utils.cc,
@@ -48,6 +52,75 @@ using android::base::StringPrintf;
 
 static off_t allocation_granularity;
 
+namespace {
+
+enum class WindowsMapKind {
+  kVirtualAlloc,
+  kSectionView,
+};
+
+using WindowsOwnerRegistry = std::map<void*, std::weak_ptr<WindowsMapOwner>>;
+
+static WindowsOwnerRegistry& GetWindowsOwnerRegistry() {
+  static WindowsOwnerRegistry* registry = new WindowsOwnerRegistry();
+  return *registry;
+}
+
+static std::mutex& GetWindowsOwnerRegistryLock() {
+  static std::mutex* lock = new std::mutex();
+  return *lock;
+}
+
+static bool QueryWindowsMapping(void* address,
+                                MEMORY_BASIC_INFORMATION* info,
+                                WindowsMapKind* kind) {
+  if (::VirtualQuery(address, info, sizeof(*info)) != sizeof(*info) ||
+      info->State == MEM_FREE || info->AllocationBase == nullptr) {
+    return false;
+  }
+  if (info->Type == MEM_PRIVATE) {
+    *kind = WindowsMapKind::kVirtualAlloc;
+    return true;
+  }
+  if (info->Type == MEM_MAPPED) {
+    *kind = WindowsMapKind::kSectionView;
+    return true;
+  }
+  return false;
+}
+
+static bool ReleaseWindowsMapping(void* allocation_base, WindowsMapKind kind) {
+  return kind == WindowsMapKind::kVirtualAlloc
+      ? ::VirtualFree(allocation_base, 0u, MEM_RELEASE) != FALSE
+      : ::UnmapViewOfFile(allocation_base) != FALSE;
+}
+
+}  // namespace
+
+struct WindowsMapOwner {
+  WindowsMapOwner(void* allocation_base, WindowsMapKind kind)
+      : allocation_base(allocation_base), kind(kind) {}
+
+  ~WindowsMapOwner() {
+    {
+      std::lock_guard<std::mutex> mu(GetWindowsOwnerRegistryLock());
+      auto& registry = GetWindowsOwnerRegistry();
+      auto it = registry.find(allocation_base);
+      if (it != registry.end() && it->second.expired()) {
+        registry.erase(it);
+      }
+    }
+    if (!ReleaseWindowsMapping(allocation_base, kind)) {
+      const DWORD error = ::GetLastError();
+      LOG(FATAL) << StringPrintf(
+          "Failed to release Windows mapping owner %p: %lu", allocation_base, error);
+    }
+  }
+
+  void* const allocation_base;
+  const WindowsMapKind kind;
+};
+
 static DWORD ProtToPageProtect(int prot) {
   const bool r = (prot & PROT_READ) != 0;
   const bool w = (prot & PROT_WRITE) != 0;
@@ -68,7 +141,13 @@ void MemMap::TargetMMapInit() {
   allocation_granularity = static_cast<off_t>(si.dwAllocationGranularity);
 }
 
-void* MemMap::TargetMMap(void* start, size_t len, int prot, int flags, int fd, off_t fd_off) {
+void* MemMap::TargetMMap(void* start,
+                         size_t len,
+                         int prot,
+                         int flags,
+                         int fd,
+                         off_t fd_off,
+                         size_t alignment) {
   if (len == 0) {
     errno = EINVAL;
     return MAP_FAILED;
@@ -78,94 +157,91 @@ void* MemMap::TargetMMap(void* start, size_t len, int prot, int flags, int fd, o
   const bool fixed = (flags & MAP_FIXED) != 0;
   DWORD page_prot = ProtToPageProtect(prot);
 
-  // Anonymous mapping via VirtualAlloc.
+  // Anonymous mapping through the Windows 10 address-requirements API.
   if (anonymous) {
-    DWORD alloc_type = MEM_RESERVE | MEM_COMMIT;
-    // ART on Win64 expects heap/card/bitmaps in the low 4GiB. Prefer that for
-    // all anonymous maps unless the caller supplied MAP_FIXED outside that range.
-    const bool want_low_4gb = (flags & MAP_32BIT) != 0 ||
-                              (!fixed && (start == nullptr ||
-                                          reinterpret_cast<uintptr_t>(start) < (4ull << 30)));
-    void* preferred = fixed ? start : (start != nullptr ? start : nullptr);
-    // VirtualAlloc preferred bases must be multiples of allocation granularity
-    // (typically 64KiB). Round down when the caller passed a page-aligned hint.
-    if (preferred != nullptr && allocation_granularity > 0) {
-      uintptr_t pref = reinterpret_cast<uintptr_t>(preferred);
-      uintptr_t aligned = pref & ~(static_cast<uintptr_t>(allocation_granularity) - 1u);
-      // For MAP_FIXED we must not change the address; VirtualAlloc will reject
-      // misaligned bases itself. For hints, use the aligned base.
-      if (!fixed && aligned != 0) {
-        preferred = reinterpret_cast<void*>(aligned);
+    constexpr uintptr_t k4GB = 4ull * GB;
+    const uintptr_t granularity = allocation_granularity > 0
+        ? static_cast<uintptr_t>(allocation_granularity)
+        : 64u * 1024u;
+    const bool want_low_4gb = (flags & MAP_32BIT) != 0;
+    const uintptr_t requested = reinterpret_cast<uintptr_t>(start);
+
+    if (start != nullptr && alignment != 0u && !IsAlignedParam(requested, alignment)) {
+      errno = EINVAL;
+      return MAP_FAILED;
+    }
+    if (want_low_4gb &&
+        (len > k4GB ||
+         (start != nullptr && (requested >= k4GB || len > k4GB - requested)))) {
+      errno = ENOMEM;
+      return MAP_FAILED;
+    }
+
+    if (fixed && start != nullptr) {
+      MEMORY_BASIC_INFORMATION info = {};
+      if (::VirtualQuery(start, &info, sizeof(info)) == sizeof(info) &&
+          info.State != MEM_FREE) {
+        const void* allocation_base = info.AllocationBase;
+        uintptr_t cursor = requested;
+        const uintptr_t end = requested + len;
+        while (cursor < end) {
+          MEMORY_BASIC_INFORMATION part = {};
+          if (::VirtualQuery(reinterpret_cast<void*>(cursor), &part, sizeof(part)) !=
+                  sizeof(part) ||
+              part.State == MEM_FREE || part.AllocationBase != allocation_base) {
+            errno = EINVAL;
+            return MAP_FAILED;
+          }
+          const uintptr_t part_end = reinterpret_cast<uintptr_t>(part.BaseAddress) + part.RegionSize;
+          if (part_end <= cursor) {
+            errno = EINVAL;
+            return MAP_FAILED;
+          }
+          cursor = std::min(part_end, end);
+        }
+        DWORD old_protect = 0u;
+        if (!::VirtualProtect(start, len, page_prot, &old_protect)) {
+          errno = EINVAL;
+          return MAP_FAILED;
+        }
+        return start;
       }
     }
-    void* p = nullptr;
-    if (preferred != nullptr) {
-      p = VirtualAlloc(preferred, len, alloc_type, page_prot);
-      // If the hint failed and this is not MAP_FIXED, fall through to scan/null.
-      if (p == nullptr && fixed) {
-        DWORD error = ::GetLastError();
-        PLOG(ERROR) << StringPrintf("VirtualAlloc fixed(%p, %zu) failed: %lx", preferred, len, error);
-        errno = EINVAL;
-        return MAP_FAILED;
-      }
+
+    // Creating a new reservation at an exact address requires allocation-
+    // granularity alignment. Reusing a subrange above only requires page
+    // alignment and does not create a second reservation.
+    if (start != nullptr && !IsAlignedParam(requested, granularity)) {
+      errno = EINVAL;
+      return MAP_FAILED;
     }
-    if (p == nullptr && !fixed) {
+
+    MEM_ADDRESS_REQUIREMENTS requirements = {};
+    MEM_EXTENDED_PARAMETER parameter = {};
+    MEM_EXTENDED_PARAMETER* parameters = nullptr;
+    ULONG parameter_count = 0u;
+    if (start == nullptr && (want_low_4gb || alignment != 0u)) {
       if (want_low_4gb) {
-        // ART heap/LOS need the low 4GiB for compressed references. Under wine
-        // (and on busy hosts) a coarse preferred-base scan often lands only on
-        // reserved regions and fails small LOS maps (~16-64KiB). Walk free
-        // regions with VirtualQuery and allocate into the first hole that fits.
-        const uintptr_t gran = allocation_granularity > 0
-                                   ? static_cast<uintptr_t>(allocation_granularity)
-                                   : 64u * 1024u;
-        const uintptr_t limit = (4ull << 30);
-        uintptr_t addr = gran;  // skip null page region
-        MEMORY_BASIC_INFORMATION mbi;
-        while (addr + len <= limit) {
-          SIZE_T q = VirtualQuery(reinterpret_cast<void*>(addr), &mbi, sizeof(mbi));
-          if (q == 0) {
-            break;
-          }
-          uintptr_t region_base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
-          uintptr_t region_end = region_base + static_cast<uintptr_t>(mbi.RegionSize);
-          if (mbi.State == MEM_FREE) {
-            // Align up to allocation granularity within the free region.
-            uintptr_t try_addr = (addr + gran - 1u) & ~(gran - 1u);
-            if (try_addr < region_base) {
-              try_addr = (region_base + gran - 1u) & ~(gran - 1u);
-            }
-            if (try_addr >= region_base && try_addr + len <= region_end && try_addr + len <= limit) {
-              p = VirtualAlloc(reinterpret_cast<void*>(try_addr), len, alloc_type, page_prot);
-              if (p != nullptr) {
-                break;
-              }
-            }
-          }
-          // Advance past this region; avoid infinite loops on zero-size.
-          uintptr_t next = region_end > addr ? region_end : (addr + gran);
-          if (next <= addr) {
-            next = addr + gran;
-          }
-          addr = next;
-        }
-        // Fallback: let the OS pick any address, then reject if not low-4G.
-        if (p == nullptr) {
-          p = VirtualAlloc(nullptr, len, alloc_type, page_prot);
-          if (p != nullptr &&
-              (reinterpret_cast<uintptr_t>(p) >= (4ull << 30) ||
-               reinterpret_cast<uintptr_t>(p) + len > (4ull << 30))) {
-            VirtualFree(p, 0, MEM_RELEASE);
-            p = nullptr;
-          }
-        }
-      } else {
-        p = VirtualAlloc(nullptr, len, alloc_type, page_prot);
+        requirements.LowestStartingAddress = reinterpret_cast<void*>(granularity);
+        requirements.HighestEndingAddress =
+            reinterpret_cast<void*>(std::numeric_limits<uint32_t>::max());
       }
+      requirements.Alignment = alignment;
+      parameter.Type = MemExtendedParameterAddressRequirements;
+      parameter.Pointer = &requirements;
+      parameters = &parameter;
+      parameter_count = 1u;
     }
+
+    void* p = ::VirtualAlloc2(::GetCurrentProcess(),
+                              start,
+                              len,
+                              MEM_RESERVE | MEM_COMMIT,
+                              page_prot,
+                              parameters,
+                              parameter_count);
     if (p == nullptr) {
       DWORD error = ::GetLastError();
-      PLOG(ERROR) << StringPrintf("VirtualAlloc(%p, %zu, prot=%d, low4g=%d) failed: %lx",
-                                  preferred, len, prot, want_low_4gb ? 1 : 0, error);
       errno = (error == ERROR_INVALID_ADDRESS || error == ERROR_INVALID_PARAMETER) ? EINVAL
                                                                                   : ENOMEM;
       return MAP_FAILED;
@@ -175,10 +251,9 @@ void* MemMap::TargetMMap(void* start, size_t len, int prot, int flags, int fd, o
       errno = EINVAL;
       return MAP_FAILED;
     }
-    if (want_low_4gb &&
-        (reinterpret_cast<uintptr_t>(p) >= (4ull << 30) ||
-         reinterpret_cast<uintptr_t>(p) + len > (4ull << 30))) {
-      VirtualFree(p, 0, MEM_RELEASE);
+    const uintptr_t begin = reinterpret_cast<uintptr_t>(p);
+    if (want_low_4gb && (begin >= k4GB || len > k4GB - begin)) {
+      ::VirtualFree(p, 0u, MEM_RELEASE);
       errno = ENOMEM;
       return MAP_FAILED;
     }
@@ -280,17 +355,53 @@ int MemMap::TargetMUnmap(void* start, size_t len) {
   if (start == nullptr) {
     return 0;
   }
-  // Try file view first; if that fails, treat as VirtualAlloc region.
-  if (UnmapViewOfFile(start)) {
-    return 0;
+
+  MEMORY_BASIC_INFORMATION info = {};
+  WindowsMapKind kind;
+  if (!QueryWindowsMapping(start, &info, &kind)) {
+    errno = EINVAL;
+    return -1;
   }
-  if (VirtualFree(start, 0, MEM_RELEASE)) {
+  {
+    std::lock_guard<std::mutex> mu(GetWindowsOwnerRegistryLock());
+    auto it = GetWindowsOwnerRegistry().find(info.AllocationBase);
+    if (it != GetWindowsOwnerRegistry().end() && !it->second.expired()) {
+      LOG(ERROR) << "TargetMUnmap attempted to bypass a live Windows mapping owner at "
+                 << info.AllocationBase;
+      errno = EINVAL;
+      return -1;
+    }
+  }
+  if (ReleaseWindowsMapping(info.AllocationBase, kind)) {
     return 0;
   }
   DWORD error = ::GetLastError();
-  PLOG(ERROR) << StringPrintf("TargetMUnmap(%p) failed: %lx", start, error);
+  LOG(ERROR) << StringPrintf(
+      "TargetMUnmap(%p, allocation_base=%p) failed: %lu", start, info.AllocationBase, error);
   errno = EINVAL;
   return -1;
+}
+
+void MemMap::AcquireWindowsMapOwner() {
+  CHECK(IsValid());
+  MEMORY_BASIC_INFORMATION info = {};
+  WindowsMapKind kind;
+  CHECK(QueryWindowsMapping(BaseBegin(), &info, &kind))
+      << "No Windows mapping backs MemMap " << BaseBegin();
+
+  std::lock_guard<std::mutex> mu(GetWindowsOwnerRegistryLock());
+  auto& registry = GetWindowsOwnerRegistry();
+  auto it = registry.find(info.AllocationBase);
+  if (it != registry.end()) {
+    windows_owner_ = it->second.lock();
+    if (windows_owner_ != nullptr) {
+      CHECK(windows_owner_->kind == kind);
+      return;
+    }
+  }
+
+  windows_owner_ = std::make_shared<WindowsMapOwner>(info.AllocationBase, kind);
+  registry[info.AllocationBase] = windows_owner_;
 }
 
 
@@ -370,7 +481,7 @@ MemMap MemMap::MapFileSection(void* hSection,
 
   const uintptr_t begin = reinterpret_cast<uintptr_t>(view);
   constexpr uintptr_t k4GB = 4ull * GB;
-  if (low_4gb && (begin >= k4GB || byte_count >= k4GB - begin)) {
+  if (low_4gb && (begin >= k4GB || byte_count > k4GB - begin)) {
     UnmapViewOfFile(view);
     *error_msg = android::base::StringPrintf(
         "MapViewOfFile3 returned range [%p, %p) outside ART low-4GB limit",
@@ -380,13 +491,15 @@ MemMap MemMap::MapFileSection(void* hSection,
     return Invalid();
   }
 
-  return MemMap(name,
+  MemMap result(name,
                 reinterpret_cast<uint8_t*>(view),
                 byte_count,
                 view,
                 byte_count,
                 prot,
                 /*reuse=*/false);
+  result.AcquireWindowsMapOwner();
+  return result;
 }
 
 MemMap MemMap::SplitViewAtEnd(uint8_t* new_end,
@@ -441,13 +554,15 @@ MemMap MemMap::SplitViewAtEnd(uint8_t* new_end,
   size_ = head_size;
   base_size_ = head_size;
   prot_ = head_prot;
-  return MemMap(tail_name,
+  MemMap result(tail_name,
                 new_end,
                 tail_size,
                 new_end,
                 tail_size,
                 tail_prot,
                 /*reuse=*/true);
+  result.AcquireWindowsMapOwner();
+  return result;
 }
 
 }  // namespace art

@@ -24,7 +24,14 @@ void MemMap::TargetMMapInit() {
   // no-op for unix
 }
 
-void* MemMap::TargetMMap(void* start, size_t len, int prot, int flags, int fd, off_t fd_off) {
+void* MemMap::TargetMMap(void* start,
+                         size_t len,
+                         int prot,
+                         int flags,
+                         int fd,
+                         off_t fd_off,
+                         size_t alignment) {
+  UNUSED(alignment);
   return mmap(start, len, prot, flags, fd, fd_off);
 }
 

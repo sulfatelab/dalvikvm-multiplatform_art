@@ -39,6 +39,7 @@
 #include <sys/prctl.h>
 #endif
 
+#include <limits>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -276,11 +277,14 @@ void* MemMap::TryMemMapLow4GB(void* ptr,
                                     int flags,
                                     int fd,
                                     off_t offset) {
-  void* actual = TargetMMap(ptr, page_aligned_byte_count, prot, flags, fd, offset);
+  void* actual =
+      TargetMMap(ptr, page_aligned_byte_count, prot, flags, fd, offset, /*alignment=*/0u);
   if (actual != MAP_FAILED) {
     // Since we didn't use MAP_FIXED the kernel may have mapped it somewhere not in the low
     // 4GB. If this is the case, unmap and retry.
-    if (reinterpret_cast<uintptr_t>(actual) + page_aligned_byte_count >= 4 * GB) {
+    constexpr uintptr_t k4GB = 4ull * GB;
+    const uintptr_t begin = reinterpret_cast<uintptr_t>(actual);
+    if (begin >= k4GB || page_aligned_byte_count > k4GB - begin) {
       TargetMUnmap(actual, page_aligned_byte_count);
       actual = MAP_FAILED;
     }
@@ -325,6 +329,28 @@ MemMap MemMap::MapAnonymous(const char* name,
                             /*inout*/MemMap* reservation,
                             /*out*/std::string* error_msg,
                             bool use_debug_name) {
+  return MapAnonymousInternal(name,
+                              addr,
+                              byte_count,
+                              prot,
+                              low_4gb,
+                              reuse,
+                              reservation,
+                              error_msg,
+                              use_debug_name,
+                              /*alignment=*/0u);
+}
+
+MemMap MemMap::MapAnonymousInternal(const char* name,
+                                    uint8_t* addr,
+                                    size_t byte_count,
+                                    int prot,
+                                    bool low_4gb,
+                                    bool reuse,
+                                    MemMap* reservation,
+                                    std::string* error_msg,
+                                    bool use_debug_name,
+                                    size_t alignment) {
 #ifndef __LP64__
   UNUSED(low_4gb);
 #endif
@@ -371,7 +397,8 @@ MemMap MemMap::MapAnonymous(const char* name,
 #endif  // __linux__
 
   if (actual == nullptr || actual == MAP_FAILED) {
-    actual = MapInternal(addr, page_aligned_byte_count, prot, flags, fd.get(), 0, low_4gb);
+    actual = MapInternal(
+        addr, page_aligned_byte_count, prot, flags, fd.get(), 0, low_4gb, alignment);
   }
   saved_errno = errno;
 
@@ -397,18 +424,30 @@ MemMap MemMap::MapAnonymous(const char* name,
     SetDebugName(actual, name, page_aligned_byte_count);
   }
 
+#ifdef _WIN32
+  std::shared_ptr<WindowsMapOwner> transferred_owner =
+      reservation != nullptr ? reservation->windows_owner_ : nullptr;
+#endif
   if (reservation != nullptr) {
     // Re-mapping was successful, transfer the ownership of the memory to the new MemMap.
     DCHECK_EQ(actual, reservation->Begin());
     reservation->ReleaseReservedMemory(byte_count);
   }
-  return MemMap(name,
+  MemMap result(name,
                 reinterpret_cast<uint8_t*>(actual),
                 byte_count,
                 actual,
                 page_aligned_byte_count,
                 prot,
                 reuse);
+#ifdef _WIN32
+  if (transferred_owner != nullptr) {
+    result.windows_owner_ = std::move(transferred_owner);
+  } else {
+    result.AcquireWindowsMapOwner();
+  }
+#endif
+  return result;
 }
 
 MemMap MemMap::MapAnonymousAligned(const char* name,
@@ -420,6 +459,18 @@ MemMap MemMap::MapAnonymousAligned(const char* name,
   DCHECK(IsPowerOfTwo(alignment));
   DCHECK_GT(alignment, GetPageSize());
 
+#ifdef _WIN32
+  return MapAnonymousInternal(name,
+                              /*addr=*/nullptr,
+                              byte_count,
+                              prot,
+                              low_4gb,
+                              /*reuse=*/false,
+                              /*reservation=*/nullptr,
+                              error_msg,
+                              /*use_debug_name=*/true,
+                              alignment);
+#else
   // Allocate extra 'alignment - GetPageSize()' bytes so that the mapping can be aligned.
   MemMap ret = MapAnonymous(name,
                             /*addr=*/nullptr,
@@ -439,6 +490,7 @@ MemMap MemMap::MapAnonymousAligned(const char* name,
     DCHECK_ALIGNED_PARAM(ret.Begin(), alignment);
   }
   return ret;
+#endif
 }
 
 MemMap MemMap::MapPlaceholder(const char* name, uint8_t* addr, size_t byte_count) {
@@ -627,7 +679,7 @@ MemMap MemMap::MapFileAtAddress(uint8_t* expected_ptr,
     DCHECK_EQ(actual, reservation->Begin());
     reservation->ReleaseReservedMemory(byte_count);
   }
-  return MemMap(filename,
+  MemMap result(filename,
                 actual + page_offset,
                 byte_count,
                 actual,
@@ -635,6 +687,10 @@ MemMap MemMap::MapFileAtAddress(uint8_t* expected_ptr,
                 prot,
                 reuse,
                 redzone_size);
+#ifdef _WIN32
+  result.AcquireWindowsMapOwner();
+#endif
+  return result;
 }
 
 MemMap::MemMap(MemMap&& other) noexcept
@@ -658,18 +714,28 @@ void MemMap::DoReset() {
         reinterpret_cast<char*>(base_begin_) + real_base_size - redzone_size_,
         redzone_size_);
   }
+#ifdef _WIN32
+  UNUSED(real_base_size);
+#endif
 
   if (!reuse_) {
     MEMORY_TOOL_MAKE_UNDEFINED(base_begin_, base_size_);
     if (!already_unmapped_) {
+#ifdef _WIN32
+      CHECK(windows_owner_ != nullptr);
+#else
       int result = TargetMUnmap(base_begin_, real_base_size);
       if (result == -1) {
         PLOG(FATAL) << "munmap failed";
       }
+#endif
     }
   }
 
   Invalidate();
+#ifdef _WIN32
+  windows_owner_.reset();
+#endif
 }
 
 void MemMap::ResetInForkedProcess() {
@@ -729,6 +795,9 @@ void MemMap::SwapMembers(MemMap& other) {
   std::swap(reuse_, other.reuse_);
   std::swap(already_unmapped_, other.already_unmapped_);
   std::swap(redzone_size_, other.redzone_size_);
+#ifdef _WIN32
+  windows_owner_.swap(other.windows_owner_);
+#endif
 }
 
 MemMap::MemMap(const std::string& name, uint8_t* begin, size_t size, void* base_begin,
@@ -802,10 +871,9 @@ MemMap MemMap::RemapAtEnd(uint8_t* new_end,
   uint8_t* actual = nullptr;
   bool tail_is_reuse_view = false;
 #if defined(_WIN32)
-  // J-1 (win32_jit_memory.md): Windows cannot MAP_FIXED-split a VirtualAlloc region.
-  // For anonymous tails, change protection in place and return a non-owning (reuse)
-  // view. Destroying *this still VirtualFree's the original allocation base and
-  // releases the whole reservation (including the tail).
+  // Windows cannot MAP_FIXED-split a VirtualAlloc region. For anonymous tails,
+  // change protection in place and return a logical view that shares the
+  // original Windows mapping owner.
   const bool anonymous_tail = (fd < 0) || ((flags & MAP_ANONYMOUS) != 0);
   if (anonymous_tail) {
     DWORD old_protect = 0;
@@ -840,7 +908,8 @@ MemMap MemMap::RemapAtEnd(uint8_t* new_end,
                                                    tail_prot,
                                                    flags,
                                                    fd,
-                                                   offset));
+                                                   offset,
+                                                   /*alignment=*/0u));
     if (actual == MAP_FAILED) {
       *error_msg = StringPrintf("map(%p, %zd, 0x%x, 0x%x, %d, 0) failed: %s. See process "
                                 "maps in the log.", tail_base_begin, tail_base_size, tail_prot, flags,
@@ -864,15 +933,31 @@ MemMap MemMap::RemapAtEnd(uint8_t* new_end,
   base_size_ = new_base_size;
   // Return the new mapping. On Windows anonymous tails are reuse views of the
   // original reservation owned by *this.
-  return MemMap(tail_name, actual, tail_size, actual, tail_base_size, tail_prot,
-                /* reuse= */ tail_is_reuse_view);
+  MemMap result(tail_name,
+                actual,
+                tail_size,
+                actual,
+                tail_base_size,
+                tail_prot,
+                /*reuse=*/tail_is_reuse_view);
+#ifdef _WIN32
+  result.AcquireWindowsMapOwner();
+#endif
+  return result;
 }
 
 MemMap MemMap::TakeReservedMemory(size_t byte_count, bool reuse) {
   uint8_t* begin = Begin();
+#ifdef _WIN32
+  std::shared_ptr<WindowsMapOwner> transferred_owner = windows_owner_;
+#endif
   ReleaseReservedMemory(byte_count);  // Performs necessary DCHECK()s on this reservation.
   size_t base_size = RoundUp(byte_count, GetPageSize());
-  return MemMap(name_, begin, byte_count, begin, base_size, prot_, reuse);
+  MemMap result(name_, begin, byte_count, begin, base_size, prot_, reuse);
+#ifdef _WIN32
+  result.windows_owner_ = std::move(transferred_owner);
+#endif
+  return result;
 }
 
 void MemMap::ReleaseReservedMemory(size_t byte_count) {
@@ -893,6 +978,9 @@ void MemMap::ReleaseReservedMemory(size_t byte_count) {
 
   if (byte_count == size_) {
     Invalidate();
+#ifdef _WIN32
+    windows_owner_.reset();
+#endif
   } else {
     // Shrink the reservation MemMap and update its `gMaps` entry.
     std::lock_guard<std::mutex> mu(*mem_maps_lock_);
@@ -1142,12 +1230,20 @@ void MemMap::SetSize(size_t new_size) {
       reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(BaseBegin()) +
                               new_base_size),
       base_size_ - new_base_size);
+#ifdef _WIN32
+  // VirtualAlloc reservations cannot be partially released. Keep the owner
+  // reservation and shrink only the logical MemMap range.
+  base_size_ = new_base_size;
+  size_ = new_size;
+  return;
+#else
   CHECK_EQ(TargetMUnmap(reinterpret_cast<void*>(
                         reinterpret_cast<uintptr_t>(BaseBegin()) + new_base_size),
                         base_size_ - new_base_size), 0)
                         << new_base_size << " " << base_size_;
   base_size_ = new_base_size;
   size_ = new_size;
+#endif
 }
 
 void* MemMap::MapInternalArtLow4GBAllocator(size_t length,
@@ -1249,18 +1345,23 @@ void* MemMap::MapInternal(void* addr,
                           int flags,
                           int fd,
                           off_t offset,
-                          bool low_4gb) {
+                          bool low_4gb,
+                          size_t alignment) {
 #ifdef __LP64__
-  // When requesting low_4g memory and having an expectation, the requested range should fit into
-  // 4GB.
-  if (low_4gb && (
-      // Start out of bounds.
-      (reinterpret_cast<uintptr_t>(addr) >> 32) != 0 ||
-      // End out of bounds. For simplicity, this will fail for the last page of memory.
-      ((reinterpret_cast<uintptr_t>(addr) + length) >> 32) != 0)) {
+  const uintptr_t begin = reinterpret_cast<uintptr_t>(addr);
+  if (addr != nullptr && length > std::numeric_limits<uintptr_t>::max() - begin) {
+    LOG(ERROR) << "The requested address space overflows: " << addr << " + " << length;
+    errno = EINVAL;
+    return MAP_FAILED;
+  }
+  constexpr uintptr_t k4GB = 4ull * GB;
+  // A low mapping may end exactly at 4 GiB, but no byte may be at or above it.
+  if (low_4gb &&
+      (length > k4GB || (addr != nullptr && (begin >= k4GB || length > k4GB - begin)))) {
     LOG(ERROR) << "The requested address space (" << addr << ", "
-               << reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(addr) + length)
+               << reinterpret_cast<void*>(begin + length)
                << ") cannot fit in low_4gb";
+    errno = ENOMEM;
     return MAP_FAILED;
   }
 #else
@@ -1304,14 +1405,14 @@ void* MemMap::MapInternal(void* addr,
   if (low_4gb) {
     flags |= MAP_32BIT;
   }
-  actual = TargetMMap(addr, length, prot, flags, fd, offset);
+  actual = TargetMMap(addr, length, prot, flags, fd, offset, alignment);
 #else
 #if defined(__LP64__)
   if (low_4gb) {
     flags |= MAP_32BIT;
   }
 #endif
-  actual = TargetMMap(addr, length, prot, flags, fd, offset);
+  actual = TargetMMap(addr, length, prot, flags, fd, offset, alignment);
 #endif
   return actual;
 }
@@ -1442,9 +1543,11 @@ void MemMap::AlignBy(size_t alignment, bool align_both_ends) {
   CHECK_LE(base_begin, aligned_base_begin);
   if (base_begin < aligned_base_begin) {
     MEMORY_TOOL_MAKE_UNDEFINED(base_begin, aligned_base_begin - base_begin);
+#ifndef _WIN32
     CHECK_EQ(TargetMUnmap(base_begin, aligned_base_begin - base_begin), 0)
         << "base_begin=" << reinterpret_cast<void*>(base_begin)
         << " aligned_base_begin=" << reinterpret_cast<void*>(aligned_base_begin);
+#endif
   }
   uint8_t* base_end = base_begin + base_size_;
   size_t aligned_base_size;
@@ -1458,9 +1561,11 @@ void MemMap::AlignBy(size_t alignment, bool align_both_ends) {
     CHECK_GE(aligned_base_size, alignment);
     if (aligned_base_end < base_end) {
       MEMORY_TOOL_MAKE_UNDEFINED(aligned_base_end, base_end - aligned_base_end);
+#ifndef _WIN32
       CHECK_EQ(TargetMUnmap(aligned_base_end, base_end - aligned_base_end), 0)
           << "base_end=" << reinterpret_cast<void*>(base_end)
           << " aligned_base_end=" << reinterpret_cast<void*>(aligned_base_end);
+#endif
     }
   } else {
     CHECK_LT(aligned_base_begin, base_end)

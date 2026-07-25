@@ -30,6 +30,7 @@
 #include <sys/types.h>
 
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -45,6 +46,10 @@
 #endif  // __BIONIC__
 
 namespace art {
+
+#ifdef _WIN32
+struct WindowsMapOwner;
+#endif
 
 #if defined(__LP64__) && !defined(__Fuchsia__) && !defined(_WINDOWS_)
 #define USE_ART_LOW_4G_ALLOCATOR 1
@@ -446,7 +451,20 @@ class MemMap {
                            int flags,
                            int fd,
                            off_t offset,
-                           bool low_4gb)
+                           bool low_4gb,
+                           size_t alignment = 0u)
+      REQUIRES(!MemMap::mem_maps_lock_);
+
+  static MemMap MapAnonymousInternal(const char* name,
+                                     uint8_t* addr,
+                                     size_t byte_count,
+                                     int prot,
+                                     bool low_4gb,
+                                     bool reuse,
+                                     MemMap* reservation,
+                                     std::string* error_msg,
+                                     bool use_debug_name,
+                                     size_t alignment)
       REQUIRES(!MemMap::mem_maps_lock_);
   static void* MapInternalArtLow4GBAllocator(size_t length,
                                              int prot,
@@ -500,8 +518,19 @@ class MemMap {
 #endif
 
   static void TargetMMapInit();
-  static void* TargetMMap(void* start, size_t len, int prot, int flags, int fd, off_t fd_off);
+  static void* TargetMMap(void* start,
+                          size_t len,
+                          int prot,
+                          int flags,
+                          int fd,
+                          off_t fd_off,
+                          size_t alignment);
   static int TargetMUnmap(void* start, size_t len);
+
+#ifdef _WIN32
+  void AcquireWindowsMapOwner();
+  std::shared_ptr<WindowsMapOwner> windows_owner_;
+#endif
 
   static std::mutex* mem_maps_lock_;
 
