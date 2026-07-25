@@ -328,12 +328,6 @@ class JitCodeCache {
       REQUIRES(!Locks::jit_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  bool OwnsSpace(const void* mspace) const NO_THREAD_SAFETY_ANALYSIS {
-    return private_region_.OwnsSpace(mspace) || shared_region_.OwnsSpace(mspace);
-  }
-
-  void* MoreCore(const void* mspace, intptr_t increment);
-
   // Adds to `methods` all profiled methods which are part of any of the given dex locations.
   // Saves inline caches for a method if its hotness meets `inline_cache_threshold` after being
   // baseline compiled.

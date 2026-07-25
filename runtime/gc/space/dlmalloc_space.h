@@ -17,6 +17,7 @@
 #ifndef ART_RUNTIME_GC_SPACE_DLMALLOC_SPACE_H_
 #define ART_RUNTIME_GC_SPACE_DLMALLOC_SPACE_H_
 
+#include "gc/allocator/mspace_morecore.h"
 #include "malloc_space.h"
 #include "space.h"
 
@@ -31,8 +32,10 @@ namespace space {
 
 // An alloc space is a space where objects may be allocated and garbage collected. Not final as may
 // be overridden by a MemoryToolMallocSpace.
-class DlMallocSpace : public MallocSpace {
+class DlMallocSpace : public MallocSpace, public allocator::MspaceMoreCoreProvider {
  public:
+  ~DlMallocSpace() override;
+
   // Create a DlMallocSpace from an existing mem_map.
   static DlMallocSpace* CreateFromMemMap(MemMap&& mem_map,
                                          const std::string& name,
@@ -165,6 +168,8 @@ class DlMallocSpace : public MallocSpace {
                 size_t starting_size);
 
  private:
+  void* MoreCore(const void* mspace, intptr_t increment) override;
+
   mirror::Object* AllocWithoutGrowthLocked(Thread* self, size_t num_bytes, size_t* bytes_allocated,
                                            size_t* usable_size,
                                            size_t* bytes_tl_bulk_allocated)
@@ -172,9 +177,12 @@ class DlMallocSpace : public MallocSpace {
 
   void* CreateAllocator(void* base, size_t morecore_start, size_t initial_size,
                         size_t /*maximum_size*/, bool /*low_memory_mode*/) override {
-    return CreateMspace(base, morecore_start, initial_size);
+    return CreateMspace(base, morecore_start, initial_size, /*provider=*/nullptr);
   }
-  static void* CreateMspace(void* base, size_t morecore_start, size_t initial_size);
+  static void* CreateMspace(void* base,
+                            size_t morecore_start,
+                            size_t initial_size,
+                            allocator::MspaceMoreCoreProvider* provider);
 
   // The boundary tag overhead.
   static const size_t kChunkOverhead = sizeof(intptr_t);
@@ -189,13 +197,6 @@ class DlMallocSpace : public MallocSpace {
 
 }  // namespace space
 
-namespace allocator {
-
-// Callback from dlmalloc when it needs to increase the footprint.
-// Must be implemented outside of art-dlmalloc.cc.
-void* ArtDlMallocMoreCore(void* mspace, intptr_t increment);
-
-}  // namespace allocator
 }  // namespace gc
 }  // namespace art
 

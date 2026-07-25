@@ -1535,12 +1535,6 @@ ProfilingInfo* JitCodeCache::AddProfilingInfoInternal(
   return info;
 }
 
-void* JitCodeCache::MoreCore(const void* mspace, intptr_t increment) {
-  return shared_region_.OwnsSpace(mspace)
-      ? shared_region_.MoreCore(mspace, increment)
-      : private_region_.MoreCore(mspace, increment);
-}
-
 void JitCodeCache::GetProfiledMethods(const std::set<std::string>& dex_base_locations,
                                       std::vector<ProfileMethodInfo>& methods,
                                       uint16_t inline_cache_threshold) {

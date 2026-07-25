@@ -19,6 +19,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <utility>
+
 #include <android-base/unique_fd.h>
 #include <log/log.h>
 #include "base/bit_utils.h"  // For RoundDown, RoundUp
@@ -31,6 +33,7 @@
 #include "jit/jit_scoped_code_cache_write.h"
 #include "oat/oat_quick_method_header.h"
 #include "palette/palette.h"
+#include "thread-current-inl.h"
 
 using android::base::unique_fd;
 
@@ -41,6 +44,67 @@ namespace jit {
 // Code cache will be the other half of the capacity.
 // TODO: Make this adjustable. Currently must be 2. JitCodeCache relies on that.
 static constexpr size_t kCodeAndDataCapacityDivider = 2;
+
+JitMemoryRegion::JitMemoryRegion(JitMemoryRegion&& other) noexcept
+    : JitMemoryRegion() {
+  MoveFrom(std::move(other));
+}
+
+JitMemoryRegion& JitMemoryRegion::operator=(JitMemoryRegion&& other) noexcept {
+  if (this != &other) {
+    DetachMspaceProviders();
+    data_mspace_ = nullptr;
+    exec_mspace_ = nullptr;
+    MoveFrom(std::move(other));
+  }
+  return *this;
+}
+
+JitMemoryRegion::~JitMemoryRegion() {
+  DetachMspaceProviders();
+}
+
+void JitMemoryRegion::DetachMspaceProviders() {
+  if (exec_mspace_ != nullptr) {
+    gc::allocator::ArtDetachMspaceMoreCoreProvider(exec_mspace_, this);
+  }
+  if (data_mspace_ != nullptr) {
+    gc::allocator::ArtDetachMspaceMoreCoreProvider(data_mspace_, this);
+  }
+}
+
+void JitMemoryRegion::MoveFrom(JitMemoryRegion&& other) {
+  other.DetachMspaceProviders();
+
+  initial_capacity_ = other.initial_capacity_;
+  max_capacity_ = other.max_capacity_;
+  current_capacity_ = other.current_capacity_;
+  data_end_ = other.data_end_;
+  exec_end_ = other.exec_end_;
+  used_memory_for_code_ = other.used_memory_for_code_;
+  used_memory_for_data_ = other.used_memory_for_data_;
+  data_pages_ = std::move(other.data_pages_);
+  writable_data_pages_ = std::move(other.writable_data_pages_);
+  exec_pages_ = std::move(other.exec_pages_);
+  non_exec_pages_ = std::move(other.non_exec_pages_);
+  data_mspace_ = std::exchange(other.data_mspace_, nullptr);
+  exec_mspace_ = std::exchange(other.exec_mspace_, nullptr);
+
+  other.initial_capacity_ = 0u;
+  other.max_capacity_ = 0u;
+  other.current_capacity_ = 0u;
+  other.data_end_ = 0u;
+  other.exec_end_ = 0u;
+  other.used_memory_for_code_ = 0u;
+  other.used_memory_for_data_ = 0u;
+
+  if (exec_mspace_ != nullptr) {
+    gc::allocator::ArtAttachMspaceMoreCoreProvider(exec_mspace_, this);
+  }
+  if (data_mspace_ != nullptr) {
+    gc::allocator::ArtAttachMspaceMoreCoreProvider(data_mspace_, this);
+  }
+}
 
 #if defined(_WIN32)
 static void CheckJitSectionView(const MemMap& map,
@@ -392,11 +456,11 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
   // Now that the pages are initialized, initialize the spaces.
 
 // Initialize the data heap.
-  data_mspace_ = create_mspace_with_base(
+  data_mspace_ = gc::allocator::ArtCreateMspaceWithBase(
       HasDualDataMapping() ? writable_data_pages_.Begin() : data_pages_.Begin(),
       data_end_,
-      /* locked= */ false);
-  CHECK(data_mspace_ != nullptr) << "create_mspace_with_base (data) failed";
+      this);
+  CHECK(data_mspace_ != nullptr) << "data mspace creation failed";
 
   // Allow mspace to use the full data capacity.
   // It will still only use as litle memory as possible and ask for MoreCore as needed.
@@ -412,12 +476,12 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
   }
   if (code_heap != nullptr) {
     // Make all pages reserved for the code heap writable. The mspace allocator, that manages the
-    // heap, will take and initialize pages in create_mspace_with_base().
+    // heap, will take and initialize pages while creating the mspace.
     {
       ScopedCodeCacheWrite scc(*this);
-      exec_mspace_ = create_mspace_with_base(code_heap->Begin(), exec_end_, false /*locked*/);
+      exec_mspace_ = gc::allocator::ArtCreateMspaceWithBase(code_heap->Begin(), exec_end_, this);
     }
-    CHECK(exec_mspace_ != nullptr) << "create_mspace_with_base (exec) failed";
+    CHECK(exec_mspace_ != nullptr) << "executable mspace creation failed";
     SetFootprintLimit(current_capacity_);
   } else {
     exec_mspace_ = nullptr;
@@ -462,6 +526,7 @@ bool JitMemoryRegion::IncreaseCodeCacheCapacity() {
 // NO_THREAD_SAFETY_ANALYSIS as this is called from mspace code, at which point the lock
 // is already held.
 void* JitMemoryRegion::MoreCore(const void* mspace, intptr_t increment) NO_THREAD_SAFETY_ANALYSIS {
+  Locks::jit_lock_->AssertHeld(Thread::Current());
   if (mspace == exec_mspace_) {
     CHECK(exec_mspace_ != nullptr);
     const MemMap* const code_pages = GetUpdatableCodeMapping();

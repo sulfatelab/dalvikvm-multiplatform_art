@@ -21,9 +21,9 @@
 #include <android-base/logging.h>
 
 #include "base/bit_utils.h"
-#include "gc/space/dlmalloc_space.h"
+#include "gc/allocator/mspace_morecore.h"
 
-// ART specific morecore implementation defined in space.cc.
+// Dispatch dlmalloc growth to the owner attached to each mspace.
 static void* art_heap_morecore(void* m, intptr_t increment);
 #define MORECORE(x) art_heap_morecore(m, x)
 
@@ -83,8 +83,63 @@ static void art_heap_usage_error(const char* function, void* p);
 #error "dlmalloc must retain Win32 platform detection in ART builds"
 #endif
 
+namespace {
+
+static constexpr size_t kArtMspaceProviderMagic = static_cast<size_t>(0x4d535041u);  // "MSPA"
+
+static mstate GetMspaceState(void* mspace) {
+  CHECK(mspace != nullptr);
+  mstate state = reinterpret_cast<mstate>(mspace);
+  CHECK(ok_magic(state)) << "Invalid ART mspace " << mspace;
+  return state;
+}
+
+static art::gc::allocator::MspaceMoreCoreProvider* GetMspaceProvider(void* mspace) {
+  mstate state = GetMspaceState(mspace);
+  CHECK_EQ(state->exts, kArtMspaceProviderMagic) << "Unattached ART mspace " << mspace;
+  CHECK(state->extp != nullptr) << "Missing MoreCore provider for ART mspace " << mspace;
+  return reinterpret_cast<art::gc::allocator::MspaceMoreCoreProvider*>(state->extp);
+}
+
+}  // namespace
+
+namespace art {
+namespace gc {
+namespace allocator {
+
+void* ArtCreateMspaceWithBase(void* base,
+                              size_t initial_footprint,
+                              MspaceMoreCoreProvider* provider) {
+  void* mspace = create_mspace_with_base(base, initial_footprint, /*locked=*/false);
+  if (mspace != nullptr && provider != nullptr) {
+    ArtAttachMspaceMoreCoreProvider(mspace, provider);
+  }
+  return mspace;
+}
+
+void ArtAttachMspaceMoreCoreProvider(void* mspace, MspaceMoreCoreProvider* provider) {
+  CHECK(provider != nullptr);
+  mstate state = GetMspaceState(mspace);
+  CHECK(state->extp == nullptr);
+  CHECK_EQ(state->exts, 0u);
+  state->extp = provider;
+  state->exts = kArtMspaceProviderMagic;
+}
+
+void ArtDetachMspaceMoreCoreProvider(void* mspace, MspaceMoreCoreProvider* provider) {
+  mstate state = GetMspaceState(mspace);
+  CHECK_EQ(state->exts, kArtMspaceProviderMagic);
+  CHECK_EQ(state->extp, provider);
+  state->extp = nullptr;
+  state->exts = 0u;
+}
+
+}  // namespace allocator
+}  // namespace gc
+}  // namespace art
+
 static void* art_heap_morecore(void* m, intptr_t increment) {
-  return ::art::gc::allocator::ArtDlMallocMoreCore(m, increment);
+  return GetMspaceProvider(m)->MoreCore(m, increment);
 }
 
 static void art_heap_corruption(const char* function) {

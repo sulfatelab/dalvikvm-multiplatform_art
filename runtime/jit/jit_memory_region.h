@@ -23,6 +23,7 @@
 #include "base/globals.h"
 #include "base/locks.h"
 #include "base/mem_map.h"
+#include "gc/allocator/mspace_morecore.h"
 #include "gc_root-inl.h"
 #include "handle.h"
 
@@ -48,7 +49,7 @@ uint32_t inline ComputeRootTableSize(uint32_t number_of_roots) {
 
 // Represents a memory region for the JIT, where code and data are stored. This class
 // provides allocation and deallocation primitives.
-class JitMemoryRegion {
+class JitMemoryRegion : public gc::allocator::MspaceMoreCoreProvider {
  public:
   JitMemoryRegion()
       : initial_capacity_(0),
@@ -64,6 +65,14 @@ class JitMemoryRegion {
         non_exec_pages_(),
         data_mspace_(nullptr),
         exec_mspace_(nullptr) {}
+
+  JitMemoryRegion(JitMemoryRegion&& other) noexcept;
+  JitMemoryRegion& operator=(JitMemoryRegion&& other) noexcept;
+
+  JitMemoryRegion(const JitMemoryRegion&) = delete;
+  JitMemoryRegion& operator=(const JitMemoryRegion&) = delete;
+
+  ~JitMemoryRegion() override;
 
   bool Initialize(size_t initial_capacity,
                   size_t max_capacity,
@@ -101,6 +110,7 @@ class JitMemoryRegion {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   void ResetWritableMappings() REQUIRES(Locks::jit_lock_) {
+    DetachMspaceProviders();
     non_exec_pages_.ResetInForkedProcess();
     writable_data_pages_.ResetInForkedProcess();
     // Also clear the mspaces, which, in their implementation,
@@ -149,11 +159,7 @@ class JitMemoryRegion {
     return &exec_pages_;
   }
 
-  void* MoreCore(const void* mspace, intptr_t increment);
-
-  bool OwnsSpace(const void* mspace) const NO_THREAD_SAFETY_ANALYSIS {
-    return mspace == data_mspace_ || mspace == exec_mspace_;
-  }
+  void* MoreCore(const void* mspace, intptr_t increment) override;
 
   size_t GetCurrentCapacity() const REQUIRES(Locks::jit_lock_) {
     return current_capacity_;
@@ -187,6 +193,9 @@ class JitMemoryRegion {
   }
 
  private:
+  void DetachMspaceProviders() NO_THREAD_SAFETY_ANALYSIS;
+  void MoveFrom(JitMemoryRegion&& other) NO_THREAD_SAFETY_ANALYSIS;
+
   template <typename T>
   T* TranslateAddress(T* src_ptr, const MemMap& src, const MemMap& dst) {
     CHECK(src.HasAddress(src_ptr)) << reinterpret_cast<const void*>(src_ptr);

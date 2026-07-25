@@ -23,9 +23,6 @@
 #include "base/utils.h"
 #include "gc/accounting/card_table.h"
 #include "gc/accounting/space_bitmap-inl.h"
-#include "gc/heap.h"
-#include "jit/jit.h"
-#include "jit/jit_code_cache.h"
 #include "memory_tool_malloc_space-inl.h"
 #include "mirror/class-inl.h"
 #include "mirror/object-inl.h"
@@ -109,6 +106,11 @@ DlMallocSpace::DlMallocSpace(MemMap&& mem_map,
                   starting_size, initial_size),
       mspace_(mspace) {
   CHECK(mspace != nullptr);
+  allocator::ArtAttachMspaceMoreCoreProvider(mspace_, this);
+}
+
+DlMallocSpace::~DlMallocSpace() {
+  allocator::ArtDetachMspaceMoreCoreProvider(mspace_, this);
 }
 
 DlMallocSpace* DlMallocSpace::CreateFromMemMap(MemMap&& mem_map,
@@ -119,7 +121,8 @@ DlMallocSpace* DlMallocSpace::CreateFromMemMap(MemMap&& mem_map,
                                                size_t capacity,
                                                bool can_move_objects) {
   DCHECK(mem_map.IsValid());
-  void* mspace = CreateMspace(mem_map.Begin(), starting_size, initial_size);
+  void* mspace = CreateMspace(
+      mem_map.Begin(), starting_size, initial_size, /*provider=*/nullptr);
   if (mspace == nullptr) {
     LOG(ERROR) << "Failed to initialize mspace for alloc space (" << name << ")";
     return nullptr;
@@ -134,7 +137,10 @@ DlMallocSpace* DlMallocSpace::CreateFromMemMap(MemMap&& mem_map,
   // Everything is set so record in immutable structure and leave
   uint8_t* begin = mem_map.Begin();
   if (Runtime::Current()->IsRunningOnMemoryTool()) {
-    return new MemoryToolMallocSpace<DlMallocSpace, kDefaultMemoryToolRedZoneBytes, true, false>(
+    return new MemoryToolMallocSpace<DlMallocSpace,
+                                     kDefaultMemoryToolRedZoneBytes,
+                                     true,
+                                     false>(
         std::move(mem_map),
         initial_size,
         name,
@@ -198,13 +204,16 @@ DlMallocSpace* DlMallocSpace::Create(const std::string& name,
   return space;
 }
 
-void* DlMallocSpace::CreateMspace(void* begin, size_t morecore_start, size_t initial_size) {
+void* DlMallocSpace::CreateMspace(void* begin,
+                                 size_t morecore_start,
+                                 size_t initial_size,
+                                 allocator::MspaceMoreCoreProvider* provider) {
   // clear errno to allow PLOG on error
   errno = 0;
   // create mspace using our backing storage starting at begin and with a footprint of
   // morecore_start. Don't use an internal dlmalloc lock (as we already hold heap lock). When
   // morecore_start bytes of memory is exhaused morecore will be called.
-  void* msp = create_mspace_with_base(begin, morecore_start, 0 /*locked*/);
+  void* msp = allocator::ArtCreateMspaceWithBase(begin, morecore_start, provider);
   if (msp != nullptr) {
     // Do not allow morecore requests to succeed beyond the initial size of the heap
     mspace_set_footprint_limit(msp, initial_size);
@@ -248,7 +257,10 @@ MallocSpace* DlMallocSpace::CreateInstance(MemMap&& mem_map,
                                            size_t growth_limit,
                                            bool can_move_objects) {
   if (Runtime::Current()->IsRunningOnMemoryTool()) {
-    return new MemoryToolMallocSpace<DlMallocSpace, kDefaultMemoryToolRedZoneBytes, true, false>(
+    return new MemoryToolMallocSpace<DlMallocSpace,
+                                     kDefaultMemoryToolRedZoneBytes,
+                                     true,
+                                     false>(
         std::move(mem_map),
         initial_size_,
         name,
@@ -386,12 +398,18 @@ uint64_t DlMallocSpace::GetObjectsAllocated() {
 
 void DlMallocSpace::Clear() {
   size_t footprint_limit = GetFootprintLimit();
+  allocator::ArtDetachMspaceMoreCoreProvider(mspace_, this);
   madvise(GetMemMap()->Begin(), GetMemMap()->Size(), MADV_DONTNEED);
   live_bitmap_.Clear();
   mark_bitmap_.Clear();
   SetEnd(Begin() + starting_size_);
-  mspace_ = CreateMspace(mem_map_.Begin(), starting_size_, initial_size_);
+  mspace_ = CreateMspace(mem_map_.Begin(), starting_size_, initial_size_, this);
   SetFootprintLimit(footprint_limit);
+}
+
+void* DlMallocSpace::MoreCore(const void* mspace, intptr_t increment) {
+  CHECK_EQ(mspace_, mspace);
+  return MallocSpace::MoreCore(increment);
 }
 
 #ifndef NDEBUG
@@ -436,38 +454,5 @@ bool DlMallocSpace::LogFragmentationAllocFailure(std::ostream& os,
 }
 
 }  // namespace space
-
-namespace allocator {
-
-// Implement the dlmalloc morecore callback.
-void* ArtDlMallocMoreCore(void* mspace, intptr_t increment) REQUIRES_SHARED(Locks::mutator_lock_) {
-  Runtime* runtime = Runtime::Current();
-  Heap* heap = runtime->GetHeap();
-  ::art::gc::space::DlMallocSpace* dlmalloc_space = heap->GetDlMallocSpace();
-  // Support for multiple DlMalloc provided by a slow path.
-  if (UNLIKELY(dlmalloc_space == nullptr || dlmalloc_space->GetMspace() != mspace)) {
-    if (LIKELY(runtime->GetJitCodeCache() != nullptr)) {
-      jit::JitCodeCache* code_cache = runtime->GetJitCodeCache();
-      if (code_cache->OwnsSpace(mspace)) {
-        return code_cache->MoreCore(mspace, increment);
-      }
-    }
-    dlmalloc_space = nullptr;
-    for (space::ContinuousSpace* space : heap->GetContinuousSpaces()) {
-      if (space->IsDlMallocSpace()) {
-        ::art::gc::space::DlMallocSpace* cur_dlmalloc_space = space->AsDlMallocSpace();
-        if (cur_dlmalloc_space->GetMspace() == mspace) {
-          dlmalloc_space = cur_dlmalloc_space;
-          break;
-        }
-      }
-    }
-    CHECK(dlmalloc_space != nullptr) << "Couldn't find DlmMallocSpace with mspace=" << mspace;
-  }
-  return dlmalloc_space->MoreCore(increment);
-}
-
-}  // namespace allocator
-
 }  // namespace gc
 }  // namespace art
