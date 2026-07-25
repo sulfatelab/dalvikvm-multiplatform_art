@@ -392,13 +392,59 @@ int MemMap::TargetMProtect(void* start, size_t len, int prot) {
 }
 
 int MemMap::TargetMDiscard(void* start, size_t len) {
-  const DWORD error = ::DiscardVirtualMemory(start, len);
-  if (error == ERROR_SUCCESS) {
-    return 0;
+  const uintptr_t range_begin = reinterpret_cast<uintptr_t>(start);
+  const uintptr_t range_end = range_begin + len;
+  uintptr_t cursor = range_begin;
+
+  // Native Windows rejects DiscardVirtualMemory() for PAGE_NOACCESS pages.
+  // Allocator clear paths can span an active prefix and an inactive tail, so
+  // discard each VirtualQuery region independently and temporarily make only
+  // an inactive region writable for the duration of that call.
+  while (cursor < range_end) {
+    MEMORY_BASIC_INFORMATION info = {};
+    if (::VirtualQuery(reinterpret_cast<void*>(cursor), &info, sizeof(info)) != sizeof(info) ||
+        info.State != MEM_COMMIT) {
+      ::SetLastError(ERROR_INVALID_ADDRESS);
+      errno = EINVAL;
+      return -1;
+    }
+    const uintptr_t info_begin = reinterpret_cast<uintptr_t>(info.BaseAddress);
+    const uintptr_t info_end = info.RegionSize >= range_end - info_begin
+        ? range_end
+        : info_begin + info.RegionSize;
+    if (info_end <= cursor) {
+      ::SetLastError(ERROR_INVALID_ADDRESS);
+      errno = EINVAL;
+      return -1;
+    }
+    void* const part_start = reinterpret_cast<void*>(cursor);
+    const size_t part_len = info_end - cursor;
+    DWORD old_protect = 0u;
+    const bool was_no_access = (info.Protect & 0xffu) == PAGE_NOACCESS;
+    if (was_no_access) {
+      if (!::VirtualProtect(part_start, part_len, PAGE_READWRITE, &old_protect)) {
+        errno = EINVAL;
+        return -1;
+      }
+    }
+
+    DWORD error = ::DiscardVirtualMemory(part_start, part_len);
+    DWORD restore_error = ERROR_SUCCESS;
+    DWORD ignored = 0u;
+    if (was_no_access && !::VirtualProtect(part_start, part_len, old_protect, &ignored)) {
+      restore_error = ::GetLastError();
+    }
+    if (restore_error != ERROR_SUCCESS) {
+      error = restore_error;
+    }
+    if (error != ERROR_SUCCESS) {
+      ::SetLastError(error);
+      errno = error == ERROR_NOT_ENOUGH_MEMORY ? ENOMEM : EINVAL;
+      return -1;
+    }
+    cursor = info_end;
   }
-  ::SetLastError(error);
-  errno = error == ERROR_NOT_ENOUGH_MEMORY ? ENOMEM : EINVAL;
-  return -1;
+  return 0;
 }
 
 void MemMap::AcquireWindowsMapOwner() {
