@@ -185,22 +185,7 @@ inline mirror::Object* Heap::AllocObjectWithAllocator(Thread* self,
         // (Note this if statement will be constant folded away for the fast-path quick entry
         // points.) Because SetClass() has no write barrier, the GC may need a write barrier in the
         // case the object is non movable and points to a recently allocated movable class.
-#ifdef _WIN32
-        {
-          auto* ct = GetCardTable();
-          const void* op = obj.Ptr();
-          bool in_table = ct != nullptr && ct->AddrIsInCardTable(op);
-          LOG(INFO) << "Win64 NonMoving WB obj=" << op
-                    << " klass=" << static_cast<const void*>(klass.Ptr())
-                    << " in_card_table=" << in_table
-                    << " allocator=" << static_cast<int>(allocator);
-          if (in_table) {
-            WriteBarrier::ForFieldWrite(obj, mirror::Object::ClassOffset(), klass);
-          }
-        }
-#else
         WriteBarrier::ForFieldWrite(obj, mirror::Object::ClassOffset(), klass);
-#endif
       }
       no_suspend_pre_fence_visitor(obj, usable_size);
       QuasiAtomic::ThreadFenceForConstructor();
