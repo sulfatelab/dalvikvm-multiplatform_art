@@ -69,6 +69,7 @@ MACRO1(SETUP_SAVE_EVERYTHING_FRAME_R14_R15_SAVED, runtime_method_offset = RUNTIM
     int3
     int3
 #else
+    W003_COUNT_FRAME art_w003_frame_probe_everything
     // Save core registers from highest to lowest to agree with core spills bitmap.
     // R14 and R15, or at least placeholders for them, are already on the stack.
     PUSH r13
@@ -2281,3 +2282,37 @@ DEFINE_FUNCTION art_quick_method_exit_hook
     call SYMBOL(art_quick_do_long_jump)
     UNREACHABLE
 END_FUNCTION art_quick_method_exit_hook
+
+#if defined(_WIN32) && defined(ART_W003_FRAME_PROBE)
+    .data
+    .balign 8
+art_w003_frame_probe_refs_only:
+    .quad 0
+art_w003_frame_probe_refs_and_args:
+    .quad 0
+art_w003_frame_probe_all_callee_saves:
+    .quad 0
+art_w003_frame_probe_everything:
+    .quad 0
+    .text
+
+DEFINE_FUNCTION art_w003_frame_probe_reset
+    movq LITERAL(0), SYMBOL(art_w003_frame_probe_refs_only)(%rip)
+    movq LITERAL(0), SYMBOL(art_w003_frame_probe_refs_and_args)(%rip)
+    movq LITERAL(0), SYMBOL(art_w003_frame_probe_all_callee_saves)(%rip)
+    movq LITERAL(0), SYMBOL(art_w003_frame_probe_everything)(%rip)
+    ret
+END_FUNCTION art_w003_frame_probe_reset
+
+DEFINE_FUNCTION art_w003_frame_probe_snapshot
+    movq SYMBOL(art_w003_frame_probe_refs_only)(%rip), %rax
+    movq %rax, 0(%rcx)
+    movq SYMBOL(art_w003_frame_probe_refs_and_args)(%rip), %rax
+    movq %rax, 8(%rcx)
+    movq SYMBOL(art_w003_frame_probe_all_callee_saves)(%rip), %rax
+    movq %rax, 16(%rcx)
+    movq SYMBOL(art_w003_frame_probe_everything)(%rip), %rax
+    movq %rax, 24(%rcx)
+    ret
+END_FUNCTION art_w003_frame_probe_snapshot
+#endif

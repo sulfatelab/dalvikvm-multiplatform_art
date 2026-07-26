@@ -354,6 +354,15 @@ MACRO1(UNPOISON_HEAP_REF, rRef)
 #endif  // USE_HEAP_POISONING
 END_MACRO
 
+// Probe-only frame-family attribution. Product builds expand this to nothing.
+MACRO1(W003_COUNT_FRAME, counter)
+#if defined(_WIN32) && defined(ART_W003_FRAME_PROBE)
+    pushfq
+    lock incq VAR(counter)(%rip)
+    popfq
+#endif
+END_MACRO
+
     /*
      * Macro that sets up the callee save frame to conform with
      * Runtime::CreateCalleeSaveMethod(kSaveRefsOnly)
@@ -363,6 +372,7 @@ MACRO0(SETUP_SAVE_REFS_ONLY_FRAME)
     int3
     int3
 #else
+    W003_COUNT_FRAME art_w003_frame_probe_refs_only
     // R10 := Runtime::Current()
     LOAD_RUNTIME_INSTANCE r10
     // Save callee and GPR args, mixed together to agree with core spills bitmap.
@@ -414,6 +424,7 @@ END_MACRO
      * Runtime::CreateCalleeSaveMethod(kSaveRefsAndArgs), except for storing the method.
      */
 MACRO0(SETUP_SAVE_REFS_AND_ARGS_FRAME_REGISTERS_ONLY)
+    W003_COUNT_FRAME art_w003_frame_probe_refs_and_args
     // Save callee and GPR args, mixed together to agree with core spills bitmap.
     PUSH r15      // Callee save.
     PUSH r14      // Callee save.
@@ -487,6 +498,7 @@ MACRO0(SETUP_SAVE_ALL_CALLEE_SAVES_FRAME)
     int3
     int3
 #else
+    W003_COUNT_FRAME art_w003_frame_probe_all_callee_saves
     // R10 := Runtime::Current()
     LOAD_RUNTIME_INSTANCE r10
     // Save callee save registers to agree with core spills bitmap.
