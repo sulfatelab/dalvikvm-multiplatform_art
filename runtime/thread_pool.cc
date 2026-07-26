@@ -40,7 +40,7 @@ using android::base::StringPrintf;
 
 static constexpr bool kMeasureWaitTime = false;
 
-#if defined(__BIONIC__)
+#if defined(__BIONIC__) || defined(_WIN32)
 static constexpr bool kUseCustomThreadPoolStack = false;
 #else
 static constexpr bool kUseCustomThreadPoolStack = true;

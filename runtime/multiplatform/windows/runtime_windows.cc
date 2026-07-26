@@ -179,4 +179,22 @@ void Runtime::InitPlatformSignalHandlers() {
   }
 }
 
+void Runtime::ShutdownPlatformSignalHandlers() {
+  if (g_uef_installed.exchange(false)) {
+    // There is no getter for the process UEF. Preserve a filter installed by
+    // an embedding application after ART rather than blindly restoring the
+    // filter that preceded ART.
+    LPTOP_LEVEL_EXCEPTION_FILTER current = SetUnhandledExceptionFilter(nullptr);
+    SetUnhandledExceptionFilter(current == ArtUnhandledExceptionFilter ? g_prev_uef : current);
+    g_prev_uef = nullptr;
+  }
+  if (g_veh_installed.exchange(false)) {
+    PVOID handle = g_veh_handle;
+    g_veh_handle = nullptr;
+    if (handle != nullptr && RemoveVectoredExceptionHandler(handle) == 0) {
+      LOG(WARNING) << "RemoveVectoredExceptionHandler failed: " << GetLastError();
+    }
+  }
+}
+
 }  // namespace art

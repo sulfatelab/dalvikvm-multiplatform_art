@@ -1001,36 +1001,22 @@ void Thread::CreateNativeThread(JNIEnv* env, jobject java_peer, size_t stack_siz
   }
 }
 
-static void GetThreadStack(pthread_t thread,
+static bool GetThreadStack(pthread_t thread,
                            void** stack_base,
                            size_t* stack_size,
                            size_t* guard_size) {
 #if defined(_WIN32)
-  UNUSED(thread);
-  // Prefer a conservative stack estimate for the current thread. VirtualQuery
-  // on Wine can report oversized regions; over-estimating causes stack-overflow
-  // mprotect to clobber the heap (seen as write faults in InitWithoutImage).
-  volatile char stack_probe;
-  MEMORY_BASIC_INFORMATION mbi;
-  if (VirtualQuery((void*)&stack_probe, &mbi, sizeof(mbi)) != 0) {
-    char* allocation_base = reinterpret_cast<char*>(mbi.AllocationBase);
-    // High address of current committed page chain containing the probe.
-    char* region_end = reinterpret_cast<char*>(mbi.BaseAddress) + mbi.RegionSize;
-    // Typical main-thread stack on Windows is 1MB; clamp to [256K, 8MB].
-    size_t approx = static_cast<size_t>(region_end - allocation_base);
-    if (approx < 256 * KB) {
-      approx = 1 * MB;
-    } else if (approx > 8 * MB) {
-      approx = 8 * MB;
-      allocation_base = region_end - approx;
-    }
-    *stack_base = allocation_base;
-    *stack_size = approx;
-  } else {
-    *stack_base = nullptr;
-    *stack_size = 1 * MB;
+  // The Windows pthread facade accepts only the current system stack. It
+  // rejects fibers/manual stacks and validates the complete reservation with
+  // GetCurrentThreadStackLimits plus a VirtualQuery allocation walk.
+  pthread_attr_t attributes;
+  if (pthread_getattr_np(thread, &attributes) != 0) {
+    return false;
   }
-  *guard_size = 4 * KB;
+  bool success = pthread_attr_getstack(&attributes, stack_base, stack_size) == 0 &&
+      pthread_attr_getguardsize(&attributes, guard_size) == 0 &&
+      pthread_attr_destroy(&attributes) == 0;
+  return success;
 #elif defined(__APPLE__)
   *stack_size = pthread_get_stacksize_np(thread);
   void* stack_addr = pthread_get_stackaddr_np(thread);
@@ -1081,6 +1067,7 @@ static void GetThreadStack(pthread_t thread,
 #endif
 
 #endif
+  return true;
 }
 
 bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_env_ext) {
@@ -1102,7 +1089,14 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
   void* read_stack_base = nullptr;
   size_t read_stack_size = 0;
   size_t read_guard_size = 0;
-  GetThreadStack(tlsPtr_.pthread_self, &read_stack_base, &read_stack_size, &read_guard_size);
+  if (!GetThreadStack(
+          tlsPtr_.pthread_self, &read_stack_base, &read_stack_size, &read_guard_size)) {
+    LogHelper::LogLineLowStack(__PRETTY_FUNCTION__,
+                               __LINE__,
+                               ::android::base::ERROR,
+                               "Unable to validate the current native thread stack");
+    return false;
+  }
   if (!InitStack<kNativeStackType>(reinterpret_cast<uint8_t*>(read_stack_base),
                                    read_stack_size,
                                    read_guard_size)) {

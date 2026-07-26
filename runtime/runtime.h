@@ -1158,6 +1158,7 @@ class Runtime {
   static void InitPlatformSignalHandlers();
 #ifdef _WIN32
   static bool CheckPlatformProcessPolicy();
+  static void ShutdownPlatformSignalHandlers();
 #endif
 
   Runtime();

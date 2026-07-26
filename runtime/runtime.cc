@@ -528,6 +528,12 @@ Runtime::~Runtime() {
 
   // Shutdown the fault manager if it was initialized.
   fault_manager.Shutdown();
+#ifdef _WIN32
+  // Vectored and unhandled exception callbacks point into art.dll. Remove
+  // them while the image is still loaded so process teardown cannot dispatch
+  // through stale code after DLL detach has begun.
+  ShutdownPlatformSignalHandlers();
+#endif
 
   ScopedTrace trace2("Delete state");
   delete monitor_list_;
