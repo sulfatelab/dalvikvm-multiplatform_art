@@ -349,6 +349,37 @@ INVOKE_TRAMPOLINE art_quick_invoke_virtual_trampoline_with_access_check, artInvo
 
 
     /*
+     * Preserve the part of the Microsoft x64 native ABI that is not preserved
+     * by the ART managed x86-64 ABI. The lower 128 bits of XMM6-XMM15 are
+     * nonvolatile for native Win64 callers, while managed code preserves only
+     * XMM12-XMM15. Keep this save area outside the canonical ART managed frame.
+     */
+MACRO0(SAVE_WIN64_NATIVE_XMMS)
+#if defined(_WIN32)
+    subq LITERAL(96), %rsp
+    movdqu %xmm6, 0(%rsp)
+    movdqu %xmm7, 16(%rsp)
+    movdqu %xmm8, 32(%rsp)
+    movdqu %xmm9, 48(%rsp)
+    movdqu %xmm10, 64(%rsp)
+    movdqu %xmm11, 80(%rsp)
+#endif
+END_MACRO
+
+MACRO0(RESTORE_WIN64_NATIVE_XMMS)
+#if defined(_WIN32)
+    movdqu 0(%rsp), %xmm6
+    movdqu 16(%rsp), %xmm7
+    movdqu 32(%rsp), %xmm8
+    movdqu 48(%rsp), %xmm9
+    movdqu 64(%rsp), %xmm10
+    movdqu 80(%rsp), %xmm11
+    addq LITERAL(96), %rsp
+#endif
+END_MACRO
+
+
+    /*
      * Helper for quick invocation stub to set up XMM registers. Assumes r10 == shorty,
      * r11 == arg_array. Clobbers r10, r11 and al. Branches to xmm_setup_finished if it encounters
      * the end of the shorty.
@@ -448,6 +479,7 @@ DEFINE_FUNCTION art_quick_invoke_stub
     movq %r11, %r9                // shorty
     // rSELF published after PUSH r15 inside the frame setup.
 #endif
+    SAVE_WIN64_NATIVE_XMMS
     // Set up argument XMM registers.
     leaq 1(%r9), %r10             // R10 := shorty + 1  ; ie skip return arg character.
     leaq 4(%rsi), %r11            // R11 := arg_array + 4 ; ie skip this pointer.
@@ -516,6 +548,7 @@ DEFINE_FUNCTION art_quick_invoke_stub
     POP r9                        // Pop r9 - shorty*
     POP r8                        // Pop r8 - result*.
     POP rbp                       // Pop rbp
+    RESTORE_WIN64_NATIVE_XMMS
 #if defined(_WIN32)
     popq %rsi                     // MS callee-saved
     popq %rdi
@@ -571,6 +604,7 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     movq %r11, %r9                // shorty
     // rSELF published after PUSH r15 inside the frame setup.
 #endif
+    SAVE_WIN64_NATIVE_XMMS
     // Set up argument XMM registers.
     leaq 1(%r9), %r10             // R10 := shorty + 1  ; ie skip return arg character
     movq %rsi, %r11               // R11 := arg_array
@@ -636,6 +670,7 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     POP r9                         // Pop r9 - shorty*.
     POP r8                         // Pop r8 - result*.
     POP rbp                        // Pop rbp
+    RESTORE_WIN64_NATIVE_XMMS
 #if defined(_WIN32)
     popq %rsi                      // MS callee-saved
     popq %rdi
@@ -2019,6 +2054,7 @@ DEFINE_FUNCTION art_quick_osr_stub
     movq %r10, %r8                // shorty
     movq %r11, %r9                // Thread* self
 #endif
+    SAVE_WIN64_NATIVE_XMMS
     // Save the non-volatiles.
     PUSH rbp                      // Save rbp.
     PUSH rcx                      // Save rcx/result*.
@@ -2055,6 +2091,7 @@ DEFINE_FUNCTION art_quick_osr_stub
     POP r8
     POP rcx
     POP rbp
+    RESTORE_WIN64_NATIVE_XMMS
 #if defined(_WIN32)
     POP rsi
     POP rdi
@@ -2063,7 +2100,7 @@ DEFINE_FUNCTION art_quick_osr_stub
     ret
 .Losr_entry:
 #if defined(_WIN32)
-    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 96
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 192
 #else
     CFI_RESTORE_STATE_AND_DEF_CFA rsp, 80
 #endif
