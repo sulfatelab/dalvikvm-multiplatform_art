@@ -1697,6 +1697,15 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
     android::base::SetLogger(android::base::StderrLogger);
   }
 
+#ifdef _WIN32
+  // ART's x86_64 exception/deoptimization long jump does not maintain CET's
+  // protected return stack. Reject the process policy before memory managers,
+  // ART threads, nterp publication, or JIT initialization can begin.
+  if (!CheckPlatformProcessPolicy()) {
+    return false;
+  }
+#endif
+
   MemMap::Init();
 
   verifier_missing_kthrow_fatal_ = runtime_options.GetOrDefault(Opt::VerifierMissingKThrowFatal);

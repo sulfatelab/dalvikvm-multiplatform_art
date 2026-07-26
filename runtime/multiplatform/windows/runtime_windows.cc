@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/logging.h"
+#include "cet_compat.h"
 
 #pragma comment(lib, "dbghelp.lib")
 
@@ -145,6 +146,26 @@ LONG WINAPI ArtUnhandledExceptionFilter(EXCEPTION_POINTERS* info) {
   return EXCEPTION_EXECUTE_HANDLER;
 }
 }  // namespace
+
+bool Runtime::CheckPlatformProcessPolicy() {
+  const UserShadowStackPolicyObservation observation = QueryUserShadowStackPolicy();
+  const UserShadowStackPolicyDecision decision =
+      EvaluateUserShadowStackPolicy(observation);
+  if (UserShadowStackPolicyAllowsArt(decision)) {
+    return true;
+  }
+
+  LOG(ERROR) << "ART Win64 startup rejected: CET user shadow stacks "
+             << "(Hardware-enforced Stack Protection) must be completely disabled "
+             << "before process creation; compatibility, audit, and strict modes "
+             << "are unsupported. decision="
+             << UserShadowStackPolicyDecisionName(decision)
+             << " build="
+             << (observation.windows_build_known ? observation.windows_build : 0u)
+             << " flags=0x" << std::hex << observation.flags
+             << " error=" << std::dec << observation.query_error;
+  return false;
+}
 
 void Runtime::InitPlatformSignalHandlers() {
   if (!g_veh_installed.exchange(true)) {
