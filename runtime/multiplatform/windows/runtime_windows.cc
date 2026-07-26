@@ -142,8 +142,14 @@ LONG CALLBACK ArtVectoredHandler(EXCEPTION_POINTERS* info) {
 LONG WINAPI ArtUnhandledExceptionFilter(EXCEPTION_POINTERS* info) {
   DumpException(info, "ART Win64 UEF");
   TryWriteMiniDump(info);
-  // Controlled abort: do not silently continue corrupted process.
-  return EXCEPTION_EXECUTE_HANDLER;
+  // Preserve an embedding application's fatal policy after ART's best-effort
+  // diagnostics. Returning search with no predecessor lets Windows apply its
+  // normal unhandled-exception policy.
+  LPTOP_LEVEL_EXCEPTION_FILTER predecessor = g_prev_uef;
+  if (predecessor != nullptr && predecessor != ArtUnhandledExceptionFilter) {
+    return predecessor(info);
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
 }
 }  // namespace
 

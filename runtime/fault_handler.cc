@@ -38,6 +38,9 @@
 #include "sigchain.h"
 #include "thread-current-inl.h"
 #include "verify_object-inl.h"
+#if defined(_WIN32) && defined(__x86_64__)
+#include "multiplatform/windows/fault_handler_windows.h"
+#endif
 
 namespace art HIDDEN {
 // Static fault manger object accessed by signal handler.
@@ -60,7 +63,20 @@ extern "C" NO_INLINE __attribute__((visibility("default"))) void art_sigsys_faul
 
 // Signal handler called on SIGSEGV.
 static bool art_sigsegv_handler(int sig, siginfo_t* info, void* context) {
+#if defined(_WIN32) && defined(__x86_64__)
+  Thread* self = Thread::Current();
+  WindowsFaultContext* windows_context = reinterpret_cast<WindowsFaultContext*>(context);
+  if (self == nullptr || windows_context == nullptr || windows_context->context == nullptr ||
+      windows_context->context->R15 != reinterpret_cast<ULONG_PTR>(self) ||
+      !self->TryEnterWin32FaultHandler()) {
+    return false;
+  }
+  const bool handled = fault_manager.HandleSigsegvFault(sig, info, context);
+  self->ExitWin32FaultHandler();
+  return handled;
+#else
   return fault_manager.HandleSigsegvFault(sig, info, context);
+#endif
 }
 
 // Signal handler called on SIGBUS.
@@ -162,11 +178,13 @@ void FaultManager::Init(bool use_sig_chain) {
     }
 
     // Notify the kernel that we intend to use a specific `membarrier()` command.
+#if !defined(_WIN32)
     int result = art::membarrier(MembarrierCommand::kRegisterPrivateExpedited);
     if (result != 0) {
       LOG(WARNING) << "FaultHandler: MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED failed: "
                    << errno << " " << strerror(errno);
     }
+#endif
 
     {
       MutexLock lock(Thread::Current(), generated_code_ranges_lock_);

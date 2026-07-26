@@ -28,6 +28,10 @@
 #include "runtime_globals.h"
 #include "thread-current-inl.h"
 
+#if defined(_WIN32) && defined(__x86_64__)
+#include "multiplatform/windows/fault_handler_windows.h"
+#endif
+
 #if defined(__APPLE__)
 #define ucontext __darwin_ucontext
 
@@ -48,6 +52,14 @@
 #define CTX_JMP_BUF uc_mcontext->__ss.__eax
 #endif
 
+#elif defined(_WIN32) && defined(__x86_64__)
+using X86FaultContext = art::WindowsFaultContext;
+#define CTX_ESP context->Rsp
+#define CTX_EIP context->Rip
+#define CTX_EAX context->Rax
+#define CTX_METHOD context->Rdi
+#define CTX_RDI context->Rdi
+#define CTX_JMP_BUF context->Rdi
 #elif defined(__x86_64__)
 // 64 bit linux build.
 #define CTX_ESP uc_mcontext.gregs[REG_RSP]
@@ -63,6 +75,10 @@
 #define CTX_EAX uc_mcontext.gregs[REG_EAX]
 #define CTX_METHOD uc_mcontext.gregs[REG_EAX]
 #define CTX_JMP_BUF uc_mcontext.gregs[REG_EAX]
+#endif
+
+#if !defined(_WIN32) || !defined(__x86_64__)
+using X86FaultContext = ucontext_t;
 #endif
 
 //
@@ -259,7 +275,14 @@ static uint32_t GetInstructionSize(const uint8_t* pc, size_t bytes) {
 }
 
 uintptr_t FaultManager::GetFaultPc([[maybe_unused]] siginfo_t* siginfo, void* context) {
-  ucontext_t* uc = reinterpret_cast<ucontext_t*>(context);
+#if defined(_WIN32) && defined(__x86_64__)
+  WindowsFaultContext* uc = reinterpret_cast<WindowsFaultContext*>(context);
+  if (uc == nullptr || uc->context == nullptr) {
+    return 0u;
+  }
+#else
+  X86FaultContext* uc = reinterpret_cast<X86FaultContext*>(context);
+#endif
   if (uc->CTX_ESP == 0) {
     VLOG(signals) << "Missing SP";
     return 0u;
@@ -268,7 +291,14 @@ uintptr_t FaultManager::GetFaultPc([[maybe_unused]] siginfo_t* siginfo, void* co
 }
 
 uintptr_t FaultManager::GetFaultSp(void* context) {
-  ucontext_t* uc = reinterpret_cast<ucontext_t*>(context);
+#if defined(_WIN32) && defined(__x86_64__)
+  WindowsFaultContext* uc = reinterpret_cast<WindowsFaultContext*>(context);
+  if (uc == nullptr || uc->context == nullptr) {
+    return 0u;
+  }
+#else
+  X86FaultContext* uc = reinterpret_cast<X86FaultContext*>(context);
+#endif
   return uc->CTX_ESP;
 }
 
@@ -278,7 +308,7 @@ bool NullPointerHandler::Action(int, siginfo_t* sig, void* context) {
     return false;
   }
 
-  ucontext_t* uc = reinterpret_cast<ucontext_t*>(context);
+  X86FaultContext* uc = reinterpret_cast<X86FaultContext*>(context);
   ArtMethod** sp = reinterpret_cast<ArtMethod**>(uc->CTX_ESP);
   ArtMethod* method = *sp;
   if (!IsValidMethod(method)) {
@@ -358,7 +388,7 @@ bool SuspensionHandler::Action(int, siginfo_t*, void* context) {
 #endif
   uint8_t checkinst2[] = {0x85, 0x00};
 
-  ucontext_t* uc = reinterpret_cast<ucontext_t*>(context);
+  X86FaultContext* uc = reinterpret_cast<X86FaultContext*>(context);
   uint8_t* pc = reinterpret_cast<uint8_t*>(uc->CTX_EIP);
   uint8_t* sp = reinterpret_cast<uint8_t*>(uc->CTX_ESP);
 
@@ -414,7 +444,16 @@ bool SuspensionHandler::Action(int, siginfo_t*, void* context) {
 // address for the previous method is on the stack at ESP.
 
 bool StackOverflowHandler::Action(int, siginfo_t* info, void* context) {
-  ucontext_t* uc = reinterpret_cast<ucontext_t*>(context);
+  X86FaultContext* uc = reinterpret_cast<X86FaultContext*>(context);
+#if defined(_WIN32) && defined(__x86_64__)
+  if (uc == nullptr || uc->context == nullptr || uc->access_type != kWin32FaultRead) {
+    return false;
+  }
+  Thread* self = Thread::Current();
+  if (self == nullptr || !self->IsWin32StackOverflowPageProtected()) {
+    return false;
+  }
+#endif
   uintptr_t sp = static_cast<uintptr_t>(uc->CTX_ESP);
 
   uintptr_t fault_addr = reinterpret_cast<uintptr_t>(info->si_addr);
@@ -433,6 +472,14 @@ bool StackOverflowHandler::Action(int, siginfo_t* info, void* context) {
     VLOG(signals) << "Not a stack overflow";
     return false;
   }
+
+#if defined(_WIN32) && defined(__x86_64__)
+  if (fault_addr < reinterpret_cast<uintptr_t>(self->GetWin32StackOverflowProtectedBegin()) ||
+      fault_addr >= reinterpret_cast<uintptr_t>(self->GetWin32StackOverflowProtectedEnd())) {
+    VLOG(signals) << "Stack overflow address is outside the ART protected page";
+    return false;
+  }
+#endif
 
   VLOG(signals) << "Stack overflow found";
 

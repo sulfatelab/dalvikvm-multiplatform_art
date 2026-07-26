@@ -378,6 +378,16 @@ class EXPORT Thread {
   bool IsWin32StackOverflowPageProtected() const {
     return win32_stack_page_.state == Win32StackPageState::kProtected;
   }
+
+  bool TryEnterWin32FaultHandler() {
+    uint8_t expected = 0u;
+    return win32_fault_handler_active_.compare_exchange_strong(
+        expected, 1u, std::memory_order_acquire, std::memory_order_relaxed);
+  }
+
+  void ExitWin32FaultHandler() {
+    win32_fault_handler_active_.store(0u, std::memory_order_release);
+  }
 #endif
 
   // On a runnable thread, check for pending thread suspension request and handle if pending.
@@ -2583,6 +2593,7 @@ class EXPORT Thread {
 
 #if defined(_WIN32)
   Win32StackPageRecord win32_stack_page_;
+  std::atomic<uint8_t> win32_fault_handler_active_ = 0u;
 #endif
 
   // Guards the 'wait_monitor_' members.
