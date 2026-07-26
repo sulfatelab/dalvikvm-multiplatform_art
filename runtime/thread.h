@@ -46,6 +46,9 @@
 #include "javaheapprof/javaheapsampler.h"
 #include "jvalue.h"
 #include "managed_stack.h"
+#if defined(_WIN32)
+#include "multiplatform/windows/stack_windows.h"
+#endif
 #include "offsets.h"
 #include "read_barrier_config.h"
 #include "reflective_handle_scope.h"
@@ -361,6 +364,21 @@ class EXPORT Thread {
   // (lowest memory). The higher portion of the memory is protected against reads and the lower is
   // available for use while throwing the StackOverflow exception.
   ALWAYS_INLINE static size_t GetStackOverflowProtectedSize();
+
+#if defined(_WIN32)
+  uint8_t* GetWin32StackOverflowProtectedBegin() const {
+    return reinterpret_cast<uint8_t*>(win32_stack_page_.selection.page_begin);
+  }
+
+  uint8_t* GetWin32StackOverflowProtectedEnd() const {
+    uint8_t* begin = GetWin32StackOverflowProtectedBegin();
+    return begin != nullptr ? begin + win32_stack_page_.selection.page_size : nullptr;
+  }
+
+  bool IsWin32StackOverflowPageProtected() const {
+    return win32_stack_page_.state == Win32StackPageState::kProtected;
+  }
+#endif
 
   // On a runnable thread, check for pending thread suspension request and handle if pending.
   void AllowThreadSuspension() REQUIRES_SHARED(Locks::mutator_lock_);
@@ -1937,6 +1955,14 @@ class EXPORT Thread {
   void SetUpAlternateSignalStack();
   void TearDownAlternateSignalStack();
   void MadviseAwayAlternateSignalStack();
+#if defined(_WIN32)
+  bool InstallWin32StackProtection(uint8_t* read_stack_base,
+                                   size_t read_stack_size,
+                                   size_t protected_size,
+                                   size_t minimum_bytes_above,
+                                   size_t* excluded_low_size);
+  bool RestoreWin32StackProtection();
+#endif
 
   ALWAYS_INLINE void TransitionToSuspendedAndRunCheckpoints(ThreadState new_state)
       REQUIRES(!Locks::thread_suspend_count_lock_, !Roles::uninterruptible_)
@@ -2554,6 +2580,10 @@ class EXPORT Thread {
 
   // All fields below this line should not be accessed by native code. This means these fields can
   // be modified, rearranged, added or removed without having to modify asm_support.h
+
+#if defined(_WIN32)
+  Win32StackPageRecord win32_stack_page_;
+#endif
 
   // Guards the 'wait_monitor_' members.
   Mutex* wait_mutex_ DEFAULT_MUTEX_ACQUIRED_AFTER;

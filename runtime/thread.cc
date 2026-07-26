@@ -774,6 +774,15 @@ static size_t FixStackSize(size_t stack_size) {
     // stack space, so we should add our reserved space on top of what they requested, rather
     // than implicitly take it away from them.
     stack_size += GetStackOverflowReservedBytes(kRuntimeQuickCodeISA);
+#if defined(_WIN32)
+    // W-014 installs the fixed page before W-010 enables implicit fault
+    // translation. Compensate for the additional ART-owned page while that
+    // protection remains dormant. The measured excluded-low prefix is part of
+    // the system stack layout rather than an ART-created debit.
+    if (!Runtime::Current()->IsAotCompiler()) {
+      stack_size += Thread::GetStackOverflowProtectedSize();
+    }
+#endif
   }
 
   // Some systems require the stack size to be a multiple of the system page size, so round up.
@@ -1459,8 +1468,9 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
   // The thread won't be able to do much with this stack: even the GC takes between 8K and 12K.
   DCHECK_ALIGNED_PARAM(static_cast<size_t>(GetStackOverflowProtectedSize()),
                        static_cast<int32_t>(gPageSize));
-  size_t min_stack = GetStackOverflowProtectedSize() +
+  size_t minimum_bytes_above =
       RoundUp(GetStackOverflowReservedBytes(kRuntimeQuickCodeISA) + 4 * KB, gPageSize);
+  size_t min_stack = GetStackOverflowProtectedSize() + minimum_bytes_above;
   if (read_stack_size <= min_stack) {
     // Note, as we know the stack is small, avoid operations that could use a lot of stack.
     LogHelper::LogLineLowStack(__PRETTY_FUNCTION__,
@@ -1470,6 +1480,35 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
     return false;
   }
 
+  // Set stack_end_ to the bottom of the stack saving space of stack overflows
+
+  Runtime* runtime = Runtime::Current();
+  bool implicit_stack_check =
+      runtime->GetImplicitStackOverflowChecks() && !runtime->IsAotCompiler();
+#if defined(_WIN32)
+  // Land the Windows fixed page before W-010 activation so its placement,
+  // protection, and detach restoration can be validated independently. The
+  // generated-fault handler remains disabled by implicit_stack_check.
+  bool install_stack_protection =
+      implicit_stack_check || !runtime->IsAotCompiler();
+  read_guard_size = 0u;
+  if (install_stack_protection) {
+    if (!InstallWin32StackProtection(read_stack_base,
+                                     read_stack_size,
+                                     GetStackOverflowProtectedSize(),
+                                     minimum_bytes_above,
+                                     &read_guard_size)) {
+      LogHelper::LogLineLowStack(__PRETTY_FUNCTION__,
+                                 __LINE__,
+                                 ::android::base::ERROR,
+                                 "Unable to install Win64 ART stack protection");
+      return false;
+    }
+  }
+#else
+  bool install_stack_protection = implicit_stack_check;
+#endif
+
   const char* stack_type_str = "";
   if constexpr (stack_type == kNativeStackType) {
     stack_type_str = "Native";
@@ -1478,22 +1517,26 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
   }
 
   // This is included in the SIGQUIT output, but it's useful here for thread debugging.
+#if defined(_WIN32)
+  VLOG(threads) << StringPrintf("%s stack is at %p (%s with %s excluded low)",
+                                stack_type_str,
+                                read_stack_base,
+                                PrettySize(read_stack_size).c_str(),
+                                PrettySize(read_guard_size).c_str());
+#else
   VLOG(threads) << StringPrintf("%s stack is at %p (%s with %s guard)",
                                 stack_type_str,
                                 read_stack_base,
                                 PrettySize(read_stack_size).c_str(),
                                 PrettySize(read_guard_size).c_str());
-
-  // Set stack_end_ to the bottom of the stack saving space of stack overflows
-
-  Runtime* runtime = Runtime::Current();
-  bool implicit_stack_check =
-      runtime->GetImplicitStackOverflowChecks() && !runtime->IsAotCompiler();
+#endif
 
   ResetDefaultStackEnd<stack_type>();
 
-  // Install the protected region if we are doing implicit overflow checks.
-  if (implicit_stack_check) {
+  // Account for the protected region. On Windows the page was already
+  // installed by the bounded platform helper above; other platforms keep the
+  // existing implicit-check installation path.
+  if (install_stack_protection) {
     // The thread might have protected region at the bottom.  We need
     // to install our own region so we need to move the limits
     // of the stack to make room for it.
@@ -1505,7 +1548,9 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
     SetStackSize<stack_type>(
         GetStackSize<stack_type>() - (read_guard_size + GetStackOverflowProtectedSize()));
 
+#if !defined(_WIN32)
     InstallImplicitProtection<stack_type>();
+#endif
   }
 
   // Consistency check.
@@ -2834,6 +2879,13 @@ void Thread::Destroy(bool should_run_callbacks) {
 }
 
 Thread::~Thread() {
+#ifdef _WIN32
+  // External native threads may continue after ART detach. Restore the page
+  // while this Thread still denotes the current live system stack.
+  if (!RestoreWin32StackProtection()) {
+    LOG(FATAL) << "Win64 ART stack protection could not be restored during detach";
+  }
+#endif
   CHECK(tlsPtr_.class_loader_override == nullptr);
   CHECK(tlsPtr_.jpeer == nullptr);
   CHECK(tlsPtr_.opeer == nullptr);
@@ -4840,9 +4892,17 @@ std::ostream& operator<<(std::ostream& os, const Thread& thread) {
 template <StackType stack_type>
 bool Thread::ProtectStack(bool fatal_on_error) {
 #ifdef _WIN32
-  // Stack-overflow guard pages are unreliable until TEB bounds are accurate.
-  // Skipping avoids mprotect of miscomputed addresses that can hit the heap.
-  UNUSED(fatal_on_error);
+  const char* failure = nullptr;
+  uint32_t win32_error = 0u;
+  if (!ProtectWin32StackPage(&win32_stack_page_, &failure, &win32_error)) {
+    LOG(ERROR) << "Unable to protect Win64 ART stack page: "
+               << (failure != nullptr ? failure : "unknown failure")
+               << " error=" << win32_error;
+    if (fatal_on_error) {
+      exit(1);
+    }
+    return false;
+  }
   return true;
 #else
   void* pregion = GetStackBegin<stack_type>() - GetStackOverflowProtectedSize();
@@ -4864,6 +4924,14 @@ bool Thread::ProtectStack(bool fatal_on_error) {
 template <StackType stack_type>
 bool Thread::UnprotectStack() {
 #ifdef _WIN32
+  const char* failure = nullptr;
+  uint32_t win32_error = 0u;
+  if (!UnprotectWin32StackPage(&win32_stack_page_, &failure, &win32_error)) {
+    LOG(ERROR) << "Unable to unprotect Win64 ART stack page: "
+               << (failure != nullptr ? failure : "unknown failure")
+               << " error=" << win32_error;
+    return false;
+  }
   return true;
 #else
   void* pregion = GetStackBegin<stack_type>() - GetStackOverflowProtectedSize();
