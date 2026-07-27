@@ -161,14 +161,16 @@ bool Runtime::CheckPlatformProcessPolicy() {
     return true;
   }
 
-  LOG(ERROR) << "ART Win64 startup rejected: CET user shadow stacks "
-             << "(Hardware-enforced Stack Protection) must be completely disabled "
-             << "before process creation; compatibility, audit, and strict modes "
-             << "are unsupported. decision="
+  LOG(ERROR) << "ART Win64 startup rejected: incompatible CET user-shadow-stack "
+             << "process policy must be disabled before process creation; HSP "
+             << "compatibility/audit/strict modes, context-IP validation, and "
+             << "non-CET binary blocking are unsupported. decision="
              << UserShadowStackPolicyDecisionName(decision)
              << " build="
              << (observation.windows_build_known ? observation.windows_build : 0u)
              << " flags=0x" << std::hex << observation.flags
+             << " known_incompatible=0x"
+             << KnownIncompatibleUserShadowStackPolicyFlags(observation.flags)
              << " error=" << std::dec << observation.query_error;
   return false;
 }

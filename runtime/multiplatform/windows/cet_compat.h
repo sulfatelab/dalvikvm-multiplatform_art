@@ -18,12 +18,14 @@ struct UserShadowStackPolicyObservation {
 enum class UserShadowStackPolicyDecision : uint8_t {
   kDisabled,
   kUnavailableOnOlderWindows,
-  kEnabledOrAudited,
+  kIncompatible,
   kUnexpectedQueryFailure,
   kWindowsVersionUnavailable,
 };
 
 UserShadowStackPolicyObservation QueryUserShadowStackPolicy();
+
+uint32_t KnownIncompatibleUserShadowStackPolicyFlags(uint32_t flags);
 
 UserShadowStackPolicyDecision EvaluateUserShadowStackPolicy(
     const UserShadowStackPolicyObservation& observation);

@@ -46,15 +46,35 @@ UserShadowStackPolicyObservation QueryUserShadowStackPolicy() {
   return observation;
 }
 
+uint32_t KnownIncompatibleUserShadowStackPolicyFlags(uint32_t flags) {
+  PROCESS_MITIGATION_USER_SHADOW_STACK_POLICY observed = {};
+  observed.Flags = flags;
+
+  // Inspect only fields defined by the SDK. CetDynamicApisOutOfProcOnly does
+  // not enable HSP or context-IP validation, and ReservedFlags has no defined
+  // policy meaning, so neither belongs in ART's incompatibility decision.
+  PROCESS_MITIGATION_USER_SHADOW_STACK_POLICY incompatible = {};
+  incompatible.EnableUserShadowStack = observed.EnableUserShadowStack;
+  incompatible.AuditUserShadowStack = observed.AuditUserShadowStack;
+  incompatible.SetContextIpValidation = observed.SetContextIpValidation;
+  incompatible.AuditSetContextIpValidation = observed.AuditSetContextIpValidation;
+  incompatible.EnableUserShadowStackStrictMode = observed.EnableUserShadowStackStrictMode;
+  incompatible.BlockNonCetBinaries = observed.BlockNonCetBinaries;
+  incompatible.BlockNonCetBinariesNonEhcont = observed.BlockNonCetBinariesNonEhcont;
+  incompatible.AuditBlockNonCetBinaries = observed.AuditBlockNonCetBinaries;
+  incompatible.SetContextIpValidationRelaxedMode = observed.SetContextIpValidationRelaxedMode;
+  return incompatible.Flags;
+}
+
 UserShadowStackPolicyDecision EvaluateUserShadowStackPolicy(
     const UserShadowStackPolicyObservation& observation) {
   if (!observation.windows_build_known) {
     return UserShadowStackPolicyDecision::kWindowsVersionUnavailable;
   }
   if (observation.query_succeeded) {
-    return observation.flags == 0u
+    return KnownIncompatibleUserShadowStackPolicyFlags(observation.flags) == 0u
                ? UserShadowStackPolicyDecision::kDisabled
-               : UserShadowStackPolicyDecision::kEnabledOrAudited;
+               : UserShadowStackPolicyDecision::kIncompatible;
   }
   if (observation.windows_build < kUserShadowStackPolicyFirstBuild &&
       observation.query_error == ERROR_INVALID_PARAMETER) {
@@ -74,8 +94,8 @@ const char* UserShadowStackPolicyDecisionName(UserShadowStackPolicyDecision deci
       return "disabled";
     case UserShadowStackPolicyDecision::kUnavailableOnOlderWindows:
       return "unavailable-on-older-windows";
-    case UserShadowStackPolicyDecision::kEnabledOrAudited:
-      return "enabled-or-audited";
+    case UserShadowStackPolicyDecision::kIncompatible:
+      return "incompatible";
     case UserShadowStackPolicyDecision::kUnexpectedQueryFailure:
       return "unexpected-query-failure";
     case UserShadowStackPolicyDecision::kWindowsVersionUnavailable:
