@@ -1734,7 +1734,9 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     movq %xmm14, 96(%rsp)
     movq %xmm15, 104(%rsp)
     movq %rdi, 0(%rsp)
-    .seh_savereg %rdi, 0
+    // R12 is established after the 5120-byte reserved-area subtraction, so
+    // the completed-frame PE offset for this earlier RDI save is 5120.
+    .seh_savereg %rdi, GENERIC_JNI_TRAMPOLINE_RESERVED_AREA
     THREAD_STORE_Q rsp, THREAD_TOP_QUICK_FRAME_OFFSET
 #else
     SETUP_SAVE_REFS_AND_ARGS_FRAME_WITH_METHOD_IN_RDI
