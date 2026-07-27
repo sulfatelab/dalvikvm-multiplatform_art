@@ -510,17 +510,17 @@ DEFINE_FUNCTION art_quick_invoke_stub
     subq LITERAL(96), %rsp
     .seh_stackalloc 96
     movdqu %xmm6, 0(%rsp)
-    .seh_savexmm %xmm6, 0
+    .seh_savexmm %xmm6, 64
     movdqu %xmm7, 16(%rsp)
-    .seh_savexmm %xmm7, 16
+    .seh_savexmm %xmm7, 80
     movdqu %xmm8, 32(%rsp)
-    .seh_savexmm %xmm8, 32
+    .seh_savexmm %xmm8, 96
     movdqu %xmm9, 48(%rsp)
-    .seh_savexmm %xmm9, 48
+    .seh_savexmm %xmm9, 112
     movdqu %xmm10, 64(%rsp)
-    .seh_savexmm %xmm10, 64
+    .seh_savexmm %xmm10, 128
     movdqu %xmm11, 80(%rsp)
-    .seh_savexmm %xmm11, 80
+    .seh_savexmm %xmm11, 144
     PUSH rbp
     .seh_pushreg %rbp
     PUSH r8
@@ -667,17 +667,17 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     subq LITERAL(96), %rsp
     .seh_stackalloc 96
     movdqu %xmm6, 0(%rsp)
-    .seh_savexmm %xmm6, 0
+    .seh_savexmm %xmm6, 64
     movdqu %xmm7, 16(%rsp)
-    .seh_savexmm %xmm7, 16
+    .seh_savexmm %xmm7, 80
     movdqu %xmm8, 32(%rsp)
-    .seh_savexmm %xmm8, 32
+    .seh_savexmm %xmm8, 96
     movdqu %xmm9, 48(%rsp)
-    .seh_savexmm %xmm9, 48
+    .seh_savexmm %xmm9, 112
     movdqu %xmm10, 64(%rsp)
-    .seh_savexmm %xmm10, 64
+    .seh_savexmm %xmm10, 128
     movdqu %xmm11, 80(%rsp)
-    .seh_savexmm %xmm11, 80
+    .seh_savexmm %xmm11, 144
     PUSH rbp
     .seh_pushreg %rbp
     PUSH r8
@@ -2185,16 +2185,22 @@ END_FUNCTION art_quick_read_barrier_for_root_slow
      */
 DEFINE_FUNCTION art_quick_osr_stub
 #if defined(_WIN32)
+    .seh_proc art_quick_osr_stub
     // Microsoft x64 entry:
     //   RCX = stack, RDX = stack_size, R8 = native_pc, R9 = result
     //   [RSP+0x28] = shorty, [RSP+0x30] = Thread* self.
-    // Preserve the additional Microsoft non-volatiles before reshaping the
-    // arguments for the shared SysV-shaped body.
+    // Capture the stack arguments before building the fixed save area.
+    movq 0x28(%rsp), %r10         // shorty
+    movq 0x30(%rsp), %r11         // Thread* self
+    // Save native RBP immediately below the return address. The separate OSR
+    // continuation can then recover it from a fixed RSP offset even though
+    // returned managed code has reconstructed a managed RBP value.
+    PUSH rbp
+    .seh_pushreg %rbp
     PUSH rdi
+    .seh_pushreg %rdi
     PUSH rsi
-    // Stack grew 16 bytes: 5th/6th args are now at 0x38 / 0x40.
-    movq 0x38(%rsp), %r10         // shorty
-    movq 0x40(%rsp), %r11         // Thread* self
+    .seh_pushreg %rsi
     movq %rcx, %rdi               // stack
     movq %rdx, %rsi               // stack_size
     movq %r8, %rdx                // native_pc
@@ -2202,19 +2208,60 @@ DEFINE_FUNCTION art_quick_osr_stub
     movq %r10, %r8                // shorty
     movq %r11, %r9                // Thread* self
 #endif
+#if defined(_WIN32)
+    // Keep PE annotations adjacent to the instructions whose completed effects
+    // they describe. RBP is established below and remains stable while the OSR
+    // entry copies a variable-size managed stack below this fixed save area.
+    subq LITERAL(96), %rsp
+    .seh_stackalloc 96
+    movdqu %xmm6, 0(%rsp)
+    .seh_savexmm %xmm6, 64
+    movdqu %xmm7, 16(%rsp)
+    .seh_savexmm %xmm7, 80
+    movdqu %xmm8, 32(%rsp)
+    .seh_savexmm %xmm8, 96
+    movdqu %xmm9, 48(%rsp)
+    .seh_savexmm %xmm9, 112
+    movdqu %xmm10, 64(%rsp)
+    .seh_savexmm %xmm10, 128
+    movdqu %xmm11, 80(%rsp)
+    .seh_savexmm %xmm11, 144
+#else
     SAVE_WIN64_NATIVE_XMMS
+#endif
     // Save the non-volatiles.
+#if !defined(_WIN32)
     PUSH rbp                      // Save rbp.
+#endif
     PUSH rcx                      // Save rcx/result*.
+#if defined(_WIN32)
+    .seh_stackalloc 8
+#endif
     PUSH r8                       // Save r8/shorty*.
+#if defined(_WIN32)
+    .seh_stackalloc 8
+#endif
 
     // Save callee saves.
     PUSH rbx
+#if defined(_WIN32)
+    .seh_pushreg %rbx
+#endif
     PUSH r12
+#if defined(_WIN32)
+    .seh_pushreg %r12
+#endif
     PUSH r13
+#if defined(_WIN32)
+    .seh_pushreg %r13
+#endif
     PUSH r14
+#if defined(_WIN32)
+    .seh_pushreg %r14
+#endif
     PUSH r15
 #if defined(_WIN32)
+    .seh_pushreg %r15
     // The native caller's r15 is saved. Publish managed rSELF before jumping
     // to the OSR compiled-code entry.
     movq %r9, %r15
@@ -2222,10 +2269,40 @@ DEFINE_FUNCTION art_quick_osr_stub
 
     pushq LITERAL(0)              // Push null for ArtMethod*.
     CFI_ADJUST_CFA_OFFSET(8)
+#if defined(_WIN32)
+    .seh_stackalloc 8
+#endif
     movl %esi, %ecx               // rcx := size of stack
     movq %rdi, %rsi               // rsi := stack to copy
+#if defined(_WIN32)
+    // Keep RBP at the bottom of the fixed save area while .Losr_entry moves
+    // RSP downward. OSR code reconstructs managed RBP on return, so the return
+    // continuation below has its own RSP-based PE unwind record.
+    movq %rsp, %rbp
+    .seh_setframe %rbp, 0
+    .seh_endprologue
+#else
     movq %rsp, %rbp               // Save stack pointer to RBP for CFI use in .Losr_entry.
+#endif
     CFI_REMEMBER_STATE
+#if defined(_WIN32)
+    // Keep the variable-stack body inside this runtime-function range while
+    // placing the call last. Its return address is therefore the start of the
+    // separate RSP-based continuation immediately after this function.
+    jmp .Losr_call
+.Losr_entry:
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 192
+    CFI_DEF_CFA_REGISTER(rbp)
+
+    subl LITERAL(8), %ecx         // Given stack size contains pushed frame pointer, substract it.
+    subq %rcx, %rsp
+    movq %rsp, %rdi               // rdi := beginning of stack
+    rep movsb                     // while (rcx--) { *rdi++ = *rsi++ }
+    jmp *%rdx
+.Losr_call:
+    call .Losr_entry
+    .seh_endproc
+#else
     call .Losr_entry
 
     // Restore stack and callee-saves.
@@ -2240,18 +2317,10 @@ DEFINE_FUNCTION art_quick_osr_stub
     POP rcx
     POP rbp
     RESTORE_WIN64_NATIVE_XMMS
-#if defined(_WIN32)
-    POP rsi
-    POP rdi
-#endif
     movq %rax, (%rcx)              // Store the result.
     ret
 .Losr_entry:
-#if defined(_WIN32)
-    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 192
-#else
     CFI_RESTORE_STATE_AND_DEF_CFA rsp, 80
-#endif
     // Since the call has pushed the return address we need to switch the CFA register to RBP.
     CFI_DEF_CFA_REGISTER(rbp)
 
@@ -2260,7 +2329,52 @@ DEFINE_FUNCTION art_quick_osr_stub
     movq %rsp, %rdi               // rdi := beginning of stack
     rep movsb                     // while (rcx--) { *rdi++ = *rsi++ }
     jmp *%rdx
+#endif
 END_FUNCTION art_quick_osr_stub
+
+#if defined(_WIN32)
+// OSR code returns with the managed RBP value reconstructed from the copied
+// frame. Describe the inherited 184-byte fixed save area directly from RSP so
+// no register needs to preserve a private native anchor across the OSR jump.
+.Losr_return:
+    .seh_proc .Losr_return
+    .seh_stackalloc 184
+    .seh_savereg %r15, 8
+    .seh_savereg %r14, 16
+    .seh_savereg %r13, 24
+    .seh_savereg %r12, 32
+    .seh_savereg %rbx, 40
+    .seh_savexmm %xmm6, 64
+    .seh_savexmm %xmm7, 80
+    .seh_savexmm %xmm8, 96
+    .seh_savexmm %xmm9, 112
+    .seh_savexmm %xmm10, 128
+    .seh_savexmm %xmm11, 144
+    .seh_savereg %rsi, 160
+    .seh_savereg %rdi, 168
+    .seh_savereg %rbp, 176
+    .seh_endprologue
+    movq 8(%rsp), %r15
+    movq 16(%rsp), %r14
+    movq 24(%rsp), %r13
+    movq 32(%rsp), %r12
+    movq 40(%rsp), %rbx
+    movq 48(%rsp), %r8
+    movq 56(%rsp), %rcx
+    movdqu 64(%rsp), %xmm6
+    movdqu 80(%rsp), %xmm7
+    movdqu 96(%rsp), %xmm8
+    movdqu 112(%rsp), %xmm9
+    movdqu 128(%rsp), %xmm10
+    movdqu 144(%rsp), %xmm11
+    movq 160(%rsp), %rsi
+    movq 168(%rsp), %rdi
+    movq 176(%rsp), %rbp
+    movq %rax, (%rcx)              // Store the result.
+    addq LITERAL(184), %rsp
+    ret
+    .seh_endproc
+#endif
 
 DEFINE_FUNCTION art_quick_invoke_polymorphic
                                                    // On entry: RDI := unused, RSI := receiver
