@@ -379,6 +379,25 @@ MACRO0(RESTORE_WIN64_NATIVE_XMMS)
 #endif
 END_MACRO
 
+    /*
+     * Save the fixed quick-invoke frame before any variable stack allocation.
+     * Win64 must do this within the 255-byte PE prologue limit; Linux keeps the
+     * historical placement after argument decoding. The stack layout itself is
+     * identical on both paths.
+     */
+MACRO0(SETUP_QUICK_INVOKE_FRAME)
+    PUSH rbp                      // Save rbp.
+    PUSH r8                       // Save r8/result*.
+    PUSH r9                       // Save r9/shorty*.
+    PUSH rbx                      // Save native callee save rbx.
+    PUSH r12                      // Save native callee save r12.
+    PUSH r13                      // Save native callee save r13.
+    PUSH r14                      // Save native callee save r14.
+    PUSH r15                      // Save native callee save r15.
+    movq %rsp, %rbp               // Fixed frame anchor above the dynamic args.
+    CFI_DEF_CFA_REGISTER(rbp)
+END_MACRO
+
 
     /*
      * Helper for quick invocation stub to set up XMM registers. Assumes r10 == shorty,
@@ -456,6 +475,9 @@ END_MACRO
      *   r9 = char* shorty
      */
 DEFINE_FUNCTION art_quick_invoke_stub
+#if defined(_WIN32)
+    .seh_proc art_quick_invoke_stub
+#endif
 #if defined(__APPLE__)
     int3
     int3
@@ -466,7 +488,9 @@ DEFINE_FUNCTION art_quick_invoke_stub
     //   [RSP+0x28] = JValue* result, [RSP+0x30] = char* shorty  (after this prolog's pushes)
     // Preserve MS callee-saved rdi/rsi (not callee-saved on SysV).
     pushq %rdi
+    .seh_pushreg %rdi
     pushq %rsi
+    .seh_pushreg %rsi
     // Stack grew 16 bytes: 5th/6th args now at 0x28+0x10 = 0x38 / 0x40.
     movq 0x38(%rsp), %r10         // result*
     movq 0x40(%rsp), %r11         // shorty*
@@ -480,7 +504,45 @@ DEFINE_FUNCTION art_quick_invoke_stub
     movq %r11, %r9                // shorty
     // rSELF published after PUSH r15 inside the frame setup.
 #endif
-    SAVE_WIN64_NATIVE_XMMS
+#if defined(_WIN32)
+    // Keep the directives local to this PE frame. The shared XMM-save macro
+    // is also used by entrypoints without an SEH frame and stays annotation-free.
+    subq LITERAL(96), %rsp
+    .seh_stackalloc 96
+    movdqu %xmm6, 0(%rsp)
+    .seh_savexmm %xmm6, 0
+    movdqu %xmm7, 16(%rsp)
+    .seh_savexmm %xmm7, 16
+    movdqu %xmm8, 32(%rsp)
+    .seh_savexmm %xmm8, 32
+    movdqu %xmm9, 48(%rsp)
+    .seh_savexmm %xmm9, 48
+    movdqu %xmm10, 64(%rsp)
+    .seh_savexmm %xmm10, 64
+    movdqu %xmm11, 80(%rsp)
+    .seh_savexmm %xmm11, 80
+    PUSH rbp
+    .seh_pushreg %rbp
+    PUSH r8
+    .seh_stackalloc 8
+    PUSH r9
+    .seh_stackalloc 8
+    PUSH rbx
+    .seh_pushreg %rbx
+    PUSH r12
+    .seh_pushreg %r12
+    PUSH r13
+    .seh_pushreg %r13
+    PUSH r14
+    .seh_pushreg %r14
+    PUSH r15
+    .seh_pushreg %r15
+    movq %rcx, %r15               // Publish managed rSELF after saving caller's r15.
+    movq %rsp, %rbp               // Fixed frame anchor above the dynamic args.
+    CFI_DEF_CFA_REGISTER(rbp)
+    .seh_setframe %rbp, 0
+    .seh_endprologue
+#endif
     // Set up argument XMM registers.
     leaq 1(%r9), %r10             // R10 := shorty + 1  ; ie skip return arg character.
     leaq 4(%rsi), %r11            // R11 := arg_array + 4 ; ie skip this pointer.
@@ -494,21 +556,9 @@ DEFINE_FUNCTION art_quick_invoke_stub
     LOOP_OVER_SHORTY_LOADING_XMMS xmm7, .Lxmm_setup_finished
     .balign 16
 .Lxmm_setup_finished:
-    PUSH rbp                      // Save rbp.
-    PUSH r8                       // Save r8/result*.
-    PUSH r9                       // Save r9/shorty*.
-    PUSH rbx                      // Save native callee save rbx
-    PUSH r12                      // Save native callee save r12
-    PUSH r13                      // Save native callee save r13
-    PUSH r14                      // Save native callee save r14
-    PUSH r15                      // Save native callee save r15
-#if defined(_WIN32)
-    // Caller's r15 is on stack; publish managed rSELF. rcx still holds Thread*
-    // until the arg-copy sequence below clobbers it.
-    movq %rcx, %r15
+#if !defined(_WIN32)
+    SETUP_QUICK_INVOKE_FRAME
 #endif
-    movq %rsp, %rbp               // Copy value of stack pointer into base pointer.
-    CFI_DEF_CFA_REGISTER(rbp)
 
     movl %edx, %r10d
     addl LITERAL(100), %edx        // Reserve space for return addr, StackReference<method>, rbp,
@@ -567,6 +617,9 @@ DEFINE_FUNCTION art_quick_invoke_stub
     movss %xmm0, (%r8)            // Store the floating point result.
     ret
 #endif  // __APPLE__
+#if defined(_WIN32)
+    .seh_endproc
+#endif
 END_FUNCTION art_quick_invoke_stub
 
     /*
@@ -581,6 +634,9 @@ END_FUNCTION art_quick_invoke_stub
      *   r9 = char* shorty
      */
 DEFINE_FUNCTION art_quick_invoke_static_stub
+#if defined(_WIN32)
+    .seh_proc art_quick_invoke_static_stub
+#endif
 #if defined(__APPLE__)
     int3
     int3
@@ -591,7 +647,9 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     //   [RSP+0x28] = JValue* result, [RSP+0x30] = char* shorty  (after this prolog's pushes)
     // Preserve MS callee-saved rdi/rsi (not callee-saved on SysV).
     pushq %rdi
+    .seh_pushreg %rdi
     pushq %rsi
+    .seh_pushreg %rsi
     // Stack grew 16 bytes: 5th/6th args now at 0x28+0x10 = 0x38 / 0x40.
     movq 0x38(%rsp), %r10         // result*
     movq 0x40(%rsp), %r11         // shorty*
@@ -605,7 +663,43 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     movq %r11, %r9                // shorty
     // rSELF published after PUSH r15 inside the frame setup.
 #endif
-    SAVE_WIN64_NATIVE_XMMS
+#if defined(_WIN32)
+    subq LITERAL(96), %rsp
+    .seh_stackalloc 96
+    movdqu %xmm6, 0(%rsp)
+    .seh_savexmm %xmm6, 0
+    movdqu %xmm7, 16(%rsp)
+    .seh_savexmm %xmm7, 16
+    movdqu %xmm8, 32(%rsp)
+    .seh_savexmm %xmm8, 32
+    movdqu %xmm9, 48(%rsp)
+    .seh_savexmm %xmm9, 48
+    movdqu %xmm10, 64(%rsp)
+    .seh_savexmm %xmm10, 64
+    movdqu %xmm11, 80(%rsp)
+    .seh_savexmm %xmm11, 80
+    PUSH rbp
+    .seh_pushreg %rbp
+    PUSH r8
+    .seh_stackalloc 8
+    PUSH r9
+    .seh_stackalloc 8
+    PUSH rbx
+    .seh_pushreg %rbx
+    PUSH r12
+    .seh_pushreg %r12
+    PUSH r13
+    .seh_pushreg %r13
+    PUSH r14
+    .seh_pushreg %r14
+    PUSH r15
+    .seh_pushreg %r15
+    movq %rcx, %r15               // Publish managed rSELF after saving caller's r15.
+    movq %rsp, %rbp               // Fixed frame anchor above the dynamic args.
+    CFI_DEF_CFA_REGISTER(rbp)
+    .seh_setframe %rbp, 0
+    .seh_endprologue
+#endif
     // Set up argument XMM registers.
     leaq 1(%r9), %r10             // R10 := shorty + 1  ; ie skip return arg character
     movq %rsi, %r11               // R11 := arg_array
@@ -619,19 +713,9 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     LOOP_OVER_SHORTY_LOADING_XMMS xmm7, .Lxmm_setup_finished2
     .balign 16
 .Lxmm_setup_finished2:
-    PUSH rbp                      // Save rbp.
-    PUSH r8                       // Save r8/result*.
-    PUSH r9                       // Save r9/shorty*.
-    PUSH rbx                      // Save rbx
-    PUSH r12                      // Save r12
-    PUSH r13                      // Save r13
-    PUSH r14                      // Save r14
-    PUSH r15                      // Save r15
-#if defined(_WIN32)
-    movq %rcx, %r15               // rSELF := Thread* (caller's r15 already saved)
+#if !defined(_WIN32)
+    SETUP_QUICK_INVOKE_FRAME
 #endif
-    movq %rsp, %rbp               // Copy value of stack pointer into base pointer.
-    CFI_DEF_CFA_REGISTER(rbp)
 
     movl %edx, %r10d
     addl LITERAL(100), %edx        // Reserve space for return addr, StackReference<method>, rbp,
@@ -689,6 +773,9 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     movss %xmm0, (%r8)             // Store the floating point result.
     ret
 #endif  // __APPLE__
+#if defined(_WIN32)
+    .seh_endproc
+#endif
 END_FUNCTION art_quick_invoke_static_stub
 
     /*
@@ -1575,12 +1662,69 @@ END_FUNCTION art_quick_resolution_trampoline
      * Called to do a generic JNI down-call
      */
 DEFINE_FUNCTION art_quick_generic_jni_trampoline
+#if defined(_WIN32)
+    // Native Win64 exceptions raised by a JNI method must be able to unwind
+    // through this non-leaf assembly bridge before reaching frame-based SEH
+    // and the process UEF. Keep the canonical ART frame layout unchanged, but
+    // describe its prologue to the PE unwinder. RBP remains ART's managed
+    // frame pointer. R12, which is already saved by the canonical frame and
+    // otherwise unused here, anchors the fixed Win64 unwind frame while RSP
+    // is switched to the variable-sized native argument area.
+    .seh_proc art_quick_generic_jni_trampoline
+    W003_COUNT_FRAME art_w003_frame_probe_refs_and_args
+    PUSH r15
+    .seh_pushreg %r15
+    PUSH r14
+    .seh_pushreg %r14
+    PUSH r13
+    .seh_pushreg %r13
+    PUSH r12
+    .seh_pushreg %r12
+    PUSH_ARG r9
+    .seh_stackalloc 8
+    PUSH_ARG r8
+    .seh_stackalloc 8
+    PUSH_ARG rsi
+    .seh_pushreg %rsi
+    PUSH rbp
+    .seh_pushreg %rbp
+    PUSH rbx
+    .seh_pushreg %rbx
+    PUSH_ARG rdx
+    .seh_stackalloc 8
+    PUSH_ARG rcx
+    .seh_stackalloc 8
+    INCREASE_FRAME 16 + 12 * 8
+    .seh_stackalloc 16 + 12 * 8
+    movq %xmm0, 16(%rsp)
+    movq %xmm1, 24(%rsp)
+    movq %xmm2, 32(%rsp)
+    movq %xmm3, 40(%rsp)
+    movq %xmm4, 48(%rsp)
+    movq %xmm5, 56(%rsp)
+    movq %xmm6, 64(%rsp)
+    movq %xmm7, 72(%rsp)
+    movq %xmm12, 80(%rsp)
+    movq %xmm13, 88(%rsp)
+    movq %xmm14, 96(%rsp)
+    movq %xmm15, 104(%rsp)
+    movq %rdi, 0(%rsp)
+    .seh_savereg %rdi, 0
+    THREAD_STORE_Q rsp, THREAD_TOP_QUICK_FRAME_OFFSET
+#else
     SETUP_SAVE_REFS_AND_ARGS_FRAME_WITH_METHOD_IN_RDI
+#endif
 
     movq %rsp, %rbp                 // save SP at (old) callee-save frame
     CFI_DEF_CFA_REGISTER(rbp)
 
     subq LITERAL(GENERIC_JNI_TRAMPOLINE_RESERVED_AREA), %rsp
+#if defined(_WIN32)
+    .seh_stackalloc GENERIC_JNI_TRAMPOLINE_RESERVED_AREA
+    movq %rsp, %r12
+    .seh_setframe %r12, 0
+    .seh_endprologue
+#endif
     // prepare for artQuickGenericJniTrampoline call
     // (Thread*, managed_sp, reserved_area)
     //    rdi       rsi           rdx   <= C calling convention
@@ -1720,6 +1864,9 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     addq LITERAL(-1), (%rsp)  // Remove the GenericJNI tag.
     movq (%rsp), %rsp
     call art_deliver_pending_exception
+#if defined(_WIN32)
+    .seh_endproc
+#endif
 END_FUNCTION art_quick_generic_jni_trampoline
 
 DEFINE_FUNCTION art_deliver_pending_exception
