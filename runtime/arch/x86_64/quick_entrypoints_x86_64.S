@@ -2235,7 +2235,7 @@ DEFINE_FUNCTION art_quick_osr_stub
 #endif
 #if defined(_WIN32)
     // Keep PE annotations adjacent to the instructions whose completed effects
-    // they describe. RBP is established below and remains stable while the OSR
+    // they describe. R12 is established below and remains stable while the OSR
     // entry copies a variable-size managed stack below this fixed save area.
     subq LITERAL(160), %rsp
     .seh_stackalloc 160
@@ -2308,11 +2308,11 @@ DEFINE_FUNCTION art_quick_osr_stub
     movl %esi, %ecx               // rcx := size of stack
     movq %rdi, %rsi               // rsi := stack to copy
 #if defined(_WIN32)
-    // Keep RBP at the bottom of the fixed save area while .Losr_entry moves
-    // RSP downward. OSR code reconstructs managed RBP on return, so the return
-    // continuation below has its own RSP-based PE unwind record.
-    movq %rsp, %rbp
-    .seh_setframe %rbp, 0
+    // Keep R12 at the bottom of the fixed save area while .Losr_entry moves
+    // RSP downward. RBP must remain available for the copied JIT frame because
+    // Win64 optimizing unwind metadata uses it as the compiled-frame anchor.
+    movq %rsp, %r12
+    .seh_setframe %r12, 0
     .seh_endprologue
 #else
     movq %rsp, %rbp               // Save stack pointer to RBP for CFI use in .Losr_entry.
@@ -2325,12 +2325,19 @@ DEFINE_FUNCTION art_quick_osr_stub
     jmp .Losr_call
 .Losr_entry:
     CFI_RESTORE_STATE_AND_DEF_CFA rsp, 256
+#if defined(_WIN32)
+    CFI_DEF_CFA_REGISTER(r12)
+#else
     CFI_DEF_CFA_REGISTER(rbp)
+#endif
 
     subl LITERAL(8), %ecx         // Given stack size contains pushed frame pointer, substract it.
     subq %rcx, %rsp
     movq %rsp, %rdi               // rdi := beginning of stack
     rep movsb                     // while (rcx--) { *rdi++ = *rsi++ }
+    // Normal JIT entry establishes this anchor in GenerateFrameEntry(). OSR
+    // enters after that prologue, so reproduce the same state before handoff.
+    movq %rsp, %rbp
     jmp *%rdx
 .Losr_call:
     call .Losr_entry
