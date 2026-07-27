@@ -78,6 +78,9 @@ template<class T> class ObjectArray;
 namespace jit {
 
 class MarkCodeClosure;
+#if defined(_WIN32)
+class Win64JitUnwindRegistry;
+#endif
 
 // Type of bitmap used for tracking live functions in the JIT code cache for the purposes
 // of garbage collecting code.
@@ -252,6 +255,7 @@ class JitCodeCache {
                JitMemoryRegion* region,
                size_t code_size,
                size_t stack_map_size,
+               size_t unwind_info_size,
                size_t number_of_roots,
                ArtMethod* method,
                /*out*/ArrayRef<const uint8_t>* reserved_code,
@@ -274,6 +278,7 @@ class JitCodeCache {
               ArrayRef<const uint8_t> reserved_data,  // Uninitialized destination.
               const std::vector<Handle<mirror::Object>>& roots,
               ArrayRef<const uint8_t> stack_map,  // Compiler output (source).
+              ArrayRef<const uint8_t> unwind_info,  // Compiler output (source).
               const std::vector<uint8_t>& debug_info,
               bool is_full_debug_info,
               CompilationKind compilation_kind,
@@ -533,6 +538,11 @@ class JitCodeCache {
 
   // Process's own region.
   JitMemoryRegion private_region_;
+
+#if defined(_WIN32)
+  // Owns all runtime-function entries while their JIT mappings remain live.
+  std::unique_ptr<Win64JitUnwindRegistry> win64_unwind_registry_;
+#endif
 
   // -------------- Global JIT maps --------------------------------------- //
 

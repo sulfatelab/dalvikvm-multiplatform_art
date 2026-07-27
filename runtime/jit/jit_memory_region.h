@@ -17,6 +17,7 @@
 #ifndef ART_RUNTIME_JIT_JIT_MEMORY_REGION_H_
 #define ART_RUNTIME_JIT_JIT_MEMORY_REGION_H_
 
+#include <limits>
 #include <string>
 
 #include "arch/instruction_set.h"
@@ -43,8 +44,31 @@ static constexpr int kJitCodeAccountingBytes = 16;
 
 // Helper to get the size required for emitting `number_of_roots` in the
 // data portion of a JIT memory region.
-uint32_t inline ComputeRootTableSize(uint32_t number_of_roots) {
+inline size_t ComputeRootTableSize(size_t number_of_roots) {
+  DCHECK_LE(number_of_roots, std::numeric_limits<uint32_t>::max());
   return sizeof(uint32_t) + number_of_roots * sizeof(GcRoot<mirror::Object>);
+}
+
+static constexpr size_t kJitUnwindInfoAlignment = sizeof(uint32_t);
+
+inline bool ComputeJitUnwindInfoOffset(size_t number_of_roots,
+                                       size_t stack_map_size,
+                                       size_t* unwind_info_offset) {
+  constexpr size_t kMaxSize = std::numeric_limits<size_t>::max();
+  if (number_of_roots > std::numeric_limits<uint32_t>::max() ||
+      number_of_roots > (kMaxSize - sizeof(uint32_t)) / sizeof(GcRoot<mirror::Object>)) {
+    return false;
+  }
+  size_t root_table_size = ComputeRootTableSize(number_of_roots);
+  if (stack_map_size > kMaxSize - root_table_size) {
+    return false;
+  }
+  size_t unaligned_offset = root_table_size + stack_map_size;
+  if (unaligned_offset > kMaxSize - (kJitUnwindInfoAlignment - 1u)) {
+    return false;
+  }
+  *unwind_info_offset = RoundUp(unaligned_offset, kJitUnwindInfoAlignment);
+  return true;
 }
 
 // Represents a memory region for the JIT, where code and data are stored. This class
@@ -105,7 +129,8 @@ class JitMemoryRegion : public gc::allocator::MspaceMoreCoreProvider {
   // Emit roots and stack map into the memory pointed by `roots_data` (despite it being const).
   bool CommitData(ArrayRef<const uint8_t> reserved_data,
                   const std::vector<Handle<mirror::Object>>& roots,
-                  ArrayRef<const uint8_t> stack_map)
+                  ArrayRef<const uint8_t> stack_map,
+                  ArrayRef<const uint8_t> unwind_info)
       REQUIRES(Locks::jit_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -157,6 +182,10 @@ class JitMemoryRegion : public gc::allocator::MspaceMoreCoreProvider {
 
   const MemMap* GetExecPages() const {
     return &exec_pages_;
+  }
+
+  const MemMap* GetDataPages() const {
+    return &data_pages_;
   }
 
   void* MoreCore(const void* mspace, intptr_t increment) override;

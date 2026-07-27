@@ -1387,6 +1387,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                           jni_compiled_method,
                           jni_compiled_method.GetCode().size(),
                           compiler_options.GetDebuggable() && compiler_options.IsJitCompiler());
+    ArrayRef<const uint8_t> win64_unwind_info = jni_compiled_method.GetWin64UnwindInfo();
 
     ArrayRef<const uint8_t> reserved_code;
     ArrayRef<const uint8_t> reserved_data;
@@ -1394,6 +1395,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                              region,
                              jni_compiled_method.GetCode().size(),
                              stack_map.size(),
+                             win64_unwind_info.size(),
                              /* number_of_roots= */ 0,
                              method,
                              /*out*/ &reserved_code,
@@ -1424,6 +1426,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                             reserved_data,
                             roots,
                             ArrayRef<const uint8_t>(stack_map),
+                            win64_unwind_info,
                             debug_info,
                             /* is_full_debug_info= */ compiler_options.GetGenerateDebugInfo(),
                             compilation_kind,
@@ -1483,6 +1486,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                              region,
                              fast_compiler->GetCode().size(),
                              stack_maps.size(),
+                             /*unwind_info_size=*/ 0u,
                              fast_compiler->GetNumberOfJitRoots(),
                              method,
                              /*out*/ &reserved_code,
@@ -1521,6 +1525,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                             reserved_data,
                             roots,
                             ArrayRef<const uint8_t>(stack_maps),
+                            /*unwind_info=*/ {},
                             debug_info,
                             /* is_full_debug_info= */ compiler_options.GetGenerateDebugInfo(),
                             compilation_kind,
@@ -1554,12 +1559,15 @@ bool OptimizingCompiler::JitCompile(Thread* self,
     }
 
     ScopedArenaVector<uint8_t> stack_map = codegen->BuildStackMaps(code_item);
+    ArrayRef<const uint8_t> win64_unwind_info =
+        codegen->GetAssembler()->GetWin64UnwindInfo();
     ArrayRef<const uint8_t> reserved_code;
     ArrayRef<const uint8_t> reserved_data;
     if (!code_cache->Reserve(self,
                              region,
                              codegen->GetAssembler()->CodeSize(),
                              stack_map.size(),
+                             win64_unwind_info.size(),
                              /*number_of_roots=*/codegen->GetNumberOfJitRoots(),
                              method,
                              /*out*/ &reserved_code,
@@ -1609,6 +1617,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                             reserved_data,
                             roots,
                             ArrayRef<const uint8_t>(stack_map),
+                            win64_unwind_info,
                             debug_info,
                             /* is_full_debug_info= */ compiler_options.GetGenerateDebugInfo(),
                             compilation_kind,

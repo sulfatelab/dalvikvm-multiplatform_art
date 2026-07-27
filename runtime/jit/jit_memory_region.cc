@@ -628,7 +628,8 @@ static void FillRootTable(uint8_t* roots_data, const std::vector<Handle<mirror::
     REQUIRES(Locks::jit_lock_)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   GcRoot<mirror::Object>* gc_roots = reinterpret_cast<GcRoot<mirror::Object>*>(roots_data);
-  const uint32_t length = roots.size();
+  CHECK_LE(roots.size(), std::numeric_limits<uint32_t>::max());
+  const uint32_t length = static_cast<uint32_t>(roots.size());
   // Put all roots in `roots_data`.
   for (uint32_t i = 0; i < length; ++i) {
     ObjPtr<mirror::Object> object = roots[i].Get();
@@ -641,17 +642,33 @@ static void FillRootTable(uint8_t* roots_data, const std::vector<Handle<mirror::
 
 bool JitMemoryRegion::CommitData(ArrayRef<const uint8_t> reserved_data,
                                  const std::vector<Handle<mirror::Object>>& roots,
-                                 ArrayRef<const uint8_t> stack_map) {
+                                 ArrayRef<const uint8_t> stack_map,
+                                 ArrayRef<const uint8_t> unwind_info) {
   DCHECK(IsInDataSpace(reserved_data.data()));
+  size_t unwind_info_offset;
+  if (!ComputeJitUnwindInfoOffset(roots.size(), stack_map.size(), &unwind_info_offset) ||
+      unwind_info_offset > reserved_data.size() ||
+      unwind_info.size() > reserved_data.size() - unwind_info_offset) {
+    VLOG(jit) << "Invalid JIT data layout in CommitData";
+    return false;
+  }
   uint8_t* roots_data = GetWritableDataAddress(reserved_data.data());
   size_t root_table_size = ComputeRootTableSize(roots.size());
   uint8_t* stack_map_data = roots_data + root_table_size;
-  DCHECK_LE(root_table_size + stack_map.size(), reserved_data.size());
+  size_t committed_size = unwind_info.empty()
+      ? root_table_size + stack_map.size()
+      : unwind_info_offset + unwind_info.size();
   FillRootTable(roots_data, roots);
   memcpy(stack_map_data, stack_map.data(), stack_map.size());
+  if (!unwind_info.empty()) {
+    memset(stack_map_data + stack_map.size(),
+           0,
+           unwind_info_offset - root_table_size - stack_map.size());
+    memcpy(roots_data + unwind_info_offset, unwind_info.data(), unwind_info.size());
+  }
   // Flush data cache, as compiled code references literals in it.
   // TODO(oth): establish whether this is necessary.
-  if (UNLIKELY(!FlushCpuCaches(roots_data, roots_data + root_table_size + stack_map.size()))) {
+  if (UNLIKELY(!FlushCpuCaches(roots_data, roots_data + committed_size))) {
     VLOG(jit) << "Failed to flush data in CommitData";
     return false;
   }

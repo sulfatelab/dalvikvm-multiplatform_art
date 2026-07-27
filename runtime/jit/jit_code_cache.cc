@@ -16,6 +16,7 @@
 
 #include "jit_code_cache.h"
 
+#include <limits>
 #include <sstream>
 
 #include <android-base/logging.h>
@@ -51,6 +52,9 @@
 #include "jit/jit_scoped_code_cache_write.h"
 #include "linear_alloc.h"
 #include "mirror/method_type.h"
+#if defined(_WIN32)
+#include "multiplatform/windows/jit_unwind_windows.h"
+#endif
 #include "oat/oat_file-inl.h"
 #include "oat/oat_quick_method_header.h"
 #include "object_callbacks.h"
@@ -265,6 +269,9 @@ JitCodeCache::JitCodeCache()
     : is_weak_access_enabled_(true),
       inline_cache_cond_("Jit inline cache condition variable", *Locks::jit_lock_),
       reserved_capacity_(GetInitialCapacity() * kReservedCapacityMultiplier),
+#if defined(_WIN32)
+      win64_unwind_registry_(std::make_unique<Win64JitUnwindRegistry>()),
+#endif
       zygote_map_(&shared_region_),
       lock_cond_("Jit code cache condition variable", *Locks::jit_lock_),
       collection_in_progress_(false),
@@ -280,6 +287,10 @@ JitCodeCache::JitCodeCache()
 }
 
 JitCodeCache::~JitCodeCache() {
+#if defined(_WIN32)
+  CHECK(win64_unwind_registry_->Clear())
+      << "Failed to remove Win64 JIT runtime-function tables before mapping teardown";
+#endif
   if (private_region_.HasCodeMapping()) {
     const MemMap* exec_pages = private_region_.GetExecPages();
     Runtime::Current()->RemoveGeneratedCodeRange(exec_pages->Begin(), exec_pages->Size());
@@ -706,6 +717,7 @@ bool JitCodeCache::Commit(Thread* self,
                           ArrayRef<const uint8_t> reserved_data,
                           const std::vector<Handle<mirror::Object>>& roots,
                           ArrayRef<const uint8_t> stack_map,
+                          ArrayRef<const uint8_t> unwind_info,
                           const std::vector<uint8_t>& debug_info,
                           bool is_full_debug_info,
                           CompilationKind compilation_kind,
@@ -718,9 +730,18 @@ bool JitCodeCache::Commit(Thread* self,
     DCheckRootsAreValid(roots, IsSharedRegion(*region));
   }
 
+  size_t unwind_info_offset;
+  if (!ComputeJitUnwindInfoOffset(roots.size(), stack_map.size(), &unwind_info_offset) ||
+      unwind_info_offset > reserved_data.size() ||
+      unwind_info.size() > reserved_data.size() - unwind_info_offset) {
+    return false;
+  }
   const uint8_t* roots_data = reserved_data.data();
   size_t root_table_size = ComputeRootTableSize(roots.size());
   const uint8_t* stack_map_data = roots_data + root_table_size;
+#if defined(_WIN32)
+  const uint8_t* unwind_info_data = roots_data + unwind_info_offset;
+#endif
 
   OatQuickMethodHeader* method_header = nullptr;
   {
@@ -732,9 +753,19 @@ bool JitCodeCache::Commit(Thread* self,
     method_header = OatQuickMethodHeader::FromCodePointer(code_ptr);
 
     // Commit roots and stack maps before updating the entry point.
-    if (!region->CommitData(reserved_data, roots, stack_map)) {
+    if (!region->CommitData(reserved_data, roots, stack_map, unwind_info)) {
       return false;
     }
+
+#if defined(_WIN32)
+    if (!unwind_info.empty() &&
+        !win64_unwind_registry_->Register(code_ptr,
+                                          code.size(),
+                                          unwind_info_data,
+                                          region->GetDataPages()->Begin())) {
+      return false;
+    }
+#endif
 
     switch (compilation_kind) {
       case CompilationKind::kOsr:
@@ -1044,12 +1075,28 @@ bool JitCodeCache::Reserve(Thread* self,
                            JitMemoryRegion* region,
                            size_t code_size,
                            size_t stack_map_size,
+                           size_t unwind_info_size,
                            size_t number_of_roots,
                            ArtMethod* method,
                            /*out*/ArrayRef<const uint8_t>* reserved_code,
                            /*out*/ArrayRef<const uint8_t>* reserved_data) {
-  code_size = OatQuickMethodHeader::InstructionAlignedSize() + code_size;
-  size_t data_size = RoundUp(ComputeRootTableSize(number_of_roots) + stack_map_size, sizeof(void*));
+  constexpr size_t kMaxSize = std::numeric_limits<size_t>::max();
+  size_t header_size = OatQuickMethodHeader::InstructionAlignedSize();
+  if (code_size > kMaxSize - header_size) {
+    return false;
+  }
+  code_size += header_size;
+
+  size_t unwind_info_offset;
+  if (!ComputeJitUnwindInfoOffset(number_of_roots, stack_map_size, &unwind_info_offset) ||
+      unwind_info_size > kMaxSize - unwind_info_offset) {
+    return false;
+  }
+  size_t unrounded_data_size = unwind_info_offset + unwind_info_size;
+  if (unrounded_data_size > kMaxSize - (sizeof(void*) - 1u)) {
+    return false;
+  }
+  size_t data_size = RoundUp(unrounded_data_size, sizeof(void*));
 
   const uint8_t* code;
   const uint8_t* data;
@@ -1110,6 +1157,11 @@ void JitCodeCache::Free(Thread* self,
 
 void JitCodeCache::FreeLocked(JitMemoryRegion* region, const uint8_t* code, const uint8_t* data) {
   if (code != nullptr) {
+#if defined(_WIN32)
+    CHECK(win64_unwind_registry_->Unregister(
+        reinterpret_cast<const uint8_t*>(FromAllocationToCode(code))))
+        << "Failed to remove Win64 JIT runtime-function table before freeing code";
+#endif
     RemoveNativeDebugInfoForJit(reinterpret_cast<const void*>(FromAllocationToCode(code)));
     region->FreeCode(code);
   }
