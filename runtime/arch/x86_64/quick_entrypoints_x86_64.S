@@ -353,17 +353,22 @@ INVOKE_TRAMPOLINE art_quick_invoke_virtual_trampoline_with_access_check, artInvo
      * Preserve the part of the Microsoft x64 native ABI that is not preserved
      * by the ART managed x86-64 ABI. The lower 128 bits of XMM6-XMM15 are
      * nonvolatile for native Win64 callers, while managed code preserves only
-     * XMM12-XMM15. Keep this save area outside the canonical ART managed frame.
+     * the lower 64 bits of XMM12-XMM15. Keep this save area outside the
+     * canonical ART managed frame.
      */
 MACRO0(SAVE_WIN64_NATIVE_XMMS)
 #if defined(_WIN32)
-    subq LITERAL(96), %rsp
+    subq LITERAL(160), %rsp
     movdqu %xmm6, 0(%rsp)
     movdqu %xmm7, 16(%rsp)
     movdqu %xmm8, 32(%rsp)
     movdqu %xmm9, 48(%rsp)
     movdqu %xmm10, 64(%rsp)
     movdqu %xmm11, 80(%rsp)
+    movdqu %xmm12, 96(%rsp)
+    movdqu %xmm13, 112(%rsp)
+    movdqu %xmm14, 128(%rsp)
+    movdqu %xmm15, 144(%rsp)
 #endif
 END_MACRO
 
@@ -375,7 +380,11 @@ MACRO0(RESTORE_WIN64_NATIVE_XMMS)
     movdqu 48(%rsp), %xmm9
     movdqu 64(%rsp), %xmm10
     movdqu 80(%rsp), %xmm11
-    addq LITERAL(96), %rsp
+    movdqu 96(%rsp), %xmm12
+    movdqu 112(%rsp), %xmm13
+    movdqu 128(%rsp), %xmm14
+    movdqu 144(%rsp), %xmm15
+    addq LITERAL(160), %rsp
 #endif
 END_MACRO
 
@@ -507,8 +516,8 @@ DEFINE_FUNCTION art_quick_invoke_stub
 #if defined(_WIN32)
     // Keep the directives local to this PE frame. The shared XMM-save macro
     // is also used by entrypoints without an SEH frame and stays annotation-free.
-    subq LITERAL(96), %rsp
-    .seh_stackalloc 96
+    subq LITERAL(160), %rsp
+    .seh_stackalloc 160
     movdqu %xmm6, 0(%rsp)
     .seh_savexmm %xmm6, 64
     movdqu %xmm7, 16(%rsp)
@@ -521,6 +530,14 @@ DEFINE_FUNCTION art_quick_invoke_stub
     .seh_savexmm %xmm10, 128
     movdqu %xmm11, 80(%rsp)
     .seh_savexmm %xmm11, 144
+    movdqu %xmm12, 96(%rsp)
+    .seh_savexmm %xmm12, 160
+    movdqu %xmm13, 112(%rsp)
+    .seh_savexmm %xmm13, 176
+    movdqu %xmm14, 128(%rsp)
+    .seh_savexmm %xmm14, 192
+    movdqu %xmm15, 144(%rsp)
+    .seh_savexmm %xmm15, 208
     PUSH rbp
     .seh_pushreg %rbp
     PUSH r8
@@ -664,8 +681,8 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     // rSELF published after PUSH r15 inside the frame setup.
 #endif
 #if defined(_WIN32)
-    subq LITERAL(96), %rsp
-    .seh_stackalloc 96
+    subq LITERAL(160), %rsp
+    .seh_stackalloc 160
     movdqu %xmm6, 0(%rsp)
     .seh_savexmm %xmm6, 64
     movdqu %xmm7, 16(%rsp)
@@ -678,6 +695,14 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     .seh_savexmm %xmm10, 128
     movdqu %xmm11, 80(%rsp)
     .seh_savexmm %xmm11, 144
+    movdqu %xmm12, 96(%rsp)
+    .seh_savexmm %xmm12, 160
+    movdqu %xmm13, 112(%rsp)
+    .seh_savexmm %xmm13, 176
+    movdqu %xmm14, 128(%rsp)
+    .seh_savexmm %xmm14, 192
+    movdqu %xmm15, 144(%rsp)
+    .seh_savexmm %xmm15, 208
     PUSH rbp
     .seh_pushreg %rbp
     PUSH r8
@@ -2212,8 +2237,8 @@ DEFINE_FUNCTION art_quick_osr_stub
     // Keep PE annotations adjacent to the instructions whose completed effects
     // they describe. RBP is established below and remains stable while the OSR
     // entry copies a variable-size managed stack below this fixed save area.
-    subq LITERAL(96), %rsp
-    .seh_stackalloc 96
+    subq LITERAL(160), %rsp
+    .seh_stackalloc 160
     movdqu %xmm6, 0(%rsp)
     .seh_savexmm %xmm6, 64
     movdqu %xmm7, 16(%rsp)
@@ -2226,6 +2251,14 @@ DEFINE_FUNCTION art_quick_osr_stub
     .seh_savexmm %xmm10, 128
     movdqu %xmm11, 80(%rsp)
     .seh_savexmm %xmm11, 144
+    movdqu %xmm12, 96(%rsp)
+    .seh_savexmm %xmm12, 160
+    movdqu %xmm13, 112(%rsp)
+    .seh_savexmm %xmm13, 176
+    movdqu %xmm14, 128(%rsp)
+    .seh_savexmm %xmm14, 192
+    movdqu %xmm15, 144(%rsp)
+    .seh_savexmm %xmm15, 208
 #else
     SAVE_WIN64_NATIVE_XMMS
 #endif
@@ -2291,7 +2324,7 @@ DEFINE_FUNCTION art_quick_osr_stub
     // separate RSP-based continuation immediately after this function.
     jmp .Losr_call
 .Losr_entry:
-    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 192
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 256
     CFI_DEF_CFA_REGISTER(rbp)
 
     subl LITERAL(8), %ecx         // Given stack size contains pushed frame pointer, substract it.
@@ -2334,11 +2367,11 @@ END_FUNCTION art_quick_osr_stub
 
 #if defined(_WIN32)
 // OSR code returns with the managed RBP value reconstructed from the copied
-// frame. Describe the inherited 184-byte fixed save area directly from RSP so
+// frame. Describe the inherited 248-byte fixed save area directly from RSP so
 // no register needs to preserve a private native anchor across the OSR jump.
 .Losr_return:
     .seh_proc .Losr_return
-    .seh_stackalloc 184
+    .seh_stackalloc 248
     .seh_savereg %r15, 8
     .seh_savereg %r14, 16
     .seh_savereg %r13, 24
@@ -2350,9 +2383,13 @@ END_FUNCTION art_quick_osr_stub
     .seh_savexmm %xmm9, 112
     .seh_savexmm %xmm10, 128
     .seh_savexmm %xmm11, 144
-    .seh_savereg %rsi, 160
-    .seh_savereg %rdi, 168
-    .seh_savereg %rbp, 176
+    .seh_savexmm %xmm12, 160
+    .seh_savexmm %xmm13, 176
+    .seh_savexmm %xmm14, 192
+    .seh_savexmm %xmm15, 208
+    .seh_savereg %rsi, 224
+    .seh_savereg %rdi, 232
+    .seh_savereg %rbp, 240
     .seh_endprologue
     movq 8(%rsp), %r15
     movq 16(%rsp), %r14
@@ -2367,11 +2404,15 @@ END_FUNCTION art_quick_osr_stub
     movdqu 112(%rsp), %xmm9
     movdqu 128(%rsp), %xmm10
     movdqu 144(%rsp), %xmm11
-    movq 160(%rsp), %rsi
-    movq 168(%rsp), %rdi
-    movq 176(%rsp), %rbp
+    movdqu 160(%rsp), %xmm12
+    movdqu 176(%rsp), %xmm13
+    movdqu 192(%rsp), %xmm14
+    movdqu 208(%rsp), %xmm15
+    movq 224(%rsp), %rsi
+    movq 232(%rsp), %rdi
+    movq 240(%rsp), %rbp
     movq %rax, (%rcx)              // Store the result.
-    addq LITERAL(184), %rsp
+    addq LITERAL(248), %rsp
     ret
     .seh_endproc
 #endif
