@@ -740,7 +740,7 @@ class CodeGeneratorX86_64 : public CodeGenerator {
 
  private:
   static RegisterSet ComputeCalleeSaves();
-  static RegisterSet ComputeBlockedRegisters();
+  RegisterSet ComputeBlockedRegisters() const;
 
   template <linker::LinkerPatch (*Factory)(size_t, const DexFile*, uint32_t, uint32_t)>
   static void EmitPcRelativeLinkerPatches(const ArenaDeque<PatchInfo<Label>>& infos,

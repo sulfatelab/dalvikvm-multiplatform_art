@@ -94,6 +94,12 @@ class JNIMacroAssembler : public DeletableArenaObject<kArenaAllocAssembler> {
   // Copy instructions out of assembly buffer into the given region of memory
   virtual void CopyInstructions(const MemoryRegion& region) = 0;
 
+  // Enable the fixed-frame PE unwind descriptor used by x86_64 Win64 JIT JNI
+  // stubs. Other architectures leave this as a no-op.
+  virtual void EnableWin64UnwindInfo([[maybe_unused]] bool use_frame_pointer) {}
+  virtual bool IsWin64UnwindInfoValid() const { return true; }
+  virtual ArrayRef<const uint8_t> GetWin64UnwindInfo() const { return {}; }
+
   // Emit code that will create an activation on the stack
   virtual void BuildFrame(size_t frame_size,
                           ManagedRegister method_reg,
@@ -288,6 +294,14 @@ class JNIMacroAssemblerFwd : public JNIMacroAssembler<kPointerSize> {
 
   void CopyInstructions(const MemoryRegion& region) override {
     asm_.CopyInstructions(region);
+  }
+
+  bool IsWin64UnwindInfoValid() const override {
+    return asm_.IsWin64UnwindInfoValid();
+  }
+
+  ArrayRef<const uint8_t> GetWin64UnwindInfo() const override {
+    return asm_.GetWin64UnwindInfo();
   }
 
   DebugFrameOpCodeWriterForAssembler& cfi() override {

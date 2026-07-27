@@ -1373,6 +1373,9 @@ bool OptimizingCompiler::JitCompile(Thread* self,
 
     JniCompiledMethod jni_compiled_method = ArtQuickJniCompileMethod(
         compiler_options, dex_file->GetMethodShortyView(method_idx), access_flags, &allocator);
+    if (!jni_compiled_method.IsWin64UnwindInfoValid()) {
+      return false;
+    }
     std::vector<Handle<mirror::Object>> roots;
     ArenaSet<ArtMethod*, std::less<ArtMethod*>> cha_single_implementation_list(
         allocator.Adapter(kArenaAllocCHA));
@@ -1541,6 +1544,11 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                      compilation_kind,
                      &handles));
       if (codegen.get() == nullptr) {
+        return false;
+      }
+      Assembler* assembler = codegen->GetAssembler();
+      if (!assembler->IsWin64UnwindInfoValid() ||
+          (assembler->IsWin64UnwindInfoEnabled() && assembler->GetWin64UnwindInfo().empty())) {
         return false;
       }
     }

@@ -331,6 +331,13 @@ class JniCallingConvention : public CallingConvention {
   // is never clobbered by argument moves and does not need to be preserved elsewhere.
   virtual ArrayRef<const ManagedRegister> CalleeSaveScratchRegisters() const = 0;
 
+  // Variant used by a JIT frame that reserves a platform frame-pointer and
+  // thread register for PE unwind correctness. Architectures without this
+  // requirement use the ordinary scratch set.
+  virtual ArrayRef<const ManagedRegister> CalleeSaveScratchRegistersWithFramePointer() const {
+    return CalleeSaveScratchRegisters();
+  }
+
   // Subset of core argument registers that can be used for arbitrary purposes after
   // calling the native function. These should exclude the return register(s).
   virtual ArrayRef<const ManagedRegister> ArgumentScratchRegisters() const = 0;

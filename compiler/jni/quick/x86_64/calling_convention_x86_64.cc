@@ -128,6 +128,24 @@ ArrayRef<const ManagedRegister> X86_64JniCallingConvention::CalleeSaveScratchReg
   return ArrayRef<const ManagedRegister>(kNativeCalleeSaveRegisters);
 }
 
+ArrayRef<const ManagedRegister>
+X86_64JniCallingConvention::CalleeSaveScratchRegistersWithFramePointer() const {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  // RBP anchors the PE frame and R15 is ART's managed Thread* register. The
+  // remaining four managed/native callee-saves satisfy the JNI compiler's
+  // scratch requirement without changing Linux or non-JIT Windows stubs.
+  static constexpr ManagedRegister kWin64FramePointerScratchRegisters[] = {
+      X86_64ManagedRegister::FromCpuRegister(RBX),
+      X86_64ManagedRegister::FromCpuRegister(R12),
+      X86_64ManagedRegister::FromCpuRegister(R13),
+      X86_64ManagedRegister::FromCpuRegister(R14),
+  };
+  return ArrayRef<const ManagedRegister>(kWin64FramePointerScratchRegisters);
+#else
+  return CalleeSaveScratchRegisters();
+#endif
+}
+
 ArrayRef<const ManagedRegister> X86_64JniCallingConvention::ArgumentScratchRegisters() const {
   DCHECK(!IsCriticalNative());
   ArrayRef<const ManagedRegister> scratch_regs(kNativeCoreArgumentRegisters);

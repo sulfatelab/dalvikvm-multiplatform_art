@@ -30,6 +30,7 @@
 #include "managed_register_x86_64.h"
 #include "offsets.h"
 #include "utils/assembler.h"
+#include "win64_unwind_info.h"
 
 namespace art HIDDEN {
 namespace x86_64 {
@@ -440,6 +441,31 @@ class X86_64Assembler final : public Assembler {
         has_AVX_(instruction_set_features != nullptr ? instruction_set_features->HasAVX(): false),
         has_AVX2_(instruction_set_features != nullptr ? instruction_set_features->HasAVX2() : false) {}
   virtual ~X86_64Assembler() {}
+
+  void EnableWin64UnwindInfo() override { win64_unwind_info_.Enable(); }
+  bool IsWin64UnwindInfoEnabled() const override { return win64_unwind_info_.IsEnabled(); }
+  bool IsWin64UnwindInfoValid() const override { return win64_unwind_info_.IsValid(); }
+  ArrayRef<const uint8_t> GetWin64UnwindInfo() const override {
+    return ArrayRef<const uint8_t>(win64_unwind_info_.GetData());
+  }
+
+  void RecordWin64PushNonvolatile(CpuRegister reg) {
+    win64_unwind_info_.RecordPushNonvolatile(
+        static_cast<uint8_t>(reg.AsRegister()), CodeSize());
+  }
+
+  void RecordWin64StackAllocation(size_t size) {
+    win64_unwind_info_.RecordStackAllocation(size, CodeSize());
+  }
+
+  void RecordWin64SetFramePointer(CpuRegister reg, uint8_t scaled_offset = 0u) {
+    win64_unwind_info_.RecordSetFramePointer(
+        static_cast<uint8_t>(reg.AsRegister()), scaled_offset, CodeSize());
+  }
+
+  void EndWin64UnwindPrologue() {
+    win64_unwind_info_.Finalize(CodeSize());
+  }
 
   /*
    * Emit Machine Instructions.
@@ -1305,6 +1331,7 @@ class X86_64Assembler final : public Assembler {
                     void (X86_64Assembler::*prefix_fn)(CpuRegister));
 
   ConstantArea constant_area_;
+  Win64UnwindInfoBuilder win64_unwind_info_;
   bool has_AVX_;     // x86 256bit SIMD AVX.
   bool has_AVX2_;    // x86 256bit SIMD AVX 2.0.
 

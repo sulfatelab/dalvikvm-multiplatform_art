@@ -44,6 +44,13 @@ static inline CpuRegister GetScratchRegister() {
 
 #define __ asm_.
 
+void X86_64JNIMacroAssembler::EnableWin64UnwindInfo(bool use_frame_pointer) {
+  DCHECK(!asm_.IsWin64UnwindInfoEnabled());
+  DCHECK_EQ(CodeSize(), 0u);
+  use_win64_frame_pointer_ = use_frame_pointer;
+  asm_.EnableWin64UnwindInfo();
+}
+
 void X86_64JNIMacroAssembler::BuildFrame(size_t frame_size,
                                          ManagedRegister method_reg,
                                          ArrayRef<const ManagedRegister> spill_regs) {
@@ -60,6 +67,9 @@ void X86_64JNIMacroAssembler::BuildFrame(size_t frame_size,
     x86_64::X86_64ManagedRegister spill = spill_regs[i].AsX86_64();
     if (spill.IsCpuRegister()) {
       __ pushq(spill.AsCpuRegister());
+      if (asm_.IsWin64UnwindInfoEnabled()) {
+        asm_.RecordWin64PushNonvolatile(spill.AsCpuRegister());
+      }
       gpr_count++;
       cfi().AdjustCFAOffset(kFramePointerSize);
       cfi().RelOffset(DWARFReg(spill.AsCpuRegister().AsRegister()), 0);
@@ -71,7 +81,18 @@ void X86_64JNIMacroAssembler::BuildFrame(size_t frame_size,
                           - kFramePointerSize /*return address*/;
   if (rest_of_frame != 0) {
     __ subq(CpuRegister(RSP), Immediate(rest_of_frame));
+    if (asm_.IsWin64UnwindInfoEnabled()) {
+      asm_.RecordWin64StackAllocation(rest_of_frame);
+    }
     cfi().AdjustCFAOffset(rest_of_frame);
+  }
+
+  if (asm_.IsWin64UnwindInfoEnabled()) {
+    if (use_win64_frame_pointer_) {
+      __ movq(CpuRegister(RBP), CpuRegister(RSP));
+      asm_.RecordWin64SetFramePointer(CpuRegister(RBP));
+    }
+    asm_.EndWin64UnwindPrologue();
   }
 
   // spill xmms

@@ -383,6 +383,13 @@ class Assembler : public DeletableArenaObject<kArenaAllocAssembler> {
     buffer_.CopyInstructions(region);
   }
 
+  // Optional PE x64 unwind data for dynamically generated Win64 code. Other
+  // architectures and non-Windows compilation paths leave this disabled.
+  virtual void EnableWin64UnwindInfo() {}
+  virtual bool IsWin64UnwindInfoEnabled() const { return false; }
+  virtual bool IsWin64UnwindInfoValid() const { return true; }
+  virtual ArrayRef<const uint8_t> GetWin64UnwindInfo() const { return {}; }
+
   // TODO: Implement with disassembler.
   virtual void Comment([[maybe_unused]] const char* format, ...) {}
 

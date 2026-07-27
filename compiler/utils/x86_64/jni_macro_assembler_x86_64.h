@@ -35,12 +35,15 @@ class X86_64JNIMacroAssembler final : public JNIMacroAssemblerFwd<X86_64Assemble
                                                                   PointerSize::k64> {
  public:
   explicit X86_64JNIMacroAssembler(ArenaAllocator* allocator)
-      : JNIMacroAssemblerFwd<X86_64Assembler, PointerSize::k64>(allocator) {}
+      : JNIMacroAssemblerFwd<X86_64Assembler, PointerSize::k64>(allocator),
+        use_win64_frame_pointer_(false) {}
   virtual ~X86_64JNIMacroAssembler() {}
 
   //
   // Overridden common assembler high-level functionality
   //
+
+  void EnableWin64UnwindInfo(bool use_frame_pointer) override;
 
   // Emit code that will create an activation on the stack
   void BuildFrame(size_t frame_size,
@@ -158,6 +161,8 @@ class X86_64JNIMacroAssembler final : public JNIMacroAssemblerFwd<X86_64Assemble
   void CreateJObject(FrameOffset out_off,
                      FrameOffset spilled_reference_offset,
                      bool null_allowed);
+
+  bool use_win64_frame_pointer_;
 
   DISALLOW_COPY_AND_ASSIGN(X86_64JNIMacroAssembler);
 };
