@@ -1082,11 +1082,7 @@ void Runtime::RunRootClinits(Thread* self) {
 bool Runtime::Start() {
   VLOG(startup) << "Runtime::Start entering";
 
-#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-  // Win64 uses VEH for faults; sigchain is a no-op stub. Allow -Xno-sig-chain.
-#else
   CHECK(!no_sig_chain_) << "A started runtime should have sig chain enabled";
-#endif
 
   // If a debug host build, disable ptrace restriction for debugging and test timeout thread dump.
   // Only 64-bit as prctl() may fail in 32 bit userspace on a 64-bit kernel.
@@ -2132,9 +2128,9 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   implicit_null_checks_ = false;
 #endif  // ART_USE_RESTRICTED_MODE
 #ifdef _WIN32
-  // Phase-2: no reliable stack guard / VEH SO handler yet.
-  implicit_so_checks_ = false;
-  implicit_null_checks_ = false;
+  // Win64 x86_64 uses the common implicit null and stack-overflow checks
+  // through the narrow VEH-backed sigchain adapter. ART does not use implicit
+  // suspend checks on x86_64.
   implicit_suspend_checks_ = false;
 #endif
 
@@ -2171,9 +2167,18 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
                                  JavaStackTraceHandler::IsGeneratedCodeHandler());
       }
 
-      if (interpreter::CanRuntimeUseNterp()) {
+      bool register_nterp_range = interpreter::CanRuntimeUseNterp();
+#if defined(_WIN32) && defined(__x86_64__)
+      // Win64 deliberately keeps nterp unreachable until Runtime::Start()
+      // finishes. Register its immutable code range now, before startup can
+      // publish nterp entrypoints, so the managed-fault capability becomes
+      // active atomically with its VEH and common handlers.
+      register_nterp_range = interpreter::IsNterpSupported() && !IsAotCompiler();
+#endif
+      if (register_nterp_range) {
         // Nterp code can use signal handling just like the compiled managed code.
         OatQuickMethodHeader* nterp_header = OatQuickMethodHeader::NterpMethodHeader;
+        CHECK(nterp_header != nullptr);
         fault_manager.AddGeneratedCodeRange(nterp_header->GetCode(), nterp_header->GetCodeSize());
       }
     }

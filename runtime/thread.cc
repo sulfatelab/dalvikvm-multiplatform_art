@@ -1486,9 +1486,11 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
   bool implicit_stack_check =
       runtime->GetImplicitStackOverflowChecks() && !runtime->IsAotCompiler();
 #if defined(_WIN32)
-  // Land the Windows fixed page before W-010 activation so its placement,
-  // protection, and detach restoration can be validated independently. The
-  // generated-fault handler remains disabled by implicit_stack_check.
+  // The main thread attaches before Runtime::Init() selects architecture
+  // implicit-check flags. Install the fixed page for every non-AOT Win64
+  // runtime so it is already present before the VEH-backed managed-fault
+  // capability is published. Later attachments take the implicit_stack_check
+  // branch directly.
   bool install_stack_protection =
       implicit_stack_check || !runtime->IsAotCompiler();
   read_guard_size = 0u;
