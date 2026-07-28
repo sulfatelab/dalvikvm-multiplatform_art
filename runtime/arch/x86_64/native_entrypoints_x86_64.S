@@ -38,7 +38,16 @@
 // forced to sysv_abi (see interpreter_switch_impl.h), but the C++ callee
 // ExecuteSwitchImplCpp is compiled with the MSVC ABI and expects arg0 in RCX.
 DEFINE_FUNCTION ExecuteSwitchImplAsm
+#if defined(_WIN32)
+    .seh_proc ExecuteSwitchImplAsm
+#endif
     PUSH rbx                 // Spill RBX
+#if defined(_WIN32)
+    .seh_pushreg %rbx
+    subq LITERAL(32), %rsp   // Mandatory MSVC outgoing home area.
+    .seh_stackalloc 32
+    .seh_endprologue
+#endif
     movq %rdx, %rbx          // RBX = DEX PC (callee save register)
     CFI_DEFINE_DEX_PC_WITH_OFFSET(0 /* RAX */, 3 /* RBX */, 0)
 
@@ -49,8 +58,14 @@ DEFINE_FUNCTION ExecuteSwitchImplAsm
 #endif
     call *%rsi               // Call the wrapped function
 
+#if defined(_WIN32)
+    addq LITERAL(32), %rsp
+#endif
     POP rbx                  // Restore RBX
     ret
+#if defined(_WIN32)
+    .seh_endproc
+#endif
 END_FUNCTION ExecuteSwitchImplAsm
 
     /*
