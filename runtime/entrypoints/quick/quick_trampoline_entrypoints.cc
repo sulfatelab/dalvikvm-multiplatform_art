@@ -1981,7 +1981,7 @@ class BuildGenericJniFrameVisitor final : public QuickArgumentVisitor {
     *hidden_arg_slot = critical_native ? (reinterpret_cast<uintptr_t>(method) | kGenericJniTag)
                                        : 0xebad6a89u;  // Bad value.
 
-    // Set out args SP (native call rsp). On Win64 this includes 32B shadow below stack args.
+    // Set out args SP (native call rsp). On Windows x64 this includes 32B shadow below stack args.
     uintptr_t* out_args_sp_slot = fsc.GetOutArgsSpSlot(reserved_area);
     *out_args_sp_slot = reinterpret_cast<uintptr_t>(out_args_sp);
 #if defined(__x86_64__) && defined(_WIN32)

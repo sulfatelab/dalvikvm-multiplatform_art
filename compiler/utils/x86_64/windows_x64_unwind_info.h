@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_COMPILER_UTILS_X86_64_WIN64_UNWIND_INFO_H_
-#define ART_COMPILER_UTILS_X86_64_WIN64_UNWIND_INFO_H_
+#ifndef ART_COMPILER_UTILS_X86_64_WINDOWS_X64_UNWIND_INFO_H_
+#define ART_COMPILER_UTILS_X86_64_WINDOWS_X64_UNWIND_INFO_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -30,9 +30,9 @@ namespace x86_64 {
 // A Windows-SDK-independent serializer for the subset of x64 UNWIND_INFO used
 // by ART's JIT frames. Code offsets are instruction-end offsets from the start
 // of the generated method, as required by the PE unwind format.
-class Win64UnwindInfoBuilder {
+class WindowsX64UnwindInfoBuilder {
  public:
-  Win64UnwindInfoBuilder() = default;
+  WindowsX64UnwindInfoBuilder() = default;
 
   void Enable() {
     enabled_ = true;
@@ -230,4 +230,4 @@ class Win64UnwindInfoBuilder {
 }  // namespace x86_64
 }  // namespace art
 
-#endif  // ART_COMPILER_UTILS_X86_64_WIN64_UNWIND_INFO_H_
+#endif  // ART_COMPILER_UTILS_X86_64_WINDOWS_X64_UNWIND_INFO_H_

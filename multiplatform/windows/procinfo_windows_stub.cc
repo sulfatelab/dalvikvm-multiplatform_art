@@ -1,4 +1,4 @@
-// Minimal libprocinfo for Win64 (no /proc). Symbols may be unused for -showversion.
+// Minimal libprocinfo for Windows x64 (no /proc). Symbols may be unused for -showversion.
 #include "process.h"
 namespace android {
 namespace procinfo {

@@ -134,13 +134,13 @@ X86_64JniCallingConvention::CalleeSaveScratchRegistersWithFramePointer() const {
   // RBP anchors the PE frame and R15 is ART's managed Thread* register. The
   // remaining four managed/native callee-saves satisfy the JNI compiler's
   // scratch requirement without changing Linux or non-JIT Windows stubs.
-  static constexpr ManagedRegister kWin64FramePointerScratchRegisters[] = {
+  static constexpr ManagedRegister kWindowsX64FramePointerScratchRegisters[] = {
       X86_64ManagedRegister::FromCpuRegister(RBX),
       X86_64ManagedRegister::FromCpuRegister(R12),
       X86_64ManagedRegister::FromCpuRegister(R13),
       X86_64ManagedRegister::FromCpuRegister(R14),
   };
-  return ArrayRef<const ManagedRegister>(kWin64FramePointerScratchRegisters);
+  return ArrayRef<const ManagedRegister>(kWindowsX64FramePointerScratchRegisters);
 #else
   return CalleeSaveScratchRegisters();
 #endif

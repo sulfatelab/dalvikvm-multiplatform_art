@@ -159,15 +159,15 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
                                 CompilationKind compilation_kind,
                                 bool prejit) {
 #if defined(_WIN32)
-  // Temporary Win64 policy controls while the remaining W-024 product work is completed.
-  // ART_WIN64_JIT=0 disables all compilation; FILTER/EXCLUDE narrow diagnostic runs.
+  // Temporary Windows x64 policy controls while the remaining W-024 product work is completed.
+  // ART_WINDOWS_X64_JIT=0 disables all compilation; FILTER/EXCLUDE narrow diagnostic runs.
   {
-    static const bool kWin64JitCompile = []() {
-      const char* e = getenv("ART_WIN64_JIT");
+    static const bool kWindowsX64JitCompile = []() {
+      const char* e = getenv("ART_WINDOWS_X64_JIT");
       // Default ON; only explicit "0" disables compile (Create still runs).
       return !(e != nullptr && e[0] == '0' && e[1] == '\0');
     }();
-    if (!kWin64JitCompile) {
+    if (!kWindowsX64JitCompile) {
       return false;
     }
     auto match_any = [](const std::string& name, const char* list) -> bool {
@@ -187,11 +187,11 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
       return false;
     };
     std::string name = method->PrettyMethod();
-    const char* filt = getenv("ART_WIN64_JIT_FILTER");
+    const char* filt = getenv("ART_WINDOWS_X64_JIT_FILTER");
     if (filt != nullptr && filt[0] != '\0' && !match_any(name, filt)) {
       return false;
     }
-    const char* excl = getenv("ART_WIN64_JIT_EXCLUDE");
+    const char* excl = getenv("ART_WINDOWS_X64_JIT_EXCLUDE");
     if (excl != nullptr && excl[0] != '\0' && match_any(name, excl)) {
       return false;
     }
@@ -279,12 +279,12 @@ bool Jit::CompileMethodInternal(ArtMethod* method,
   {
     // Detailed method records are acceptance diagnostics, not product logging.
     static const bool kLogCompileDone = []() {
-      const char* value = getenv("ART_WIN64_JIT_LOG_COMPILES");
+      const char* value = getenv("ART_WINDOWS_X64_JIT_LOG_COMPILES");
       return value != nullptr && value[0] == '1' && value[1] == '\0';
     }();
     static std::atomic<int> g_win_compile_done_logs{0};
     if (kLogCompileDone && g_win_compile_done_logs.fetch_add(1) < 40) {
-      LOG(INFO) << "Win64 CompileMethod done success=" << success
+      LOG(INFO) << "Windows x64 CompileMethod done success=" << success
                 << " method=" << ArtMethod::PrettyMethod(method_to_compile)
                 << " kind=" << compilation_kind
                 << " entry=" << method_to_compile->GetEntryPointFromQuickCompiledCode();

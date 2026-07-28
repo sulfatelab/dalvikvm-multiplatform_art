@@ -63,7 +63,7 @@ static constexpr int kCurrentMethodStackOffset = 0;
 static constexpr uint32_t kPackedSwitchJumpTableThreshold = 5;
 
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-// R15 is rSELF (Thread*) on Win64 managed code; not a general callee-save.
+// R15 is rSELF (Thread*) on Windows x64 managed code; not a general callee-save.
 static constexpr Register kCoreCalleeSaves[] = { RBX, RBP, R12, R13, R14 };
 #else
 static constexpr Register kCoreCalleeSaves[] = { RBX, RBP, R12, R13, R14, R15 };
@@ -1639,7 +1639,7 @@ CodeGeneratorX86_64::CodeGeneratorX86_64(HGraph* graph,
     // Keep the Windows JIT frame anchor out of register allocation and force
     // its existing ART callee-save spill into every generated frame.
     AddAllocatedCoreRegister(RBP);
-    assembler_.EnableWin64UnwindInfo();
+    assembler_.EnableWindowsX64UnwindInfo();
   }
 #endif
 }
@@ -1664,7 +1664,7 @@ inline RegisterSet CodeGeneratorX86_64::ComputeBlockedRegisters() const {
   // Stack register is always reserved. Block the register used as TMP.
   uint32_t core_registers = (1u << RSP) | (1u << TMP);
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-  // R15 is rSELF / Thread*. Win64 JIT code also reserves RBP as its stable PE
+  // R15 is rSELF / Thread*. Windows x64 JIT code also reserves RBP as its stable PE
   // frame anchor; AOT and Linux register allocation remain unchanged.
   core_registers |= (1u << R15);
   if (GetCompilerOptions().IsJitCompiler()) {
@@ -1921,8 +1921,8 @@ void CodeGeneratorX86_64::GenerateFrameEntry() {
       Register reg = kCoreCalleeSaves[i];
       if (allocated_registers_.ContainsCoreRegister(reg)) {
         __ pushq(CpuRegister(reg));
-        if (assembler_.IsWin64UnwindInfoEnabled()) {
-          assembler_.RecordWin64PushNonvolatile(CpuRegister(reg));
+        if (assembler_.IsWindowsX64UnwindInfoEnabled()) {
+          assembler_.RecordWindowsX64PushNonvolatile(CpuRegister(reg));
         }
         __ cfi().AdjustCFAOffset(kX86_64WordSize);
         __ cfi().RelOffset(DWARFReg(reg), 0);
@@ -1931,11 +1931,11 @@ void CodeGeneratorX86_64::GenerateFrameEntry() {
 
     int adjust = GetFrameSize() - GetCoreSpillSize();
     IncreaseFrame(adjust);
-    if (assembler_.IsWin64UnwindInfoEnabled()) {
-      assembler_.RecordWin64StackAllocation(adjust);
+    if (assembler_.IsWindowsX64UnwindInfoEnabled()) {
+      assembler_.RecordWindowsX64StackAllocation(adjust);
       __ movq(CpuRegister(RBP), CpuRegister(RSP));
-      assembler_.RecordWin64SetFramePointer(CpuRegister(RBP));
-      assembler_.EndWin64UnwindPrologue();
+      assembler_.RecordWindowsX64SetFramePointer(CpuRegister(RBP));
+      assembler_.EndWindowsX64UnwindPrologue();
     }
     uint32_t xmm_spill_location = GetFpuSpillStart();
     size_t xmm_spill_slot_size = GetCalleePreservedFPWidth();

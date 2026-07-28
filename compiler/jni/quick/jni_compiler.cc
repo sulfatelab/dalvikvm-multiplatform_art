@@ -93,10 +93,10 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
   bool is_debuggable = compiler_options.GetDebuggable();
   bool needs_entry_exit_hooks = is_debuggable && compiler_options.IsJitCompiler();
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-  const bool emit_win64_unwind_info =
+  const bool emit_windows_x64_unwind_info =
       compiler_options.IsJitCompiler() && instruction_set == InstructionSet::kX86_64;
 #else
-  const bool emit_win64_unwind_info = false;
+  const bool emit_windows_x64_unwind_info = false;
 #endif
   // We don't support JITing stubs for critical native methods in debuggable runtimes yet.
   // TODO(mythria): Add support required for calling method entry / exit hooks from critical native
@@ -167,8 +167,8 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
   // Assembler that holds generated instructions
   std::unique_ptr<JNIMacroAssembler<kPointerSize>> jni_asm =
       GetMacroAssembler<kPointerSize>(allocator, instruction_set, instruction_set_features);
-  if (emit_win64_unwind_info) {
-    jni_asm->EnableWin64UnwindInfo(/*use_frame_pointer=*/ !is_critical_native);
+  if (emit_windows_x64_unwind_info) {
+    jni_asm->EnableWindowsX64UnwindInfo(/*use_frame_pointer=*/ !is_critical_native);
   }
   jni_asm->cfi().SetEnabled(compiler_options.GenerateAnyDebugInfo());
   jni_asm->SetEmitRunTimeChecksInDebugMode(compiler_options.EmitRunTimeChecksInDebugMode());
@@ -274,7 +274,7 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
   // Managed callee-saves were already saved, so these registers are now available.
   ArrayRef<const ManagedRegister> callee_save_scratch_regs = UNLIKELY(is_critical_native)
       ? ArrayRef<const ManagedRegister>()
-      : (emit_win64_unwind_info
+      : (emit_windows_x64_unwind_info
              ? main_jni_conv->CalleeSaveScratchRegistersWithFramePointer()
              : main_jni_conv->CalleeSaveScratchRegisters());
   std::unique_ptr<JNIMacroLabel> transition_to_native_slow_path;
@@ -730,10 +730,10 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
   std::vector<uint8_t> managed_code(cs);
   MemoryRegion code(&managed_code[0], managed_code.size());
   __ CopyInstructions(code);
-  ArrayRef<const uint8_t> win64_unwind_info = jni_asm->GetWin64UnwindInfo();
-  const bool win64_unwind_info_valid =
-      !emit_win64_unwind_info ||
-      (jni_asm->IsWin64UnwindInfoValid() && !win64_unwind_info.empty());
+  ArrayRef<const uint8_t> windows_x64_unwind_info = jni_asm->GetWindowsX64UnwindInfo();
+  const bool windows_x64_unwind_info_valid =
+      !emit_windows_x64_unwind_info ||
+      (jni_asm->IsWindowsX64UnwindInfoValid() && !windows_x64_unwind_info.empty());
 
   return JniCompiledMethod(instruction_set,
                            std::move(managed_code),
@@ -741,8 +741,8 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
                            main_jni_conv->CoreSpillMask(),
                            main_jni_conv->FpSpillMask(),
                            ArrayRef<const uint8_t>(*jni_asm->cfi().data()),
-                           win64_unwind_info,
-                           win64_unwind_info_valid);
+                           windows_x64_unwind_info,
+                           windows_x64_unwind_info_valid);
 }
 
 template <PointerSize kPointerSize>

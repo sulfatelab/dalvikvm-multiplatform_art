@@ -45,7 +45,7 @@ class Thread;
 
 // Pointers to functions that are called by quick compiler generated code via thread-local storage.
 // Pointers to functions called from quick/managed code via Thread TLS.
-// On Win64, managed/quick asm uses the SysV register ABI for ART helpers
+// On Windows x64, managed/quick asm uses the SysV register ABI for ART helpers
 // (ART_QUICK_ENTRYPOINT_ABI = sysv_abi). Set* therefore has:
 //   - default C++ ABI pointer (libm cos/sin, libc memcpy, nullptr via nullptr_t)
 //   - sysv_abi ART helper pointer

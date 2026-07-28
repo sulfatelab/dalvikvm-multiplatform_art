@@ -194,7 +194,7 @@ namespace apex = com::android::apex;
 // Static asserts to check the values of generated assembly-support macros.
 // On Windows the host-generated offset table may not match PE layout yet.
 #if defined(_WIN32)
-#define ASM_DEFINE(NAME, EXPR) /* skip offset check for Phase 1 Win64 */
+#define ASM_DEFINE(NAME, EXPR) /* skip offset check for Phase 1 Windows x64 */
 #else
 #define ASM_DEFINE(NAME, EXPR) static_assert((NAME) == (EXPR), "Unexpected value of " #NAME);
 #endif
@@ -1001,17 +1001,17 @@ static jobject CreateSystemClassLoader(Runtime* runtime) {
   CHECK(getSystemClassLoader != nullptr);
   CHECK(getSystemClassLoader->IsStatic());
 
-  LOG(INFO) << "Win64 CreateSystemClassLoader before invoke"
+  LOG(INFO) << "Windows x64 CreateSystemClassLoader before invoke"
             << " class_path_string_='" << runtime->GetClassPathString() << "'"
             << " entry=" << getSystemClassLoader->GetEntryPointFromQuickCompiledCode()
             << " nterp_supported=" << interpreter::IsNterpSupported()
             << " can_use_nterp=" << interpreter::CanRuntimeUseNterp();
   ObjPtr<mirror::Object> system_class_loader = getSystemClassLoader->InvokeStatic<'L'>(soa.Self());
   if (soa.Self()->IsExceptionPending()) {
-    LOG(ERROR) << "Win64 CreateSystemClassLoader pending exception: "
+    LOG(ERROR) << "Windows x64 CreateSystemClassLoader pending exception: "
                << soa.Self()->GetException()->Dump();
   }
-  LOG(INFO) << "Win64 CreateSystemClassLoader after invoke loader="
+  LOG(INFO) << "Windows x64 CreateSystemClassLoader after invoke loader="
             << system_class_loader.Ptr();
   if (system_class_loader != nullptr) {
     ArtMethod* to_string = system_class_loader->GetClass()->FindClassMethod(
@@ -1020,12 +1020,12 @@ static jobject CreateSystemClassLoader(Runtime* runtime) {
       ObjPtr<mirror::Object> s =
           to_string->InvokeVirtual<'L'>(soa.Self(), system_class_loader.Ptr());
       if (soa.Self()->IsExceptionPending()) {
-        LOG(ERROR) << "Win64 loader.toString pending: " << soa.Self()->GetException()->Dump();
+        LOG(ERROR) << "Windows x64 loader.toString pending: " << soa.Self()->GetException()->Dump();
         soa.Self()->ClearException();
       } else if (s != nullptr && s->IsString()) {
-        LOG(INFO) << "Win64 loader.toString=" << s->AsString()->ToModifiedUtf8();
+        LOG(INFO) << "Windows x64 loader.toString=" << s->AsString()->ToModifiedUtf8();
       } else {
-        LOG(INFO) << "Win64 loader.toString returned null/non-string";
+        LOG(INFO) << "Windows x64 loader.toString returned null/non-string";
       }
     }
   }
@@ -1158,7 +1158,7 @@ bool Runtime::Start() {
   }
 
   system_class_loader_ = CreateSystemClassLoader(this);
-  LOG(INFO) << "Win64 Runtime::Start after CreateSystemClassLoader"
+  LOG(INFO) << "Windows x64 Runtime::Start after CreateSystemClassLoader"
             << " can_use_nterp=" << interpreter::CanRuntimeUseNterp()
             << " finished=" << IsFinishedStarting();
 
@@ -1169,32 +1169,32 @@ bool Runtime::Start() {
     NativeBridgeAction action = force_native_bridge_
         ? NativeBridgeAction::kInitialize
         : NativeBridgeAction::kUnload;
-    LOG(INFO) << "Win64 Runtime::Start before InitNonZygoteOrPostFork";
+    LOG(INFO) << "Windows x64 Runtime::Start before InitNonZygoteOrPostFork";
     InitNonZygoteOrPostFork(self->GetJniEnv(),
                             /* is_system_server= */ false,
                             /* is_child_zygote= */ false,
                             action,
                             GetInstructionSetString(kRuntimeISA));
-    LOG(INFO) << "Win64 Runtime::Start after InitNonZygoteOrPostFork";
+    LOG(INFO) << "Windows x64 Runtime::Start after InitNonZygoteOrPostFork";
   }
 
   {
     ScopedObjectAccess soa(self);
-    LOG(INFO) << "Win64 Runtime::Start before StartDaemonThreads";
+    LOG(INFO) << "Windows x64 Runtime::Start before StartDaemonThreads";
     StartDaemonThreads();
-    LOG(INFO) << "Win64 Runtime::Start after StartDaemonThreads";
+    LOG(INFO) << "Windows x64 Runtime::Start after StartDaemonThreads";
     self->GetJniEnv()->AssertLocalsEmpty();
 
     // Send the initialized phase event. Send it after starting the Daemon threads so that agents
     // cannot delay the daemon threads from starting forever.
     callbacks_->NextRuntimePhase(RuntimePhaseCallback::RuntimePhase::kInit);
     self->GetJniEnv()->AssertLocalsEmpty();
-    LOG(INFO) << "Win64 Runtime::Start after kInit phase";
+    LOG(INFO) << "Windows x64 Runtime::Start after kInit phase";
   }
 
   VLOG(startup) << "Runtime::Start exiting";
   finished_starting_ = true;
-  LOG(INFO) << "Win64 Runtime::Start finished_starting_=true"
+  LOG(INFO) << "Windows x64 Runtime::Start finished_starting_=true"
             << " can_use_nterp=" << interpreter::CanRuntimeUseNterp();
 
 #if defined(_WIN32) && defined(__x86_64__)
@@ -1242,7 +1242,7 @@ bool Runtime::Start() {
     };
     UpgradeToNterpVisitor visitor(GetClassLinker(), GetInstrumentation());
     GetClassLinker()->VisitClasses(&visitor);
-    LOG(INFO) << "Win64 Runtime::Start upgraded eligible methods to nterp"
+    LOG(INFO) << "Windows x64 Runtime::Start upgraded eligible methods to nterp"
               << " count=" << visitor.upgraded();
   }
 #endif
@@ -1450,7 +1450,7 @@ void Runtime::InitNonZygoteOrPostFork(
 
 void Runtime::StartSignalCatcher() {
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-  // SignalCatcher uses sigwaitinfo; not available/usable under Win64/Wine.
+  // SignalCatcher uses sigwaitinfo; not available/usable under Windows x64/Wine.
   // Faults are handled via VEH instead. Skip the catcher thread for Phase 2.
   VLOG(startup) << "StartSignalCatcher skipped on Windows";
   return;
@@ -2129,7 +2129,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 #endif  // ART_USE_RESTRICTED_MODE
 #ifdef _WIN32
   // Keep implicit null checks through the narrow VEH adapter. Windows owns
-  // stack growth and can consume a fixed ART page, so Win64 generated code
+  // stack growth and can consume a fixed ART page, so Windows x64 generated code
   // uses explicit Thread::stack_end checks instead.
   implicit_suspend_checks_ = false;
   implicit_so_checks_ = false;
@@ -2170,7 +2170,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 
       bool register_nterp_range = interpreter::CanRuntimeUseNterp();
 #if defined(_WIN32) && defined(__x86_64__)
-      // Win64 deliberately keeps nterp unreachable until Runtime::Start()
+      // Windows x64 deliberately keeps nterp unreachable until Runtime::Start()
       // finishes. Register its immutable code range now, before startup can
       // publish nterp entrypoints, so the managed-fault capability becomes
       // active atomically with its VEH and common handlers.

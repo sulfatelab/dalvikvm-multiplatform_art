@@ -162,7 +162,7 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 // The attribute allows hiding them, so preventing direct access.
 #define ALWAYS_HIDDEN /* MDVM patch 0013 */
 
-// Win64 quick assembly is written for the SysV AMD64 register ABI, while host
+// Windows x64 quick assembly is written for the SysV AMD64 register ABI, while host
 // C++ uses the Microsoft x64 ABI. Mark C++ helpers called from quick/nterp asm
 // as sysv_abi so bridges keep a Linux-like managed convention and only convert
 // at pure-C++ OS edges (see win32_tls_jit_entrypoints.md draft lock-in).

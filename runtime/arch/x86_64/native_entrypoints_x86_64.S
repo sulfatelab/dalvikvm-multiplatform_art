@@ -34,7 +34,7 @@
 //  Argument 1: RSI: Pointer to the templated ExecuteSwitchImpl to call.
 //  Argument 2: RDX: The value of DEX PC (memory address of the methods bytecode).
 //
-// Note: On Linux this is pure SysV. On Win64 the *caller* of ExecuteSwitchImplAsm is
+// Note: On Linux this is pure SysV. On Windows x64 the *caller* of ExecuteSwitchImplAsm is
 // forced to sysv_abi (see interpreter_switch_impl.h), but the C++ callee
 // ExecuteSwitchImplCpp is compiled with the MSVC ABI and expects arg0 in RCX.
 DEFINE_FUNCTION ExecuteSwitchImplAsm

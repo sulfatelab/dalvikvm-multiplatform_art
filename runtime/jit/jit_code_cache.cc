@@ -258,7 +258,7 @@ JitCodeCache* JitCodeCache::Create(bool used_only_for_profile_data,
             << ", maximum capacity="
             << PrettySize(max_capacity);
 #if defined(_WIN32)
-  LOG(INFO) << "Win64 JitCodeCache::Create OK initial="
+  LOG(INFO) << "Windows x64 JitCodeCache::Create OK initial="
             << PrettySize(initial_capacity) << " max=" << PrettySize(max_capacity);
 #endif
 
@@ -270,7 +270,7 @@ JitCodeCache::JitCodeCache()
       inline_cache_cond_("Jit inline cache condition variable", *Locks::jit_lock_),
       reserved_capacity_(GetInitialCapacity() * kReservedCapacityMultiplier),
 #if defined(_WIN32)
-      win64_unwind_registry_(std::make_unique<Win64JitUnwindRegistry>()),
+      windows_x64_unwind_registry_(std::make_unique<WindowsX64JitUnwindRegistry>()),
 #endif
       zygote_map_(&shared_region_),
       lock_cond_("Jit code cache condition variable", *Locks::jit_lock_),
@@ -288,8 +288,8 @@ JitCodeCache::JitCodeCache()
 
 JitCodeCache::~JitCodeCache() {
 #if defined(_WIN32)
-  CHECK(win64_unwind_registry_->Clear())
-      << "Failed to remove Win64 JIT runtime-function tables before mapping teardown";
+  CHECK(windows_x64_unwind_registry_->Clear())
+      << "Failed to remove Windows x64 JIT runtime-function tables before mapping teardown";
 #endif
   if (private_region_.HasCodeMapping()) {
     const MemMap* exec_pages = private_region_.GetExecPages();
@@ -759,7 +759,7 @@ bool JitCodeCache::Commit(Thread* self,
 
 #if defined(_WIN32)
     if (!unwind_info.empty() &&
-        !win64_unwind_registry_->Register(code_ptr,
+        !windows_x64_unwind_registry_->Register(code_ptr,
                                           code.size(),
                                           unwind_info_data,
                                           region->GetDataPages()->Begin())) {
@@ -1158,9 +1158,9 @@ void JitCodeCache::Free(Thread* self,
 void JitCodeCache::FreeLocked(JitMemoryRegion* region, const uint8_t* code, const uint8_t* data) {
   if (code != nullptr) {
 #if defined(_WIN32)
-    CHECK(win64_unwind_registry_->Unregister(
+    CHECK(windows_x64_unwind_registry_->Unregister(
         reinterpret_cast<const uint8_t*>(FromAllocationToCode(code))))
-        << "Failed to remove Win64 JIT runtime-function table before freeing code";
+        << "Failed to remove Windows x64 JIT runtime-function table before freeing code";
 #endif
     RemoveNativeDebugInfoForJit(reinterpret_cast<const void*>(FromAllocationToCode(code)));
     region->FreeCode(code);

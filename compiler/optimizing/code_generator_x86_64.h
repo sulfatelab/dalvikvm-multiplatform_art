@@ -151,7 +151,7 @@ class CriticalNativeCallingConventionVisitorX86_64 : public InvokeDexCallingConv
   size_t gpr_index_ = 0u;
   size_t fpr_index_ = 0u;
 #endif
-  // Starts at kNativeShadowSpaceSize (32 on Win64, 0 on SysV) so zero-arg direct
+  // Starts at kNativeShadowSpaceSize (32 on Windows x64, 0 on SysV) so zero-arg direct
   // calls still reserve the Microsoft home area when required.
   size_t stack_offset_ = 0u;
 

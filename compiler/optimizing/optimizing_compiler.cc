@@ -1373,7 +1373,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
 
     JniCompiledMethod jni_compiled_method = ArtQuickJniCompileMethod(
         compiler_options, dex_file->GetMethodShortyView(method_idx), access_flags, &allocator);
-    if (!jni_compiled_method.IsWin64UnwindInfoValid()) {
+    if (!jni_compiled_method.IsWindowsX64UnwindInfoValid()) {
       return false;
     }
     std::vector<Handle<mirror::Object>> roots;
@@ -1387,7 +1387,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                           jni_compiled_method,
                           jni_compiled_method.GetCode().size(),
                           compiler_options.GetDebuggable() && compiler_options.IsJitCompiler());
-    ArrayRef<const uint8_t> win64_unwind_info = jni_compiled_method.GetWin64UnwindInfo();
+    ArrayRef<const uint8_t> windows_x64_unwind_info = jni_compiled_method.GetWindowsX64UnwindInfo();
 
     ArrayRef<const uint8_t> reserved_code;
     ArrayRef<const uint8_t> reserved_data;
@@ -1395,7 +1395,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                              region,
                              jni_compiled_method.GetCode().size(),
                              stack_map.size(),
-                             win64_unwind_info.size(),
+                             windows_x64_unwind_info.size(),
                              /* number_of_roots= */ 0,
                              method,
                              /*out*/ &reserved_code,
@@ -1426,7 +1426,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                             reserved_data,
                             roots,
                             ArrayRef<const uint8_t>(stack_map),
-                            win64_unwind_info,
+                            windows_x64_unwind_info,
                             debug_info,
                             /* is_full_debug_info= */ compiler_options.GetGenerateDebugInfo(),
                             compilation_kind,
@@ -1552,22 +1552,22 @@ bool OptimizingCompiler::JitCompile(Thread* self,
         return false;
       }
       Assembler* assembler = codegen->GetAssembler();
-      if (!assembler->IsWin64UnwindInfoValid() ||
-          (assembler->IsWin64UnwindInfoEnabled() && assembler->GetWin64UnwindInfo().empty())) {
+      if (!assembler->IsWindowsX64UnwindInfoValid() ||
+          (assembler->IsWindowsX64UnwindInfoEnabled() && assembler->GetWindowsX64UnwindInfo().empty())) {
         return false;
       }
     }
 
     ScopedArenaVector<uint8_t> stack_map = codegen->BuildStackMaps(code_item);
-    ArrayRef<const uint8_t> win64_unwind_info =
-        codegen->GetAssembler()->GetWin64UnwindInfo();
+    ArrayRef<const uint8_t> windows_x64_unwind_info =
+        codegen->GetAssembler()->GetWindowsX64UnwindInfo();
     ArrayRef<const uint8_t> reserved_code;
     ArrayRef<const uint8_t> reserved_data;
     if (!code_cache->Reserve(self,
                              region,
                              codegen->GetAssembler()->CodeSize(),
                              stack_map.size(),
-                             win64_unwind_info.size(),
+                             windows_x64_unwind_info.size(),
                              /*number_of_roots=*/codegen->GetNumberOfJitRoots(),
                              method,
                              /*out*/ &reserved_code,
@@ -1617,7 +1617,7 @@ bool OptimizingCompiler::JitCompile(Thread* self,
                             reserved_data,
                             roots,
                             ArrayRef<const uint8_t>(stack_map),
-                            win64_unwind_info,
+                            windows_x64_unwind_info,
                             debug_info,
                             /* is_full_debug_info= */ compiler_options.GetGenerateDebugInfo(),
                             compilation_kind,

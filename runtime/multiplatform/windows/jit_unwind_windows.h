@@ -25,16 +25,16 @@
 namespace art {
 namespace jit {
 
-// Owns immutable one-entry Win64 runtime-function tables for JIT allocations.
+// Owns immutable one-entry Windows x64 runtime-function tables for JIT allocations.
 // Callers serialize access with Locks::jit_lock_. Windows SDK types stay in the
 // implementation so common JIT headers carry only opaque addresses and bytes.
-class Win64JitUnwindRegistry {
+class WindowsX64JitUnwindRegistry {
  public:
-  Win64JitUnwindRegistry();
-  ~Win64JitUnwindRegistry();
+  WindowsX64JitUnwindRegistry();
+  ~WindowsX64JitUnwindRegistry();
 
-  Win64JitUnwindRegistry(const Win64JitUnwindRegistry&) = delete;
-  Win64JitUnwindRegistry& operator=(const Win64JitUnwindRegistry&) = delete;
+  WindowsX64JitUnwindRegistry(const WindowsX64JitUnwindRegistry&) = delete;
+  WindowsX64JitUnwindRegistry& operator=(const WindowsX64JitUnwindRegistry&) = delete;
 
   bool Register(const uint8_t* code,
                 size_t code_size,

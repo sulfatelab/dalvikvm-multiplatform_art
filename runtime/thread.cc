@@ -1485,7 +1485,7 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
     LogHelper::LogLineLowStack(__PRETTY_FUNCTION__,
                                __LINE__,
                                ::android::base::ERROR,
-                               "Unable to inspect Win64 stack layout");
+                               "Unable to inspect Windows x64 stack layout");
     return false;
   }
 #else
@@ -2873,7 +2873,7 @@ Thread::~Thread() {
   // External native threads may continue after ART detach. Restore the page
   // while this Thread still denotes the current live system stack.
   if (!RestoreWin32StackProtection()) {
-    LOG(FATAL) << "Win64 ART stack protection could not be restored during detach";
+    LOG(FATAL) << "Win32 ART stack protection could not be restored during detach";
   }
 #endif
   CHECK(tlsPtr_.class_loader_override == nullptr);
@@ -4885,7 +4885,7 @@ bool Thread::ProtectStack(bool fatal_on_error) {
   const char* failure = nullptr;
   uint32_t win32_error = 0u;
   if (!ProtectWin32StackPage(&win32_stack_page_, &failure, &win32_error)) {
-    LOG(ERROR) << "Unable to protect Win64 ART stack page: "
+    LOG(ERROR) << "Unable to protect Win32 ART stack page: "
                << (failure != nullptr ? failure : "unknown failure")
                << " error=" << win32_error;
     if (fatal_on_error) {
@@ -4917,7 +4917,7 @@ bool Thread::UnprotectStack() {
   const char* failure = nullptr;
   uint32_t win32_error = 0u;
   if (!UnprotectWin32StackPage(&win32_stack_page_, &failure, &win32_error)) {
-    LOG(ERROR) << "Unable to unprotect Win64 ART stack page: "
+    LOG(ERROR) << "Unable to unprotect Win32 ART stack page: "
                << (failure != nullptr ? failure : "unknown failure")
                << " error=" << win32_error;
     return false;
@@ -4933,7 +4933,7 @@ bool Thread::UnprotectStack() {
 // Explicit instantiations required: common_throws.cc references these templates
 // for kHardware only. kSimulated needs GetStackBegin/SetStack* specializations
 // that exist only with the ART instruction simulator; instantiating them on
-// host Linux/Win64 non-simulator builds leaves an undefined GetStackBegin.
+// host Linux/Windows x64 non-simulator builds leaves an undefined GetStackBegin.
 template bool Thread::ProtectStack<StackType::kHardware>(bool);
 template bool Thread::UnprotectStack<StackType::kHardware>();
 

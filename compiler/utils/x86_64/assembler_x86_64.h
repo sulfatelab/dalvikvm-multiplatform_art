@@ -30,7 +30,7 @@
 #include "managed_register_x86_64.h"
 #include "offsets.h"
 #include "utils/assembler.h"
-#include "win64_unwind_info.h"
+#include "windows_x64_unwind_info.h"
 
 namespace art HIDDEN {
 namespace x86_64 {
@@ -303,7 +303,7 @@ class Address : public Operand {
   }
 
   // Thread-local field access. Linux x86_64: absolute offset with GS base = Thread*.
-  // Win64: rSELF=r15 holds Thread*; use base+disp (see win32_jit_memory.md D-1).
+  // Windows x64: rSELF=r15 holds Thread*; use base+disp (see win32_jit_memory.md D-1).
   static Address ThreadOffsetAddr(int32_t offset) {
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
     return Address(CpuRegister(R15), offset);
@@ -442,29 +442,29 @@ class X86_64Assembler final : public Assembler {
         has_AVX2_(instruction_set_features != nullptr ? instruction_set_features->HasAVX2() : false) {}
   virtual ~X86_64Assembler() {}
 
-  void EnableWin64UnwindInfo() override { win64_unwind_info_.Enable(); }
-  bool IsWin64UnwindInfoEnabled() const override { return win64_unwind_info_.IsEnabled(); }
-  bool IsWin64UnwindInfoValid() const override { return win64_unwind_info_.IsValid(); }
-  ArrayRef<const uint8_t> GetWin64UnwindInfo() const override {
-    return ArrayRef<const uint8_t>(win64_unwind_info_.GetData());
+  void EnableWindowsX64UnwindInfo() override { windows_x64_unwind_info_.Enable(); }
+  bool IsWindowsX64UnwindInfoEnabled() const override { return windows_x64_unwind_info_.IsEnabled(); }
+  bool IsWindowsX64UnwindInfoValid() const override { return windows_x64_unwind_info_.IsValid(); }
+  ArrayRef<const uint8_t> GetWindowsX64UnwindInfo() const override {
+    return ArrayRef<const uint8_t>(windows_x64_unwind_info_.GetData());
   }
 
-  void RecordWin64PushNonvolatile(CpuRegister reg) {
-    win64_unwind_info_.RecordPushNonvolatile(
+  void RecordWindowsX64PushNonvolatile(CpuRegister reg) {
+    windows_x64_unwind_info_.RecordPushNonvolatile(
         static_cast<uint8_t>(reg.AsRegister()), CodeSize());
   }
 
-  void RecordWin64StackAllocation(size_t size) {
-    win64_unwind_info_.RecordStackAllocation(size, CodeSize());
+  void RecordWindowsX64StackAllocation(size_t size) {
+    windows_x64_unwind_info_.RecordStackAllocation(size, CodeSize());
   }
 
-  void RecordWin64SetFramePointer(CpuRegister reg, uint8_t scaled_offset = 0u) {
-    win64_unwind_info_.RecordSetFramePointer(
+  void RecordWindowsX64SetFramePointer(CpuRegister reg, uint8_t scaled_offset = 0u) {
+    windows_x64_unwind_info_.RecordSetFramePointer(
         static_cast<uint8_t>(reg.AsRegister()), scaled_offset, CodeSize());
   }
 
-  void EndWin64UnwindPrologue() {
-    win64_unwind_info_.Finalize(CodeSize());
+  void EndWindowsX64UnwindPrologue() {
+    windows_x64_unwind_info_.Finalize(CodeSize());
   }
 
   /*
@@ -1331,7 +1331,7 @@ class X86_64Assembler final : public Assembler {
                     void (X86_64Assembler::*prefix_fn)(CpuRegister));
 
   ConstantArea constant_area_;
-  Win64UnwindInfoBuilder win64_unwind_info_;
+  WindowsX64UnwindInfoBuilder windows_x64_unwind_info_;
   bool has_AVX_;     // x86 256bit SIMD AVX.
   bool has_AVX2_;    // x86 256bit SIMD AVX 2.0.
 

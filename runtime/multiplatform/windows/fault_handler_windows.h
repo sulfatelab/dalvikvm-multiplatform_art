@@ -1,5 +1,5 @@
 /*
- * Win64 ART fault-dispatch data shared by the Windows sigchain and x86
+ * Win32 ART fault-dispatch data shared by the Windows sigchain and x86
  * adapter. The view is non-owning and valid only during the exception
  * callback.
  */

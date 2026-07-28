@@ -38,16 +38,16 @@ class JniCompiledMethod {
                     uint32_t core_spill_mask,
                     uint32_t fp_spill_mask,
                     ArrayRef<const uint8_t> cfi,
-                    ArrayRef<const uint8_t> win64_unwind_info,
-                    bool win64_unwind_info_valid)
+                    ArrayRef<const uint8_t> windows_x64_unwind_info,
+                    bool windows_x64_unwind_info_valid)
       : instruction_set_(instruction_set),
         code_(std::move(code)),
         frame_size_(frame_size),
         core_spill_mask_(core_spill_mask),
         fp_spill_mask_(fp_spill_mask),
         cfi_(cfi.begin(), cfi.end()),
-        win64_unwind_info_(win64_unwind_info.begin(), win64_unwind_info.end()),
-        win64_unwind_info_valid_(win64_unwind_info_valid) {}
+        windows_x64_unwind_info_(windows_x64_unwind_info.begin(), windows_x64_unwind_info.end()),
+        windows_x64_unwind_info_valid_(windows_x64_unwind_info_valid) {}
 
   JniCompiledMethod(JniCompiledMethod&& other) = default;
   ~JniCompiledMethod() = default;
@@ -58,10 +58,10 @@ class JniCompiledMethod {
   uint32_t GetCoreSpillMask() const { return core_spill_mask_; }
   uint32_t GetFpSpillMask() const { return fp_spill_mask_; }
   ArrayRef<const uint8_t> GetCfi() const { return ArrayRef<const uint8_t>(cfi_); }
-  ArrayRef<const uint8_t> GetWin64UnwindInfo() const {
-    return ArrayRef<const uint8_t>(win64_unwind_info_);
+  ArrayRef<const uint8_t> GetWindowsX64UnwindInfo() const {
+    return ArrayRef<const uint8_t>(windows_x64_unwind_info_);
   }
-  bool IsWin64UnwindInfoValid() const { return win64_unwind_info_valid_; }
+  bool IsWindowsX64UnwindInfoValid() const { return windows_x64_unwind_info_valid_; }
 
  private:
   InstructionSet instruction_set_;
@@ -70,8 +70,8 @@ class JniCompiledMethod {
   uint32_t core_spill_mask_;
   uint32_t fp_spill_mask_;
   std::vector<uint8_t> cfi_;
-  std::vector<uint8_t> win64_unwind_info_;
-  bool win64_unwind_info_valid_;
+  std::vector<uint8_t> windows_x64_unwind_info_;
+  bool windows_x64_unwind_info_valid_;
 };
 
 JniCompiledMethod ArtQuickJniCompileMethod(const CompilerOptions& compiler_options,

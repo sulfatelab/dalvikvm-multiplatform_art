@@ -1,5 +1,5 @@
 /*
- * Win64 ART port: Thread OS hooks (replaces thread_linux.cc host path).
+ * Win32 ART port: Thread OS hooks (replaces thread_linux.cc host path).
  */
 #include "thread.h"
 
@@ -35,31 +35,31 @@ bool Thread::InspectWin32StackLayout(uint8_t* read_stack_base,
   GetSystemInfo(&system_info);
   const size_t system_page_size = static_cast<size_t>(system_info.dwPageSize);
   if (system_page_size > std::numeric_limits<ULONG>::max() / kWin32MinimumStackGuaranteePages) {
-    LOG(ERROR) << "Invalid Win64 system page size for the stack guarantee";
+    LOG(ERROR) << "Invalid Windows x64 system page size for the stack guarantee";
     return false;
   }
   const ULONG minimum_stack_guarantee =
       static_cast<ULONG>(system_page_size * kWin32MinimumStackGuaranteePages);
   ULONG previous_stack_guarantee = 0u;
   if (!SetThreadStackGuarantee(&previous_stack_guarantee)) {
-    LOG(ERROR) << "Unable to query the Win64 thread stack guarantee: error=" << GetLastError();
+    LOG(ERROR) << "Unable to query the Windows x64 thread stack guarantee: error=" << GetLastError();
     return false;
   }
   if (previous_stack_guarantee < minimum_stack_guarantee) {
     ULONG requested_stack_guarantee = minimum_stack_guarantee;
     if (!SetThreadStackGuarantee(&requested_stack_guarantee)) {
-      LOG(ERROR) << "Unable to set the Win64 thread stack guarantee to " << minimum_stack_guarantee
+      LOG(ERROR) << "Unable to set the Windows x64 thread stack guarantee to " << minimum_stack_guarantee
                  << " bytes: error=" << GetLastError();
       return false;
     }
   }
   ULONG stack_guarantee_size = 0u;
   if (!SetThreadStackGuarantee(&stack_guarantee_size)) {
-    LOG(ERROR) << "Unable to verify the Win64 thread stack guarantee: error=" << GetLastError();
+    LOG(ERROR) << "Unable to verify the Windows x64 thread stack guarantee: error=" << GetLastError();
     return false;
   }
   if (stack_guarantee_size < minimum_stack_guarantee) {
-    LOG(ERROR) << "Win64 thread stack guarantee is below the requested minimum: actual="
+    LOG(ERROR) << "Windows x64 thread stack guarantee is below the requested minimum: actual="
                << stack_guarantee_size << " minimum=" << minimum_stack_guarantee;
     return false;
   }
@@ -79,11 +79,11 @@ bool Thread::InspectWin32StackLayout(uint8_t* read_stack_base,
                                     nullptr,
                                     &layout,
                                     &failure)) {
-    LOG(ERROR) << "Unable to inspect Win64 stack layout: "
+    LOG(ERROR) << "Unable to inspect Windows x64 stack layout: "
                << (failure != nullptr ? failure : "unknown failure");
     return false;
   }
-  VLOG(threads) << "Win64 stack layout memory_prefix=" << layout.memory_excluded_low_size
+  VLOG(threads) << "Windows x64 stack layout memory_prefix=" << layout.memory_excluded_low_size
                 << " stack_guarantee=" << layout.stack_guarantee_size
                 << " excluded_low=" << layout.excluded_low_size;
   *excluded_low_size = layout.excluded_low_size;
@@ -94,7 +94,7 @@ bool Thread::RestoreWin32StackProtection() {
   const char* failure = nullptr;
   uint32_t win32_error = 0u;
   if (!RestoreWin32StackPage(&win32_stack_page_, &failure, &win32_error)) {
-    LOG(ERROR) << "Unable to restore Win64 ART stack protection: "
+    LOG(ERROR) << "Unable to restore Win32 ART stack protection: "
                << (failure != nullptr ? failure : "unknown failure")
                << " error=" << win32_error;
     return false;

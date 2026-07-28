@@ -352,11 +352,11 @@ INVOKE_TRAMPOLINE art_quick_invoke_virtual_trampoline_with_access_check, artInvo
     /*
      * Preserve the part of the Microsoft x64 native ABI that is not preserved
      * by the ART managed x86-64 ABI. The lower 128 bits of XMM6-XMM15 are
-     * nonvolatile for native Win64 callers, while managed code preserves only
+     * nonvolatile for native Windows x64 callers, while managed code preserves only
      * the lower 64 bits of XMM12-XMM15. Keep this save area outside the
      * canonical ART managed frame.
      */
-MACRO0(SAVE_WIN64_NATIVE_XMMS)
+MACRO0(SAVE_WINDOWS_X64_NATIVE_XMMS)
 #if defined(_WIN32)
     subq LITERAL(160), %rsp
     movdqu %xmm6, 0(%rsp)
@@ -372,7 +372,7 @@ MACRO0(SAVE_WIN64_NATIVE_XMMS)
 #endif
 END_MACRO
 
-MACRO0(RESTORE_WIN64_NATIVE_XMMS)
+MACRO0(RESTORE_WINDOWS_X64_NATIVE_XMMS)
 #if defined(_WIN32)
     movdqu 0(%rsp), %xmm6
     movdqu 16(%rsp), %xmm7
@@ -390,7 +390,7 @@ END_MACRO
 
     /*
      * Save the fixed quick-invoke frame before any variable stack allocation.
-     * Win64 must do this within the 255-byte PE prologue limit; Linux keeps the
+     * Windows x64 must do this within the 255-byte PE prologue limit; Linux keeps the
      * historical placement after argument decoding. The stack layout itself is
      * identical on both paths.
      */
@@ -616,7 +616,7 @@ DEFINE_FUNCTION art_quick_invoke_stub
     POP r9                        // Pop r9 - shorty*
     POP r8                        // Pop r8 - result*.
     POP rbp                       // Pop rbp
-    RESTORE_WIN64_NATIVE_XMMS
+    RESTORE_WINDOWS_X64_NATIVE_XMMS
 #if defined(_WIN32)
     popq %rsi                     // MS callee-saved
     popq %rdi
@@ -780,7 +780,7 @@ DEFINE_FUNCTION art_quick_invoke_static_stub
     POP r9                         // Pop r9 - shorty*.
     POP r8                         // Pop r8 - result*.
     POP rbp                        // Pop rbp
-    RESTORE_WIN64_NATIVE_XMMS
+    RESTORE_WINDOWS_X64_NATIVE_XMMS
 #if defined(_WIN32)
     popq %rsi                      // MS callee-saved
     popq %rdi
@@ -1688,12 +1688,12 @@ END_FUNCTION art_quick_resolution_trampoline
      */
 DEFINE_FUNCTION art_quick_generic_jni_trampoline
 #if defined(_WIN32)
-    // Native Win64 exceptions raised by a JNI method must be able to unwind
+    // Native Windows x64 exceptions raised by a JNI method must be able to unwind
     // through this non-leaf assembly bridge before reaching frame-based SEH
     // and the process UEF. Keep the canonical ART frame layout unchanged, but
     // describe its prologue to the PE unwinder. RBP remains ART's managed
     // frame pointer. R12, which is already saved by the canonical frame and
-    // otherwise unused here, anchors the fixed Win64 unwind frame while RSP
+    // otherwise unused here, anchors the fixed Windows x64 unwind frame while RSP
     // is switched to the variable-sized native argument area.
     .seh_proc art_quick_generic_jni_trampoline
     W003_COUNT_FRAME art_w003_frame_probe_refs_and_args
@@ -1910,7 +1910,7 @@ END_FUNCTION art_deliver_pending_exception
 DEFINE_FUNCTION art_quick_to_interpreter_bridge
 #if defined(_WIN32)
     // Preserve the canonical ART frame while making its stack changes visible
-    // to native Win64 exception dispatch.
+    // to native Windows x64 exception dispatch.
     .seh_proc art_quick_to_interpreter_bridge
     W003_COUNT_FRAME art_w003_frame_probe_refs_and_args
     PUSH r15
@@ -2376,7 +2376,7 @@ DEFINE_FUNCTION art_quick_osr_stub
     movdqu %xmm15, 144(%rsp)
     .seh_savexmm %xmm15, 208
 #else
-    SAVE_WIN64_NATIVE_XMMS
+    SAVE_WINDOWS_X64_NATIVE_XMMS
 #endif
     // Save the non-volatiles.
 #if !defined(_WIN32)
@@ -2426,7 +2426,7 @@ DEFINE_FUNCTION art_quick_osr_stub
 #if defined(_WIN32)
     // Keep R12 at the bottom of the fixed save area while .Losr_entry moves
     // RSP downward. RBP must remain available for the copied JIT frame because
-    // Win64 optimizing unwind metadata uses it as the compiled-frame anchor.
+    // Windows x64 optimizing unwind metadata uses it as the compiled-frame anchor.
     movq %rsp, %r12
     .seh_setframe %r12, 0
     .seh_endprologue
@@ -2472,7 +2472,7 @@ DEFINE_FUNCTION art_quick_osr_stub
     POP r8
     POP rcx
     POP rbp
-    RESTORE_WIN64_NATIVE_XMMS
+    RESTORE_WINDOWS_X64_NATIVE_XMMS
     movq %rax, (%rcx)              // Store the result.
     ret
 .Losr_entry:

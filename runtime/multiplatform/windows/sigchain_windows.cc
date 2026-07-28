@@ -20,7 +20,7 @@ PVOID g_veh_handle = nullptr;
 
 [[noreturn]] void FailUnsupported(const char* operation, int signal) {
   std::fprintf(stderr,
-               "Win64 sigchain: %s does not support signal %d\n",
+               "Windows x64 sigchain: %s does not support signal %d\n",
                operation,
                signal);
   std::abort();
@@ -69,7 +69,7 @@ void InstallFirstVehLocked() {
   PVOID handle = AddVectoredExceptionHandler(1u, ManagedFaultVeh);
   if (handle == nullptr) {
     std::fprintf(stderr,
-                 "Win64 sigchain: AddVectoredExceptionHandler failed error=%lu\n",
+                 "Windows x64 sigchain: AddVectoredExceptionHandler failed error=%lu\n",
                  GetLastError());
     std::abort();
   }
@@ -85,7 +85,7 @@ extern "C" void AddSpecialSignalHandlerFn(int signal, SigchainAction* sa) {
 
   std::lock_guard<std::mutex> lock(g_registration_mutex);
   if (g_published_action.load(std::memory_order_relaxed) != nullptr) {
-    std::fprintf(stderr, "Win64 sigchain: duplicate SIGSEGV special action\n");
+    std::fprintf(stderr, "Windows x64 sigchain: duplicate SIGSEGV special action\n");
     std::abort();
   }
   g_action_storage = *sa;
@@ -102,7 +102,7 @@ extern "C" void RemoveSpecialSignalHandlerFn(int signal,
   std::lock_guard<std::mutex> lock(g_registration_mutex);
   SigchainAction* action = g_published_action.load(std::memory_order_relaxed);
   if (action == nullptr || action->sc_sigaction != fn) {
-    std::fprintf(stderr, "Win64 sigchain: removing an unpublished SIGSEGV action\n");
+    std::fprintf(stderr, "Windows x64 sigchain: removing an unpublished SIGSEGV action\n");
     std::abort();
   }
   g_published_action.store(nullptr, std::memory_order_release);
@@ -110,7 +110,7 @@ extern "C" void RemoveSpecialSignalHandlerFn(int signal,
   g_veh_handle = nullptr;
   if (handle != nullptr && RemoveVectoredExceptionHandler(handle) == 0u) {
     std::fprintf(stderr,
-                 "Win64 sigchain: RemoveVectoredExceptionHandler failed error=%lu\n",
+                 "Windows x64 sigchain: RemoveVectoredExceptionHandler failed error=%lu\n",
                  GetLastError());
     std::abort();
   }
@@ -128,7 +128,7 @@ extern "C" void EnsureFrontOfChain(int signal) {
   PVOID new_handle = AddVectoredExceptionHandler(1u, ManagedFaultVeh);
   if (new_handle == nullptr) {
     std::fprintf(stderr,
-                 "Win64 sigchain: promotion AddVectoredExceptionHandler failed error=%lu\n",
+                 "Windows x64 sigchain: promotion AddVectoredExceptionHandler failed error=%lu\n",
                  GetLastError());
     return;
   }
@@ -136,7 +136,7 @@ extern "C" void EnsureFrontOfChain(int signal) {
   g_veh_handle = new_handle;
   if (old_handle != nullptr && RemoveVectoredExceptionHandler(old_handle) == 0u) {
     std::fprintf(stderr,
-                 "Win64 sigchain: promotion removal failed error=%lu\n",
+                 "Windows x64 sigchain: promotion removal failed error=%lu\n",
                  GetLastError());
     std::abort();
   }

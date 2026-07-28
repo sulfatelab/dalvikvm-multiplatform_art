@@ -867,7 +867,7 @@ END_FUNCTION \name
 
 .macro CHECK_STACK_OVERFLOW
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-   // rSELF is part of the Win64 managed ABI at every nterp entry and invoke
+   // rSELF is part of the Windows x64 managed ABI at every nterp entry and invoke
    // boundary. Equality is allowed, matching Thread::stack_end semantics.
    cmpq THREAD_STACK_END_OFFSET(rSELF), %rsp
    jae 1f
@@ -2339,7 +2339,7 @@ NterpHotnessCheck:
 #if defined(_WIN32)
     // The Linux transition reuses the nterp callee-save block as the top of
     // the compiled OSR frame. That relies on the two register-save layouts
-    // matching. Win64 pins r15 as rSELF, so the compiled spill layout can no
+    // matching. Windows x64 pins r15 as rSELF, so the compiled spill layout can no
     // longer be assumed to match the nterp frame.
     //
     // Keep the nterp save block as a separate return adapter, copy the full

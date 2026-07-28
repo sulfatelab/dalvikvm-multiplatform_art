@@ -51,7 +51,7 @@ bool DeleteFunctionTableAndVerify(const uint8_t* code, PRUNTIME_FUNCTION functio
 
 }  // namespace
 
-struct Win64JitUnwindRegistry::Impl {
+struct WindowsX64JitUnwindRegistry::Impl {
   struct Entry {
     RUNTIME_FUNCTION function = {};
     uint64_t base_address = 0u;
@@ -60,13 +60,13 @@ struct Win64JitUnwindRegistry::Impl {
   std::map<const uint8_t*, Entry> entries;
 };
 
-Win64JitUnwindRegistry::Win64JitUnwindRegistry() : impl_(std::make_unique<Impl>()) {}
+WindowsX64JitUnwindRegistry::WindowsX64JitUnwindRegistry() : impl_(std::make_unique<Impl>()) {}
 
-Win64JitUnwindRegistry::~Win64JitUnwindRegistry() {
-  CHECK(Clear()) << "Failed to remove all Win64 JIT runtime-function tables";
+WindowsX64JitUnwindRegistry::~WindowsX64JitUnwindRegistry() {
+  CHECK(Clear()) << "Failed to remove all Windows x64 JIT runtime-function tables";
 }
 
-bool Win64JitUnwindRegistry::Register(const uint8_t* code,
+bool WindowsX64JitUnwindRegistry::Register(const uint8_t* code,
                                       size_t code_size,
                                       const uint8_t* unwind_info,
                                       const uint8_t* base_address) {
@@ -106,14 +106,14 @@ bool Win64JitUnwindRegistry::Register(const uint8_t* code,
       lookup->EndAddress != entry.function.EndAddress ||
       lookup->UnwindData != entry.function.UnwindData) {
     CHECK(DeleteFunctionTableAndVerify(code, &entry.function))
-        << "Failed to roll back an unresolvable Win64 JIT runtime-function table";
+        << "Failed to roll back an unresolvable Windows x64 JIT runtime-function table";
     impl_->entries.erase(it);
     return false;
   }
   return true;
 }
 
-bool Win64JitUnwindRegistry::Unregister(const uint8_t* code) {
+bool WindowsX64JitUnwindRegistry::Unregister(const uint8_t* code) {
   auto it = impl_->entries.find(code);
   if (it == impl_->entries.end()) {
     return true;
@@ -125,7 +125,7 @@ bool Win64JitUnwindRegistry::Unregister(const uint8_t* code) {
   return true;
 }
 
-bool Win64JitUnwindRegistry::Clear() {
+bool WindowsX64JitUnwindRegistry::Clear() {
   for (auto it = impl_->entries.begin(); it != impl_->entries.end();) {
     if (!DeleteFunctionTableAndVerify(it->first, &it->second.function)) {
       return false;
@@ -135,7 +135,7 @@ bool Win64JitUnwindRegistry::Clear() {
   return true;
 }
 
-size_t Win64JitUnwindRegistry::Size() const {
+size_t WindowsX64JitUnwindRegistry::Size() const {
   return impl_->entries.size();
 }
 

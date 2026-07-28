@@ -112,7 +112,7 @@ static void DumpFatalUnwindTrace(EXCEPTION_POINTERS* info) {
   ULONG_PTR stack_high = 0u;
   GetCurrentThreadStackLimits(&stack_low, &stack_high);
   WriteFatalUnwindTraceLine(
-      "ART_WIN64_UNWIND_TRACE begin code=0x%08lx thread=%lu low=0x%llx high=0x%llx",
+      "ART_WINDOWS_X64_UNWIND_TRACE begin code=0x%08lx thread=%lu low=0x%llx high=0x%llx",
       static_cast<unsigned long>(info->ExceptionRecord->ExceptionCode),
       static_cast<unsigned long>(GetCurrentThreadId()),
       static_cast<unsigned long long>(stack_low),
@@ -144,7 +144,7 @@ static void DumpFatalUnwindTrace(EXCEPTION_POINTERS* info) {
     const DWORD64 module_rva = module_base == 0u ? 0u : pc - module_base;
     if (function == nullptr) {
       WriteFatalUnwindTraceLine(
-          "ART_WIN64_UNWIND_TRACE frame=%llu pc=0x%llx rsp=0x%llx lookup=0 "
+          "ART_WINDOWS_X64_UNWIND_TRACE frame=%llu pc=0x%llx rsp=0x%llx lookup=0 "
           "module_base=0x%llx rva=0x%llx module=%s",
           static_cast<unsigned long long>(frame),
           static_cast<unsigned long long>(pc),
@@ -160,13 +160,13 @@ static void DumpFatalUnwindTrace(EXCEPTION_POINTERS* info) {
       context.Rip = *return_slot;
       context.Rsp = rsp + sizeof(*return_slot);
       WriteFatalUnwindTraceLine(
-          "ART_WIN64_UNWIND_TRACE step=%llu kind=leaf next_pc=0x%llx next_rsp=0x%llx",
+          "ART_WINDOWS_X64_UNWIND_TRACE step=%llu kind=leaf next_pc=0x%llx next_rsp=0x%llx",
           static_cast<unsigned long long>(frame),
           static_cast<unsigned long long>(context.Rip),
           static_cast<unsigned long long>(context.Rsp));
     } else {
       WriteFatalUnwindTraceLine(
-          "ART_WIN64_UNWIND_TRACE frame=%llu pc=0x%llx rsp=0x%llx lookup=1 "
+          "ART_WINDOWS_X64_UNWIND_TRACE frame=%llu pc=0x%llx rsp=0x%llx lookup=1 "
           "image=0x%llx begin=0x%08lx end=0x%08lx unwind=0x%08lx "
           "module_base=0x%llx rva=0x%llx module=%s",
           static_cast<unsigned long long>(frame),
@@ -190,7 +190,7 @@ static void DumpFatalUnwindTrace(EXCEPTION_POINTERS* info) {
                        &establisher_frame,
                        nullptr);
       WriteFatalUnwindTraceLine(
-          "ART_WIN64_UNWIND_TRACE step=%llu kind=virtual next_pc=0x%llx "
+          "ART_WINDOWS_X64_UNWIND_TRACE step=%llu kind=virtual next_pc=0x%llx "
           "next_rsp=0x%llx establisher=0x%llx",
           static_cast<unsigned long long>(frame),
           static_cast<unsigned long long>(context.Rip),
@@ -209,7 +209,7 @@ static void DumpFatalUnwindTrace(EXCEPTION_POINTERS* info) {
     }
   }
   WriteFatalUnwindTraceLine(
-      "ART_WIN64_UNWIND_TRACE end frames=%llu reason=%s final_pc=0x%llx final_rsp=0x%llx",
+      "ART_WINDOWS_X64_UNWIND_TRACE end frames=%llu reason=%s final_pc=0x%llx final_rsp=0x%llx",
       static_cast<unsigned long long>(completed_frames),
       stop_reason,
       static_cast<unsigned long long>(context.Rip),
@@ -275,7 +275,7 @@ static void TryWriteMiniDump(EXCEPTION_POINTERS* info) {
   HANDLE file = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
                             FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
-    std::cerr << "ART Win64 crash: CreateFile dump failed for " << path << std::endl;
+    std::cerr << "ART Win32 crash: CreateFile dump failed for " << path << std::endl;
     return;
   }
   MINIDUMP_EXCEPTION_INFORMATION mei;
@@ -291,9 +291,9 @@ static void TryWriteMiniDump(EXCEPTION_POINTERS* info) {
                                     nullptr);
   CloseHandle(file);
   if (ok) {
-    std::cerr << "ART Win64 crash: minidump written to " << path << std::endl;
+    std::cerr << "ART Win32 crash: minidump written to " << path << std::endl;
   } else {
-    std::cerr << "ART Win64 crash: MiniDumpWriteDump failed err=" << GetLastError() << std::endl;
+    std::cerr << "ART Win32 crash: MiniDumpWriteDump failed err=" << GetLastError() << std::endl;
   }
   std::cerr.flush();
 }
@@ -312,7 +312,7 @@ LONG CALLBACK ArtVectoredHandler(EXCEPTION_POINTERS* info) {
       code == EXCEPTION_STACK_OVERFLOW ||
       code == EXCEPTION_ILLEGAL_INSTRUCTION ||
       code == EXCEPTION_INT_DIVIDE_BY_ZERO) {
-    DumpException(info, "ART Win64 VEH");
+    DumpException(info, "ART Win32 VEH");
     if (code == EXCEPTION_ACCESS_VIOLATION) {
       DumpFatalUnwindTrace(info);
     }
@@ -321,7 +321,7 @@ LONG CALLBACK ArtVectoredHandler(EXCEPTION_POINTERS* info) {
 }
 
 LONG WINAPI ArtUnhandledExceptionFilter(EXCEPTION_POINTERS* info) {
-  DumpException(info, "ART Win64 UEF");
+  DumpException(info, "ART Win32 UEF");
   TryWriteMiniDump(info);
   // Preserve an embedding application's fatal policy after ART's best-effort
   // diagnostics. Returning search with no predecessor lets Windows apply its
@@ -342,7 +342,7 @@ bool Runtime::CheckPlatformProcessPolicy() {
     return true;
   }
 
-  LOG(ERROR) << "ART Win64 startup rejected: incompatible CET user-shadow-stack "
+  LOG(ERROR) << "ART Win32 startup rejected: incompatible CET user-shadow-stack "
              << "process policy must be disabled before process creation; HSP "
              << "compatibility/audit/strict modes, context-IP validation, and "
              << "non-CET binary blocking are unsupported. decision="
@@ -358,7 +358,7 @@ bool Runtime::CheckPlatformProcessPolicy() {
 
 void Runtime::InitPlatformSignalHandlers() {
   g_fatal_unwind_trace_enabled.store(
-      EnvironmentFlagEnabled("ART_WIN64_FATAL_UNWIND_TRACE"), std::memory_order_relaxed);
+      EnvironmentFlagEnabled("ART_WINDOWS_X64_FATAL_UNWIND_TRACE"), std::memory_order_relaxed);
   if (!g_veh_installed.exchange(true)) {
     g_veh_handle = AddVectoredExceptionHandler(1, ArtVectoredHandler);
     if (g_veh_handle == nullptr) {

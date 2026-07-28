@@ -122,7 +122,7 @@ static const char* GetAndroidDir(const char* env_var,
 
 std::string GetAndroidRootSafe(std::string* error_msg) {
 #ifdef _WIN32
-  // Host/Win64 product path: honor ANDROID_ROOT when set (imageless runs).
+  // Host/Windows x64 product path: honor ANDROID_ROOT when set (imageless runs).
   UNUSED(kAndroidRootDefaultPath);
   const char* dir = getenv(kAndroidRootEnvVar);
   if (dir == nullptr || dir[0] == '\0') {

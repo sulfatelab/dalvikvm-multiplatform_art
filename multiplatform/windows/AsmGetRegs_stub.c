@@ -1,4 +1,4 @@
-/* Win64: replace Linux GAS AsmGetRegsX86_64.S with a C stub. */
+/* Windows x64: replace Linux GAS AsmGetRegsX86_64.S with a C stub. */
 #include <stdint.h>
 #include <string.h>
 void AsmGetRegs(void* reg_data) {

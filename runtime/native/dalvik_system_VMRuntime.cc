@@ -214,7 +214,7 @@ static jstring VMRuntime_bootClassPath(JNIEnv* env, jobject) {
 
 static jstring VMRuntime_classPath(JNIEnv* env, jobject) {
   const char* cp = DefaultToDot(Runtime::Current()->GetClassPathString());
-  LOG(INFO) << "Win64 VMRuntime_classPath -> '" << cp << "'";
+  LOG(INFO) << "Windows x64 VMRuntime_classPath -> '" << cp << "'";
   return env->NewStringUTF(cp);
 }
 

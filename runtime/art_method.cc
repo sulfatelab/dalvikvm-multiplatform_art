@@ -63,7 +63,7 @@ using android::base::StringPrintf;
 
 // Quick invoke stubs:
 //   Linux: SysV AMD64 args (rdi..r9) + GS Thread TLS in managed code.
-//   Win64: Microsoft x64 entry converts to shared SysV-shaped body and sets
+//   Windows x64: Microsoft x64 entry converts to shared SysV-shaped body and sets
 //          rSELF=r15 (see win32_tls_jit_entrypoints.md). No sysv_abi on the
 //          C++ declaration — the PE stub itself performs the conversion.
 extern "C" void art_quick_invoke_stub(ArtMethod*, uint32_t*, uint32_t, Thread*,
@@ -396,19 +396,19 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
   // Invocation by the interpreter, explicitly forcing interpretation over JIT to prevent
   // cycling around the various JIT/Interpreter methods that handle method invocation.
   //
-  // Win64: product default uses art_quick_invoke_* (rSELF=r15), matching Linux.
-  // Opt-out with ART_WIN64_QUICK_INVOKE=0 to force EnterInterpreterFromInvoke (W-001).
+  // Windows x64: product default uses art_quick_invoke_* (rSELF=r15), matching Linux.
+  // Opt-out with ART_WINDOWS_X64_QUICK_INVOKE=0 to force EnterInterpreterFromInvoke (W-001).
   bool use_interpreter_invoke =
       !runtime->IsStarted() ||
       (self->IsForceInterpreter() && !IsNative() && !IsProxyMethod() && IsInvokable());
 #if defined(_WIN32)
   if (IsInvokable() && !IsProxyMethod()) {
-    static const bool kWin64QuickInvoke = []() {
-      const char* e = getenv("ART_WIN64_QUICK_INVOKE");
+    static const bool kWindowsX64QuickInvoke = []() {
+      const char* e = getenv("ART_WINDOWS_X64_QUICK_INVOKE");
       // Default ON; only explicit "0" forces interpreter invoke.
       return !(e != nullptr && e[0] == '0' && e[1] == '\0');
     }();
-    if (!kWin64QuickInvoke) {
+    if (!kWindowsX64QuickInvoke) {
       use_interpreter_invoke = true;
     }
   }
@@ -417,7 +417,7 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
 #ifdef _WIN32
     static std::atomic<int> g_win_invoke_logs{0};
     if (g_win_invoke_logs.fetch_add(1) < 20) {
-      LOG(INFO) << "Win64 ArtMethod::Invoke via interpreter method=" << PrettyMethod()
+      LOG(INFO) << "Windows x64 ArtMethod::Invoke via interpreter method=" << PrettyMethod()
                 << " started=" << runtime->IsStarted()
                 << " native=" << IsNative()
                 << " static=" << IsStatic()

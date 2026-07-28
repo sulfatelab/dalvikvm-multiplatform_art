@@ -153,7 +153,7 @@ static ArrayRef<const uint8_t> FindLibartCode() {
   ArrayRef<const uint8_t> result;
 #if defined(_WIN32)
   // PE: locate the module containing Runtime::Current and use its full image size.
-  // dl_iterate_phdr is unavailable / ineffective for PE modules under wine/Win64.
+  // dl_iterate_phdr is unavailable / ineffective for PE modules under wine/Windows x64.
   HMODULE module = nullptr;
   if (GetModuleHandleExA(
           GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,

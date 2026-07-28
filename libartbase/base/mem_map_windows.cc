@@ -319,7 +319,7 @@ void* MemMap::TargetMMap(void* start,
   }
 
   DWORD offset_low = static_cast<DWORD>(file_offset & 0xffffffffU);
-#ifdef _WIN64
+#ifdef _M_X64
   DWORD offset_high = static_cast<DWORD>(static_cast<uint64_t>(file_offset) >> 32);
 #else
   DWORD offset_high = 0;
@@ -470,7 +470,7 @@ void MemMap::AcquireWindowsMapOwner() {
 }
 
 
-// Pagefile-section helpers for the Win64 JIT dual-view mapping.
+// Pagefile-section helpers for the Windows x64 JIT dual-view mapping.
 
 void* MemMap::CreatePageFileSection(size_t capacity, std::string* error_msg) {
   DWORD size_hi = static_cast<DWORD>((capacity >> 32) & 0xFFFFFFFFULL);

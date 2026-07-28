@@ -196,10 +196,10 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
 
 #if defined(_WIN32)
   // Use a pagefile-section dual view when memfd_create is unavailable (always on Windows).
-  // This is the default; ART_WIN64_JIT_DUAL=0 retains J-1 as a diagnostic fallback.
+  // This is the default; ART_WINDOWS_X64_JIT_DUAL=0 retains J-1 as a diagnostic fallback.
   if (mem_fd.get() < 0) {
     static const bool kTryJ2 = []() {
-      const char* e = getenv("ART_WIN64_JIT_DUAL");
+      const char* e = getenv("ART_WINDOWS_X64_JIT_DUAL");
       return e == nullptr || e[0] != '0';
     }();
     if (kTryJ2) {
@@ -279,16 +279,16 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
         }
 
         if (j2_complete) {
-          LOG(INFO) << "Win64 JIT dual-view (J-2) created: capacity="
+          LOG(INFO) << "Windows x64 JIT dual-view (J-2) created: capacity="
                     << (capacity >> 20) << "MiB; falling through to mspace init";
         } else {
           dual_view_error = j2_error;
-          LOG(WARNING) << "Win64 JIT dual-view construction failed: " << j2_error
+          LOG(WARNING) << "Windows x64 JIT dual-view construction failed: " << j2_error
                        << "; falling back to single-view (J-1)";
         }
       } else {
         dual_view_error = j2_error;
-        LOG(WARNING) << "Win64 JIT dual-view CreateFileMapping failed: " << j2_error
+        LOG(WARNING) << "Windows x64 JIT dual-view CreateFileMapping failed: " << j2_error
                      << "; falling back to single-view (J-1)";
       }
     }
@@ -408,7 +408,7 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
     // and the executable view of the code cache transitions RX to RWX for the update and then
     // back to RX after the update.
     //
-    // Win64 note: VirtualAlloc cannot MAP_FIXED-split a committed region (RemapAtEnd fails).
+    // Windows x64 note: VirtualAlloc cannot MAP_FIXED-split a committed region (RemapAtEnd fails).
     // Until win32_jit_memory.md lands, CreateJit soft-fails on that path and nterp still runs.
     base_flags = MAP_PRIVATE | MAP_ANON;
     data_pages = MemMap::MapAnonymous(

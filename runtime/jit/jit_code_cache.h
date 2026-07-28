@@ -79,7 +79,7 @@ namespace jit {
 
 class MarkCodeClosure;
 #if defined(_WIN32)
-class Win64JitUnwindRegistry;
+class WindowsX64JitUnwindRegistry;
 #endif
 
 // Type of bitmap used for tracking live functions in the JIT code cache for the purposes
@@ -541,7 +541,7 @@ class JitCodeCache {
 
 #if defined(_WIN32)
   // Owns all runtime-function entries while their JIT mappings remain live.
-  std::unique_ptr<Win64JitUnwindRegistry> win64_unwind_registry_;
+  std::unique_ptr<WindowsX64JitUnwindRegistry> windows_x64_unwind_registry_;
 #endif
 
   // -------------- Global JIT maps --------------------------------------- //

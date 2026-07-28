@@ -38,7 +38,7 @@ namespace art HIDDEN {
 namespace interpreter {
 
 // Asm nterp bodies call these helpers with SysV register args on all platforms.
-// On Win64 C++ defaults to MS x64; force sysv_abi to match ART_QUICK_ENTRYPOINT_ABI.
+// On Windows x64 C++ defaults to MS x64; force sysv_abi to match ART_QUICK_ENTRYPOINT_ABI.
 #define NTERP_C_ABI ART_QUICK_ENTRYPOINT_ABI
 
 
@@ -57,9 +57,9 @@ bool IsNterpSupported() {
   return false;
 #elif defined(_WIN32)
   // WinNT N-1: rSELF=r15, rREFS=rbp (see win32_tls_jit_entrypoints.md §15/§17).
-  // Product default ON (Linux-like). Opt-out with ART_WIN64_NTERP=0.
+  // Product default ON (Linux-like). Opt-out with ART_WINDOWS_X64_NTERP=0.
   {
-    const char* e = getenv("ART_WIN64_NTERP");
+    const char* e = getenv("ART_WINDOWS_X64_NTERP");
     if (e != nullptr && e[0] == '0' && e[1] == '\0') {
       return false;
     }
@@ -85,7 +85,7 @@ bool IsNterpSupported() {
 bool CanRuntimeUseNterp() REQUIRES_SHARED(Locks::mutator_lock_) {
   Runtime* runtime = Runtime::Current();
   instrumentation::Instrumentation* instr = runtime->GetInstrumentation();
-  // Win64: keep switch for early boot / ClassLoader setup (empty classpath if
+  // Windows x64: keep switch for early boot / ClassLoader setup (empty classpath if
   // nterp is on too early). After Runtime::Start, finished_starting_ is true and
   // UpgradeToNterpVisitor re-points eligible methods; late-loaded classes also
   // take nterp via normal verification once this returns true.

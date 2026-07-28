@@ -751,12 +751,12 @@ Heap::Heap(size_t initial_size,
   CHECK(card_table_.get() != nullptr) << "Failed to create card table";
 #ifdef _WIN32
   for (space::ContinuousSpace* sp : continuous_spaces_) {
-    LOG(INFO) << "Win64 continuous space " << sp->GetName()
+    LOG(INFO) << "Windows x64 continuous space " << sp->GetName()
               << " [" << static_cast<const void*>(sp->Begin())
               << "," << static_cast<const void*>(sp->Limit()) << ")"
               << " continuous=" << sp->IsContinuousSpace();
   }
-  LOG(INFO) << "Win64 Heap this=" << static_cast<const void*>(this)
+  LOG(INFO) << "Windows x64 Heap this=" << static_cast<const void*>(this)
             << " card_table_ptr=" << static_cast<const void*>(card_table_.get())
             << " biased=" << (card_table_ ? static_cast<const void*>(card_table_->GetBiasedBegin()) : nullptr)
             << " offsetof(card_table_) approx via ptr-diff: "
@@ -1005,7 +1005,7 @@ void Heap::CreateMainMallocSpace(MemMap&& mem_map,
   VLOG(heap) << "Created main space " << main_space_
              << " current_allocator=" << static_cast<int>(current_allocator_);
 #ifdef _WIN32
-  LOG(INFO) << "Win64 CreateMainMallocSpace begin="
+  LOG(INFO) << "Windows x64 CreateMainMallocSpace begin="
             << static_cast<const void*>(main_space_->Begin())
             << " limit=" << static_cast<const void*>(main_space_->Limit())
             << " allocator=" << static_cast<int>(current_allocator_)

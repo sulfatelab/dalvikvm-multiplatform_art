@@ -109,7 +109,7 @@ static int InvokeMain(JNIEnv* env, char** argv) {
   std::string class_name(argv[0]);
   std::replace(class_name.begin(), class_name.end(), '.', '/');
 
-  fprintf(stderr, "Win64 InvokeMain: FindClass('%s')\n", class_name.c_str());
+  fprintf(stderr, "Windows x64 InvokeMain: FindClass('%s')\n", class_name.c_str());
   fflush(stderr);
   ScopedLocalRef<jclass> klass(env, env->FindClass(class_name.c_str()));
   if (klass.get() == nullptr) {
@@ -117,7 +117,7 @@ static int InvokeMain(JNIEnv* env, char** argv) {
     env->ExceptionDescribe();
     return EXIT_FAILURE;
   }
-  fprintf(stderr, "Win64 InvokeMain: found class, GetStaticMethodID main\n");
+  fprintf(stderr, "Windows x64 InvokeMain: found class, GetStaticMethodID main\n");
   fflush(stderr);
 
   jmethodID method = env->GetStaticMethodID(klass.get(), "main", "([Ljava/lang/String;)V");
@@ -135,12 +135,12 @@ static int InvokeMain(JNIEnv* env, char** argv) {
     return EXIT_FAILURE;
   }
 
-  fprintf(stderr, "Win64 InvokeMain: CallStaticVoidMethod main begin\n");
+  fprintf(stderr, "Windows x64 InvokeMain: CallStaticVoidMethod main begin\n");
   fflush(stderr);
   // Invoke main().
   env->CallStaticVoidMethod(klass.get(), method, args.get());
   const bool pending = env->ExceptionCheck();
-  fprintf(stderr, "Win64 InvokeMain: CallStaticVoidMethod main end exception=%d\n",
+  fprintf(stderr, "Windows x64 InvokeMain: CallStaticVoidMethod main end exception=%d\n",
           pending ? 1 : 0);
   fflush(stderr);
   if (pending) {
@@ -158,7 +158,7 @@ static int InvokeMain(JNIEnv* env, char** argv) {
         ? reinterpret_cast<jstring>(env->CallObjectMethod(thr, get_msg))
         : nullptr;
     const char* msg = jmsg ? env->GetStringUTFChars(jmsg, nullptr) : nullptr;
-    fprintf(stderr, "Win64 InvokeMain: exception type=%s msg=%s\n",
+    fprintf(stderr, "Windows x64 InvokeMain: exception type=%s msg=%s\n",
             name ? name : "?", msg ? msg : "(null)");
     fflush(stderr);
     if (name && jname) env->ReleaseStringUTFChars(jname, name);
