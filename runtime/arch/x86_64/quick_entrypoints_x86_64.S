@@ -1908,13 +1908,127 @@ END_FUNCTION art_deliver_pending_exception
      * RSI, RDX, RCX, R8, R9 are arguments to that method.
      */
 DEFINE_FUNCTION art_quick_to_interpreter_bridge
+#if defined(_WIN32)
+    // Preserve the canonical ART frame while making its stack changes visible
+    // to native Win64 exception dispatch.
+    .seh_proc art_quick_to_interpreter_bridge
+    W003_COUNT_FRAME art_w003_frame_probe_refs_and_args
+    PUSH r15
+    .seh_pushreg %r15
+    PUSH r14
+    .seh_pushreg %r14
+    PUSH r13
+    .seh_pushreg %r13
+    PUSH r12
+    .seh_pushreg %r12
+    PUSH_ARG r9
+    .seh_stackalloc 8
+    PUSH_ARG r8
+    .seh_stackalloc 8
+    PUSH_ARG rsi
+    .seh_pushreg %rsi
+    PUSH rbp
+    .seh_pushreg %rbp
+    PUSH rbx
+    .seh_pushreg %rbx
+    PUSH_ARG rdx
+    .seh_stackalloc 8
+    PUSH_ARG rcx
+    .seh_stackalloc 8
+    INCREASE_FRAME 16 + 12 * 8
+    .seh_stackalloc 16 + 12 * 8
+    .seh_endprologue
+    movq %xmm0, 16(%rsp)
+    movq %xmm1, 24(%rsp)
+    movq %xmm2, 32(%rsp)
+    movq %xmm3, 40(%rsp)
+    movq %xmm4, 48(%rsp)
+    movq %xmm5, 56(%rsp)
+    movq %xmm6, 64(%rsp)
+    movq %xmm7, 72(%rsp)
+    movq %xmm12, 80(%rsp)
+    movq %xmm13, 88(%rsp)
+    movq %xmm14, 96(%rsp)
+    movq %xmm15, 104(%rsp)
+    LOAD_RUNTIME_INSTANCE r10
+    movq RUNTIME_SAVE_REFS_AND_ARGS_METHOD_OFFSET(%r10), %r10
+    movq %r10, 0(%rsp)
+    THREAD_STORE_Q rsp, THREAD_TOP_QUICK_FRAME_OFFSET
+#else
     SETUP_SAVE_REFS_AND_ARGS_FRAME     // Set up frame and save arguments.
+#endif
     THREAD_GET_SELF rsi  // RSI := Thread::Current()
     movq %rsp, %rdx                    // RDX := sp
     call SYMBOL(artQuickToInterpreterBridge)  // (method, Thread*, SP)
+#if defined(_WIN32)
+    // Fixed-offset restores keep the complete frame intact until one of the
+    // two canonical epilogues starts.
+    movq 16(%rsp), %xmm0
+    movq 24(%rsp), %xmm1
+    movq 32(%rsp), %xmm2
+    movq 40(%rsp), %xmm3
+    movq 48(%rsp), %xmm4
+    movq 56(%rsp), %xmm5
+    movq 64(%rsp), %xmm6
+    movq 72(%rsp), %xmm7
+    movq 80(%rsp), %xmm12
+    movq 88(%rsp), %xmm13
+    movq 96(%rsp), %xmm14
+    movq 104(%rsp), %xmm15
+    movq 112(%rsp), %rcx
+    movq 120(%rsp), %rdx
+    movq 128(%rsp), %rbx
+    movq 136(%rsp), %rbp
+    movq 144(%rsp), %rsi
+    movq 152(%rsp), %r8
+    movq 160(%rsp), %r9
+    movq 168(%rsp), %r12
+    movq 176(%rsp), %r13
+    movq 184(%rsp), %r14
+    movq 192(%rsp), %r15
+    movq %rax, %xmm0
+    THREAD_CMP_Q_ZERO THREAD_EXCEPTION_OFFSET
+    jne .Lquick_to_interpreter_pending_epilogue
+    addq LITERAL(FRAME_SIZE_SAVE_REFS_AND_ARGS - __SIZEOF_POINTER__), %rsp
+    ret
+.Lquick_to_interpreter_pending_epilogue:
+    addq LITERAL(FRAME_SIZE_SAVE_REFS_AND_ARGS - __SIZEOF_POINTER__), %rsp
+    jmp .Lquick_to_interpreter_pending_exception
+    .seh_endproc
+
+.Lquick_to_interpreter_pending_exception:
+    .seh_proc .Lquick_to_interpreter_pending_exception
+    W003_COUNT_FRAME art_w003_frame_probe_all_callee_saves
+    LOAD_RUNTIME_INSTANCE r10
+    PUSH r15
+    .seh_pushreg %r15
+    PUSH r14
+    .seh_pushreg %r14
+    PUSH r13
+    .seh_pushreg %r13
+    PUSH r12
+    .seh_pushreg %r12
+    PUSH rbp
+    .seh_pushreg %rbp
+    PUSH rbx
+    .seh_pushreg %rbx
+    INCREASE_FRAME 4 * 8 + 8
+    .seh_stackalloc 4 * 8 + 8
+    .seh_endprologue
+    movq %xmm12, 8(%rsp)
+    movq %xmm13, 16(%rsp)
+    movq %xmm14, 24(%rsp)
+    movq %xmm15, 32(%rsp)
+    movq RUNTIME_SAVE_ALL_CALLEE_SAVES_METHOD_OFFSET(%r10), %r10
+    movq %r10, 0(%rsp)
+    THREAD_STORE_Q rsp, THREAD_TOP_QUICK_FRAME_OFFSET
+    DELIVER_PENDING_EXCEPTION_FRAME_READY
+    .seh_endproc
+#else
     RESTORE_SAVE_REFS_AND_ARGS_FRAME   // TODO: no need to restore arguments in this case.
     movq %rax, %xmm0                   // Place return value also into floating point return value.
     RETURN_OR_DELIVER_PENDING_EXCEPTION    // return or deliver exception
+#endif
 END_FUNCTION art_quick_to_interpreter_bridge
 
     /*
