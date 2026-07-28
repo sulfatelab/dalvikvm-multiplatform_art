@@ -16,13 +16,13 @@
 
 #include "jit_memory_region.h"
 
+#include <android-base/unique_fd.h>
 #include <fcntl.h>
+#include <log/log.h>
 #include <unistd.h>
 
 #include <utility>
 
-#include <android-base/unique_fd.h>
-#include <log/log.h>
 #include "base/bit_utils.h"  // For RoundDown, RoundUp
 #include "base/globals.h"
 #include "base/logging.h"  // For VLOG.
@@ -30,6 +30,7 @@
 #include "base/memfd.h"
 #include "base/systrace.h"
 #include "gc/allocator/art-dlmalloc.h"
+#include "jit/jit_encoding.h"
 #include "jit/jit_scoped_code_cache_write.h"
 #include "oat/oat_quick_method_header.h"
 #include "palette/palette.h"
@@ -569,13 +570,21 @@ const uint8_t* JitMemoryRegion::CommitCode(ArrayRef<const uint8_t> reserved_code
   DCHECK_ALIGNED_PARAM(reinterpret_cast<uintptr_t>(w_memory + header_size), alignment);
   const uint8_t* result = x_memory + header_size;
 
+  uint32_t code_info_offset = 0u;
+  if (stack_map != nullptr && !EncodeJitCodeInfoOffset(reinterpret_cast<uintptr_t>(result),
+                                                       reinterpret_cast<uintptr_t>(stack_map),
+                                                       &code_info_offset)) {
+    VLOG(jit) << "JIT CodeInfo is not below code within uint32_t range";
+    return nullptr;
+  }
+
   // Write the code.
   std::copy(code.begin(), code.end(), w_memory + header_size);
 
   // Write the header.
   OatQuickMethodHeader* method_header =
       OatQuickMethodHeader::FromCodePointer(w_memory + header_size);
-  new (method_header) OatQuickMethodHeader((stack_map != nullptr) ? result - stack_map : 0u);
+  new (method_header) OatQuickMethodHeader(code_info_offset);
 
   // Both instruction and data caches need flushing to the point of unification where both share
   // a common view of memory. Flushing the data cache ensures the dirty cachelines from the

@@ -16,21 +16,67 @@
 
 #include "jit/jit_memory_region.h"
 
+#include <android-base/unique_fd.h>
+#include <gtest/gtest.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <android-base/unique_fd.h>
-#include <gtest/gtest.h>
-
 #include "base/globals.h"
 #include "base/memfd.h"
 #include "base/utils.h"
 #include "common_runtime_test.h"
+#include "jit/jit_encoding.h"
 
 namespace art HIDDEN {
 namespace jit {
+
+TEST(JitEncodingTest, RootDisplacementBounds) {
+  int32_t displacement = 0;
+  constexpr uintptr_t kPositiveLimit = static_cast<uintptr_t>(std::numeric_limits<int32_t>::max());
+  constexpr uintptr_t kNegativeLimit = kPositiveLimit + 1u;
+
+  EXPECT_TRUE(EncodeJitRootDisplacement(
+      kPositiveLimit, /*index_in_table=*/0u, /*root_entry_size=*/4u, 0u, &displacement));
+  EXPECT_EQ(displacement, std::numeric_limits<int32_t>::max());
+  EXPECT_FALSE(EncodeJitRootDisplacement(
+      kPositiveLimit + 1u, /*index_in_table=*/0u, /*root_entry_size=*/4u, 0u, &displacement));
+
+  EXPECT_TRUE(EncodeJitRootDisplacement(
+      0u, /*index_in_table=*/0u, /*root_entry_size=*/4u, kNegativeLimit, &displacement));
+  EXPECT_EQ(displacement, std::numeric_limits<int32_t>::min());
+  EXPECT_FALSE(EncodeJitRootDisplacement(
+      0u, /*index_in_table=*/0u, /*root_entry_size=*/4u, kNegativeLimit + 1u, &displacement));
+
+  EXPECT_TRUE(EncodeJitRootDisplacement(
+      0u, /*index_in_table=*/1u, /*root_entry_size=*/4u, 0u, &displacement));
+  EXPECT_EQ(displacement, 4);
+  EXPECT_FALSE(EncodeJitRootDisplacement(std::numeric_limits<uintptr_t>::max() - 1u,
+                                         /*index_in_table=*/1u,
+                                         /*root_entry_size=*/4u,
+                                         0u,
+                                         &displacement));
+  EXPECT_FALSE(EncodeJitRootDisplacement(
+      0u, /*index_in_table=*/0u, /*root_entry_size=*/0u, 0u, &displacement));
+}
+
+TEST(JitEncodingTest, CodeInfoOffsetBounds) {
+  uint32_t offset = 0u;
+  constexpr uintptr_t kUint32Limit = static_cast<uintptr_t>(std::numeric_limits<uint32_t>::max());
+
+  EXPECT_TRUE(EncodeJitCodeInfoOffset(/*code_address=*/1u, /*code_info_address=*/0u, &offset));
+  EXPECT_EQ(offset, 1u);
+  EXPECT_TRUE(EncodeJitCodeInfoOffset(kUint32Limit, /*code_info_address=*/0u, &offset));
+  EXPECT_EQ(offset, std::numeric_limits<uint32_t>::max());
+  if (sizeof(uintptr_t) > sizeof(uint32_t)) {
+    EXPECT_FALSE(EncodeJitCodeInfoOffset(kUint32Limit + 1u, /*code_info_address=*/0u, &offset));
+  }
+  EXPECT_FALSE(EncodeJitCodeInfoOffset(/*code_address=*/1u, /*code_info_address=*/1u, &offset));
+  EXPECT_FALSE(EncodeJitCodeInfoOffset(/*code_address=*/1u, /*code_info_address=*/2u, &offset));
+  EXPECT_FALSE(EncodeJitCodeInfoOffset(
+      /*code_address=*/1u, /*code_info_address=*/0u, /*code_info_offset=*/nullptr));
+}
 
 // These tests only run on bionic.
 #if defined(__BIONIC__)

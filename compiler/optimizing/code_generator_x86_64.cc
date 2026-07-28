@@ -30,6 +30,7 @@
 #include "intrinsics_list.h"
 #include "intrinsics_utils.h"
 #include "intrinsics_x86_64.h"
+#include "jit/jit_encoding.h"
 #include "jit/profiling_info.h"
 #include "linker/linker_patch.h"
 #include "lock_word.h"
@@ -8627,18 +8628,71 @@ void CodeGeneratorX86_64::MoveInt64ToAddress(const Address& addr_low,
   }
 }
 
+bool CodeGeneratorX86_64::EncodeJitRootUse(const uint8_t* code_address,
+                                           const uint8_t* roots_data,
+                                           const PatchInfo<Label>& info,
+                                           uint64_t index_in_table,
+                                           int32_t* displacement) const {
+  if (info.label.Position() < kLabelPositionToLiteralOffsetAdjustment) {
+    return false;
+  }
+  uint64_t label_position = static_cast<uint64_t>(info.label.Position());
+  uintptr_t code_base = reinterpret_cast<uintptr_t>(code_address);
+  if (label_position > std::numeric_limits<uintptr_t>::max() - code_base) {
+    return false;
+  }
+  uintptr_t patch_address = code_base + static_cast<uintptr_t>(label_position);
+  return jit::EncodeJitRootDisplacement(reinterpret_cast<uintptr_t>(roots_data),
+                                        index_in_table,
+                                        sizeof(GcRoot<mirror::Object>),
+                                        patch_address,
+                                        displacement);
+}
+
 void CodeGeneratorX86_64::PatchJitRootUse(uint8_t* buffer,
                                           const uint8_t* code_address,
                                           const uint8_t* roots_data,
                                           const PatchInfo<Label>& info,
                                           uint64_t index_in_table) const {
+  CHECK_GE(info.label.Position(), kLabelPositionToLiteralOffsetAdjustment);
   uint32_t code_offset = info.label.Position() - kLabelPositionToLiteralOffsetAdjustment;
-  intptr_t address =
-      reinterpret_cast<intptr_t>(roots_data) + index_in_table * sizeof(GcRoot<mirror::Object>);
+  int32_t displacement;
+  CHECK(EncodeJitRootUse(code_address, roots_data, info, index_in_table, &displacement));
   using unaligned_int32_t __attribute__((__aligned__(1))) = int32_t;
-  intptr_t code = reinterpret_cast<intptr_t>(code_address) + info.label.Position();
-  reinterpret_cast<unaligned_int32_t*>(buffer + code_offset)[0] =
-      dchecked_integral_cast<int32_t>(address - code);
+  reinterpret_cast<unaligned_int32_t*>(buffer + code_offset)[0] = displacement;
+}
+
+bool CodeGeneratorX86_64::ValidateJitRootPatches(const uint8_t* code_address,
+                                                 const uint8_t* roots_data) {
+  int32_t displacement;
+  for (const PatchInfo<Label>& info : jit_string_patches_) {
+    StringReference string_reference(info.target_dex_file, dex::StringIndex(info.offset_or_index));
+    if (!EncodeJitRootUse(code_address,
+                          roots_data,
+                          info,
+                          GetJitStringRootIndex(string_reference),
+                          &displacement)) {
+      return false;
+    }
+  }
+  for (const PatchInfo<Label>& info : jit_class_patches_) {
+    TypeReference type_reference(info.target_dex_file, dex::TypeIndex(info.offset_or_index));
+    if (!EncodeJitRootUse(
+            code_address, roots_data, info, GetJitClassRootIndex(type_reference), &displacement)) {
+      return false;
+    }
+  }
+  for (const PatchInfo<Label>& info : jit_method_type_patches_) {
+    ProtoReference proto_reference(info.target_dex_file, dex::ProtoIndex(info.offset_or_index));
+    if (!EncodeJitRootUse(code_address,
+                          roots_data,
+                          info,
+                          GetJitMethodTypeRootIndex(proto_reference),
+                          &displacement)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void CodeGeneratorX86_64::EmitJitRootPatches(uint8_t* buffer,

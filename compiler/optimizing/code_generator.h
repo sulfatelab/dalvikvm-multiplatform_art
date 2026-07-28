@@ -404,10 +404,10 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
 
   // Fills the `literals` array with literals collected during code generation.
   // Also emits literal patches.
-  void EmitJitRoots(uint8_t* buffer,
+  bool EmitJitRoots(uint8_t* buffer,
                     const uint8_t* code_address,
                     const uint8_t* roots_data,
-                    /*out*/std::vector<Handle<mirror::Object>>* roots)
+                    /*out*/ std::vector<Handle<mirror::Object>>* roots)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   bool IsLeafMethod() const {
@@ -853,7 +853,10 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
                                 Handle<mirror::MethodType> method_type);
   uint64_t GetJitMethodTypeRootIndex(ProtoReference proto_reference);
 
-  // Emit the patches assocatied with JIT roots. Only applies to JIT compiled code.
+  // Validate and emit the patches associated with JIT roots. Only applies to
+  // JIT compiled code. Architectures with address-encoding constraints reject
+  // the compilation before patching.
+  virtual bool ValidateJitRootPatches(const uint8_t* code_address, const uint8_t* roots_data);
   virtual void EmitJitRootPatches(
       uint8_t* buffer, const uint8_t* code_address, const uint8_t* roots_data);
 
