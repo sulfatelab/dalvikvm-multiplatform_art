@@ -224,6 +224,7 @@ bool SelectWin32StackPage(uintptr_t low,
 bool InspectWin32StackLayout(uintptr_t low,
                              uintptr_t high,
                              size_t system_page_size,
+                             size_t stack_guarantee_size,
                              size_t minimum_usable_size,
                              Win32MemoryQuery query,
                              void* query_context,
@@ -232,7 +233,9 @@ bool InspectWin32StackLayout(uintptr_t low,
   if (failure != nullptr) {
     *failure = nullptr;
   }
-  if (layout == nullptr || minimum_usable_size < system_page_size) {
+  if (layout == nullptr || system_page_size == 0u || minimum_usable_size < system_page_size ||
+      low >= high ||
+      stack_guarantee_size > std::numeric_limits<size_t>::max() - (system_page_size - 1u)) {
     SetFailure(failure, nullptr, "missing layout output or insufficient usable size");
     return false;
   }
@@ -255,9 +258,38 @@ bool InspectWin32StackLayout(uintptr_t low,
                             failure)) {
     return false;
   }
+
+  const size_t rounded_stack_guarantee =
+      ((stack_guarantee_size + system_page_size - 1u) / system_page_size) * system_page_size;
+  if (rounded_stack_guarantee > std::numeric_limits<size_t>::max() - selection.excluded_low_size ||
+      system_page_size > std::numeric_limits<size_t>::max() - selection.excluded_low_size -
+                             rounded_stack_guarantee) {
+    SetFailure(failure, nullptr, "stack prefix, guarantee, and guard overflow");
+    return false;
+  }
+  // SetThreadStackGuarantee() describes usable exception-dispatch stack above
+  // Windows' separate terminal inaccessible prefix. They are consecutive
+  // regions, not alternative descriptions of the same low bytes.
+  // The live PAGE_GUARD immediately above that recovery region is consumed as
+  // Windows grows the stack. Debit that page as well so ART's own reserve is
+  // fully usable before native overflow dispatch begins.
+  const size_t excluded_low_size =
+      selection.excluded_low_size + rounded_stack_guarantee + system_page_size;
+  const size_t stack_size = static_cast<size_t>(high - low);
+  if (excluded_low_size > stack_size || minimum_usable_size > stack_size - excluded_low_size) {
+    SetFailure(failure, nullptr, "stack guarantee leaves insufficient usable stack");
+    return false;
+  }
+  uintptr_t usable_begin = 0u;
+  if (!AddWithoutOverflow(low, excluded_low_size, &usable_begin)) {
+    SetFailure(failure, nullptr, "usable stack address overflow");
+    return false;
+  }
   layout->allocation_base = selection.allocation_base;
-  layout->usable_begin = selection.page_begin;
-  layout->excluded_low_size = selection.excluded_low_size;
+  layout->usable_begin = usable_begin;
+  layout->memory_excluded_low_size = selection.excluded_low_size;
+  layout->stack_guarantee_size = rounded_stack_guarantee;
+  layout->excluded_low_size = excluded_low_size;
   return true;
 }
 

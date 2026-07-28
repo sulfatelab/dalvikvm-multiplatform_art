@@ -6,6 +6,11 @@
 
 namespace art {
 
+// Keep Windows' native overflow-dispatch boundary explicit before recording
+// ART's separate managed-overflow reserve. CoreCLR uses the same four-page
+// x64 minimum (one default page plus three exception-handling pages).
+constexpr size_t kWin32MinimumStackGuaranteePages = 4u;
+
 enum class Win32StackPageState : uint8_t {
   kNotInstalled,
   kProtected,
@@ -38,6 +43,8 @@ struct Win32StackPageSelection {
 struct Win32StackLayout {
   uintptr_t allocation_base = 0u;
   uintptr_t usable_begin = 0u;
+  size_t memory_excluded_low_size = 0u;
+  size_t stack_guarantee_size = 0u;
   size_t excluded_low_size = 0u;
 };
 
@@ -61,6 +68,7 @@ bool SelectWin32StackPage(uintptr_t low,
 bool InspectWin32StackLayout(uintptr_t low,
                              uintptr_t high,
                              size_t system_page_size,
+                             size_t stack_guarantee_size,
                              size_t minimum_usable_size,
                              Win32MemoryQuery query,
                              void* query_context,
