@@ -774,15 +774,6 @@ static size_t FixStackSize(size_t stack_size) {
     // stack space, so we should add our reserved space on top of what they requested, rather
     // than implicitly take it away from them.
     stack_size += GetStackOverflowReservedBytes(kRuntimeQuickCodeISA);
-#if defined(_WIN32)
-    // W-014 installs the fixed page before W-010 enables implicit fault
-    // translation. Compensate for the additional ART-owned page while that
-    // protection remains dormant. The measured excluded-low prefix is part of
-    // the system stack layout rather than an ART-created debit.
-    if (!Runtime::Current()->IsAotCompiler()) {
-      stack_size += Thread::GetStackOverflowProtectedSize();
-    }
-#endif
   }
 
   // Some systems require the stack size to be a multiple of the system page size, so round up.
@@ -1482,32 +1473,25 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
 
   // Set stack_end_ to the bottom of the stack saving space of stack overflows
 
+#if defined(_WIN32)
+  // Windows owns stack growth and its moving guard. Keep the terminal bottom
+  // page and any adjacent inaccessible prefix outside ART's usable bounds,
+  // but do not commit or protect an ART-owned page inside the reservation.
+  read_guard_size = 0u;
+  if (!InspectWin32StackLayout(read_stack_base,
+                               read_stack_size,
+                               minimum_bytes_above,
+                               &read_guard_size)) {
+    LogHelper::LogLineLowStack(__PRETTY_FUNCTION__,
+                               __LINE__,
+                               ::android::base::ERROR,
+                               "Unable to inspect Win64 stack layout");
+    return false;
+  }
+#else
   Runtime* runtime = Runtime::Current();
   bool implicit_stack_check =
       runtime->GetImplicitStackOverflowChecks() && !runtime->IsAotCompiler();
-#if defined(_WIN32)
-  // The main thread attaches before Runtime::Init() selects architecture
-  // implicit-check flags. Install the fixed page for every non-AOT Win64
-  // runtime so it is already present before the VEH-backed managed-fault
-  // capability is published. Later attachments take the implicit_stack_check
-  // branch directly.
-  bool install_stack_protection =
-      implicit_stack_check || !runtime->IsAotCompiler();
-  read_guard_size = 0u;
-  if (install_stack_protection) {
-    if (!InstallWin32StackProtection(read_stack_base,
-                                     read_stack_size,
-                                     GetStackOverflowProtectedSize(),
-                                     minimum_bytes_above,
-                                     &read_guard_size)) {
-      LogHelper::LogLineLowStack(__PRETTY_FUNCTION__,
-                                 __LINE__,
-                                 ::android::base::ERROR,
-                                 "Unable to install Win64 ART stack protection");
-      return false;
-    }
-  }
-#else
   bool install_stack_protection = implicit_stack_check;
 #endif
 
@@ -1535,9 +1519,14 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
 
   ResetDefaultStackEnd<stack_type>();
 
-  // Account for the protected region. On Windows the page was already
-  // installed by the bounded platform helper above; other platforms keep the
-  // existing implicit-check installation path.
+#if defined(_WIN32)
+  SetStackBegin<stack_type>(GetStackBegin<stack_type>() + read_guard_size);
+  SetStackEnd<stack_type>(GetStackEnd<stack_type>() + read_guard_size);
+  SetStackSize<stack_type>(GetStackSize<stack_type>() - read_guard_size);
+#endif
+
+  // Account for and install the protected region on implicit-check platforms.
+#if !defined(_WIN32)
   if (install_stack_protection) {
     // The thread might have protected region at the bottom.  We need
     // to install our own region so we need to move the limits
@@ -1550,10 +1539,9 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
     SetStackSize<stack_type>(
         GetStackSize<stack_type>() - (read_guard_size + GetStackOverflowProtectedSize()));
 
-#if !defined(_WIN32)
     InstallImplicitProtection<stack_type>();
-#endif
   }
+#endif
 
   // Consistency check.
   CHECK_GT(FindStackTop<stack_type>(), reinterpret_cast<void*>(GetStackEnd<stack_type>()));

@@ -865,6 +865,19 @@ END_FUNCTION \name
     movq %rax, rSELF
 .endm
 
+.macro CHECK_STACK_OVERFLOW
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+   // rSELF is part of the Win64 managed ABI at every nterp entry and invoke
+   // boundary. Equality is allowed, matching Thread::stack_end semantics.
+   cmpq THREAD_STACK_END_OFFSET(rSELF), %rsp
+   jae 1f
+   jmpq *THREAD_THROW_STACK_OVERFLOW_ENTRYPOINT_OFFSET(rSELF)
+1:
+#else
+   testq %rax, -STACK_OVERFLOW_RESERVED_BYTES(%rsp)
+#endif
+.endm
+
 // Helper to setup the stack after doing a nterp to nterp call. This will setup:
 // - rNEW_FP: the new pointer to dex registers
 // - rNEW_REFS: the new pointer to references
@@ -877,7 +890,7 @@ END_FUNCTION \name
 .macro SETUP_STACK_FOR_INVOKE
    // We do the same stack overflow check as the compiler. See CanMethodUseNterp
    // in how we limit the maximum nterp frame size.
-   testq %rax, -STACK_OVERFLOW_RESERVED_BYTES(%rsp)
+   CHECK_STACK_OVERFLOW
 
    // Spill all callee saves to have a consistent stack frame whether we
    // are called by compiled code or nterp.
@@ -1763,7 +1776,7 @@ SYMBOL(EndExecuteNterpWithClinitImpl):
 OAT_ENTRY ExecuteNterpImpl
     .cfi_startproc
     .cfi_def_cfa rsp, 8
-    testq %rax, -STACK_OVERFLOW_RESERVED_BYTES(%rsp)
+    CHECK_STACK_OVERFLOW
     /* Spill callee save regs */
     SPILL_ALL_CALLEE_SAVES
 

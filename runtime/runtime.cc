@@ -2128,10 +2128,11 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   implicit_null_checks_ = false;
 #endif  // ART_USE_RESTRICTED_MODE
 #ifdef _WIN32
-  // Win64 x86_64 uses the common implicit null and stack-overflow checks
-  // through the narrow VEH-backed sigchain adapter. ART does not use implicit
-  // suspend checks on x86_64.
+  // Keep implicit null checks through the narrow VEH adapter. Windows owns
+  // stack growth and can consume a fixed ART page, so Win64 generated code
+  // uses explicit Thread::stack_end checks instead.
   implicit_suspend_checks_ = false;
+  implicit_so_checks_ = false;
 #endif
 
 #ifdef _WIN32

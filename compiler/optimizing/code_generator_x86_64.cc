@@ -1895,13 +1895,22 @@ void CodeGeneratorX86_64::GenerateFrameEntry() {
   __ Bind(&frame_entry_label_);
   bool skip_overflow_check = IsLeafMethod()
       && !FrameNeedsStackCheck(GetFrameSize(), InstructionSet::kX86_64);
-  DCHECK(GetCompilerOptions().GetImplicitStackOverflowChecks());
-
-
   if (!skip_overflow_check) {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+    NearLabel stack_ok;
+    __ cmpq(CpuRegister(RSP),
+            Address::ThreadOffsetAddr(
+                Thread::StackEndOffset<kX86_64PointerSize>().Int32Value()));
+    __ j(kAboveEqual, &stack_ok);
+    __ gs()->jmp(Address::ThreadOffsetAddr(
+        GetThreadOffset<kX86_64PointerSize>(kQuickThrowStackOverflow)));
+    __ Bind(&stack_ok);
+#else
+    DCHECK(GetCompilerOptions().GetImplicitStackOverflowChecks());
     size_t reserved_bytes = GetStackOverflowReservedBytes(InstructionSet::kX86_64);
     __ testq(CpuRegister(RAX), Address(CpuRegister(RSP), -static_cast<int32_t>(reserved_bytes)));
     RecordPcInfoForFrameOrBlockEntry();
+#endif
   }
 
   if (!HasEmptyFrame()) {

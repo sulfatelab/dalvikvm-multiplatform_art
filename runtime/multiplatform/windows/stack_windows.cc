@@ -221,6 +221,46 @@ bool SelectWin32StackPage(uintptr_t low,
   return false;
 }
 
+bool InspectWin32StackLayout(uintptr_t low,
+                             uintptr_t high,
+                             size_t system_page_size,
+                             size_t minimum_usable_size,
+                             Win32MemoryQuery query,
+                             void* query_context,
+                             Win32StackLayout* layout,
+                             const char** failure) {
+  if (failure != nullptr) {
+    *failure = nullptr;
+  }
+  if (layout == nullptr || minimum_usable_size < system_page_size) {
+    SetFailure(failure, nullptr, "missing layout output or insufficient usable size");
+    return false;
+  }
+  *layout = {};
+
+  // Windows keeps the final page of the stack reservation for terminal
+  // overflow detection. Reuse the fixed-page selector only to identify the
+  // first suitable page above that page and any adjacent no-access/guard
+  // prefix. SelectWin32StackPage() is read-only; this does not install an ART
+  // page or alter the system stack mapping.
+  Win32StackPageSelection selection;
+  if (!SelectWin32StackPage(low,
+                            high,
+                            system_page_size,
+                            system_page_size,
+                            minimum_usable_size - system_page_size,
+                            query,
+                            query_context,
+                            &selection,
+                            failure)) {
+    return false;
+  }
+  layout->allocation_base = selection.allocation_base;
+  layout->usable_begin = selection.page_begin;
+  layout->excluded_low_size = selection.excluded_low_size;
+  return true;
+}
+
 bool InstallWin32StackPage(uintptr_t low,
                            uintptr_t high,
                            size_t system_page_size,

@@ -52,6 +52,8 @@ ASM_DEFINE(THREAD_ROSALLOC_RUNS_OFFSET,
            art::Thread::RosAllocRunsOffset<art::kRuntimePointerSize>().Int32Value())
 ASM_DEFINE(THREAD_SELF_OFFSET,
            art::Thread::SelfOffset<art::kRuntimePointerSize>().Int32Value())
+ASM_DEFINE(THREAD_STACK_END_OFFSET,
+           art::Thread::StackEndOffset<art::kRuntimePointerSize>().Int32Value())
 ASM_DEFINE(THREAD_SUSPEND_OR_CHECKPOINT_REQUEST,
            art::Thread::SuspendOrCheckpointRequestFlags())
 ASM_DEFINE(THREAD_SUSPEND_REQUEST,
@@ -65,6 +67,9 @@ ASM_DEFINE(THREAD_ALLOC_OBJECT_ENTRYPOINT_OFFSET,
                .Int32Value())
 ASM_DEFINE(THREAD_ALLOC_ARRAY_ENTRYPOINT_OFFSET,
            art::GetThreadOffset<art::kRuntimePointerSize>(art::kQuickAllocArrayResolved)
+               .Int32Value())
+ASM_DEFINE(THREAD_THROW_STACK_OVERFLOW_ENTRYPOINT_OFFSET,
+           art::GetThreadOffset<art::kRuntimePointerSize>(art::kQuickThrowStackOverflow)
                .Int32Value())
 ASM_DEFINE(THREAD_READ_BARRIER_MARK_REG00_OFFSET,
            art::Thread::ReadBarrierMarkEntryPointsOffset<art::kRuntimePointerSize>(0))

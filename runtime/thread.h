@@ -1966,11 +1966,10 @@ class EXPORT Thread {
   void TearDownAlternateSignalStack();
   void MadviseAwayAlternateSignalStack();
 #if defined(_WIN32)
-  bool InstallWin32StackProtection(uint8_t* read_stack_base,
-                                   size_t read_stack_size,
-                                   size_t protected_size,
-                                   size_t minimum_bytes_above,
-                                   size_t* excluded_low_size);
+  bool InspectWin32StackLayout(uint8_t* read_stack_base,
+                               size_t read_stack_size,
+                               size_t minimum_usable_size,
+                               size_t* excluded_low_size);
   bool RestoreWin32StackProtection();
 #endif
 

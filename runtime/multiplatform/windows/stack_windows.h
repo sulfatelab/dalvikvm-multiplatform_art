@@ -35,6 +35,12 @@ struct Win32StackPageSelection {
   uint32_t original_type = 0u;
 };
 
+struct Win32StackLayout {
+  uintptr_t allocation_base = 0u;
+  uintptr_t usable_begin = 0u;
+  size_t excluded_low_size = 0u;
+};
+
 struct Win32StackPageRecord {
   Win32StackPageSelection selection;
   Win32StackPageState state = Win32StackPageState::kNotInstalled;
@@ -51,6 +57,15 @@ bool SelectWin32StackPage(uintptr_t low,
                           void* query_context,
                           Win32StackPageSelection* selection,
                           const char** failure);
+
+bool InspectWin32StackLayout(uintptr_t low,
+                             uintptr_t high,
+                             size_t system_page_size,
+                             size_t minimum_usable_size,
+                             Win32MemoryQuery query,
+                             void* query_context,
+                             Win32StackLayout* layout,
+                             const char** failure);
 
 bool InstallWin32StackPage(uintptr_t low,
                            uintptr_t high,
