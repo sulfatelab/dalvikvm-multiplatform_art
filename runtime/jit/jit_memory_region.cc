@@ -197,102 +197,94 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
 
 #if defined(_WIN32)
   // Use a pagefile-section dual view when memfd_create is unavailable (always on Windows).
-  // This is the default; ART_WINDOWS_X64_JIT_DUAL=0 retains J-1 as a diagnostic fallback.
+  // This is the only Windows JIT memory path. Construction failure disables the JIT instead of
+  // falling back to an executable single view.
   if (mem_fd.get() < 0) {
-    static const bool kTryJ2 = []() {
-      const char* e = getenv("ART_WINDOWS_X64_JIT_DUAL");
-      return e == nullptr || e[0] != '0';
-    }();
-    if (kTryJ2) {
-      std::string j2_error;
-      void* section = MemMap::CreatePageFileSection(capacity, &j2_error);
-      if (section != nullptr) {
-        {
-          // Keep construction local so partial mappings are destroyed before J-1 fallback.
-          // Declare each owning view before its non-owning tail so cleanup happens tail-first.
-          MemMap primary;
-          MemMap exec;
-          MemMap writable;
-          MemMap non_exec;
+    std::string j2_error;
+    void* section = MemMap::CreatePageFileSection(capacity, &j2_error);
+    if (section == nullptr) {
+      dual_view_error = "Windows x64 JIT dual-view CreateFileMapping failed: " + j2_error;
+      *error_msg = dual_view_error;
+      return false;
+    }
+    {
+      // Keep construction local so partial mappings are destroyed before returning failure.
+      // Declare each owning view before its non-owning tail so cleanup happens tail-first.
+      MemMap primary;
+      MemMap exec;
+      MemMap writable;
+      MemMap non_exec;
 
-          primary = MemMap::MapFileSection(section,
-                                           capacity,
-                                           kProtRX,
-                                           /*low_4gb=*/true,
-                                           /*start_offset=*/0,
-                                           data_cache_name.c_str(),
-                                           &j2_error);
-          if (primary.IsValid()) {
-            std::string exec_name = exec_cache_name + "-rx";
-            exec = primary.SplitViewAtEnd(primary.Begin() + data_capacity,
-                                          exec_name.c_str(),
-                                          kProtR,
-                                          kProtRX,
+      primary = MemMap::MapFileSection(section,
+                                       capacity,
+                                       kProtRX,
+                                       /*low_4gb=*/true,
+                                       /*start_offset=*/0,
+                                       data_cache_name.c_str(),
+                                       &j2_error);
+      if (primary.IsValid()) {
+        std::string exec_name = exec_cache_name + "-rx";
+        exec = primary.SplitViewAtEnd(primary.Begin() + data_capacity,
+                                      exec_name.c_str(),
+                                      kProtR,
+                                      kProtRX,
+                                      &j2_error);
+      }
+
+      if (exec.IsValid()) {
+        std::string writable_data_name = data_cache_name + "-rw";
+        writable = MemMap::MapFileSection(section,
+                                          capacity,
+                                          kProtRW,
+                                          /*low_4gb=*/false,
+                                          /*start_offset=*/0,
+                                          writable_data_name.c_str(),
                                           &j2_error);
-          }
+      }
+      if (writable.IsValid()) {
+        std::string non_exec_name = exec_cache_name + "-rw";
+        non_exec = writable.SplitViewAtEnd(writable.Begin() + data_capacity,
+                                           non_exec_name.c_str(),
+                                           kProtRW,
+                                           kProtRW,
+                                           &j2_error);
+      }
 
-          if (exec.IsValid()) {
-            std::string writable_data_name = data_cache_name + "-rw";
-            writable = MemMap::MapFileSection(section,
-                                              capacity,
-                                              kProtRW,
-                                              /*low_4gb=*/false,
-                                              /*start_offset=*/0,
-                                              writable_data_name.c_str(),
-                                              &j2_error);
-          }
-          if (writable.IsValid()) {
-            std::string non_exec_name = exec_cache_name + "-rw";
-            non_exec = writable.SplitViewAtEnd(writable.Begin() + data_capacity,
-                                               non_exec_name.c_str(),
-                                               kProtRW,
-                                               kProtRW,
-                                               &j2_error);
-          }
+      ::CloseHandle(static_cast<HANDLE>(section));
+      section = nullptr;
 
-          ::CloseHandle(static_cast<HANDLE>(section));
-          section = nullptr;
+      if (primary.IsValid() && exec.IsValid() && writable.IsValid() && non_exec.IsValid()) {
+        CHECK_EQ(primary.Size(), data_capacity);
+        CHECK_EQ(exec.Size(), exec_capacity);
+        CHECK_EQ(writable.Size(), data_capacity);
+        CHECK_EQ(non_exec.Size(), exec_capacity);
+        CHECK_EQ(primary.End(), exec.Begin());
+        CHECK_EQ(writable.End(), non_exec.Begin());
+        CHECK_LT(reinterpret_cast<uintptr_t>(exec.End()), 4u * GB);
+        CHECK_EQ(primary.GetProtect(), kProtR);
+        CHECK_EQ(exec.GetProtect(), kProtRX);
+        CHECK_EQ(writable.GetProtect(), kProtRW);
+        CHECK_EQ(non_exec.GetProtect(), kProtRW);
+        CheckJitSectionView(primary, primary.Begin(), PAGE_READONLY);
+        CheckJitSectionView(exec, primary.Begin(), PAGE_EXECUTE_READ);
+        CheckJitSectionView(writable, writable.Begin(), PAGE_READWRITE);
+        CheckJitSectionView(non_exec, writable.Begin(), PAGE_READWRITE);
 
-          if (primary.IsValid() && exec.IsValid() &&
-              writable.IsValid() && non_exec.IsValid()) {
-            CHECK_EQ(primary.Size(), data_capacity);
-            CHECK_EQ(exec.Size(), exec_capacity);
-            CHECK_EQ(writable.Size(), data_capacity);
-            CHECK_EQ(non_exec.Size(), exec_capacity);
-            CHECK_EQ(primary.End(), exec.Begin());
-            CHECK_EQ(writable.End(), non_exec.Begin());
-            CHECK_LT(reinterpret_cast<uintptr_t>(exec.End()), 4u * GB);
-            CHECK_EQ(primary.GetProtect(), kProtR);
-            CHECK_EQ(exec.GetProtect(), kProtRX);
-            CHECK_EQ(writable.GetProtect(), kProtRW);
-            CHECK_EQ(non_exec.GetProtect(), kProtRW);
-            CheckJitSectionView(primary, primary.Begin(), PAGE_READONLY);
-            CheckJitSectionView(exec, primary.Begin(), PAGE_EXECUTE_READ);
-            CheckJitSectionView(writable, writable.Begin(), PAGE_READWRITE);
-            CheckJitSectionView(non_exec, writable.Begin(), PAGE_READWRITE);
-
-            data_pages = std::move(primary);
-            exec_pages = std::move(exec);
-            writable_data_pages = std::move(writable);
-            non_exec_pages = std::move(non_exec);
-            j2_complete = true;
-          }
-        }
-
-        if (j2_complete) {
-          LOG(INFO) << "Windows x64 JIT dual-view (J-2) created: capacity="
-                    << (capacity >> 20) << "MiB; falling through to mspace init";
-        } else {
-          dual_view_error = j2_error;
-          LOG(WARNING) << "Windows x64 JIT dual-view construction failed: " << j2_error
-                       << "; falling back to single-view (J-1)";
-        }
-      } else {
-        dual_view_error = j2_error;
-        LOG(WARNING) << "Windows x64 JIT dual-view CreateFileMapping failed: " << j2_error
-                     << "; falling back to single-view (J-1)";
+        data_pages = std::move(primary);
+        exec_pages = std::move(exec);
+        writable_data_pages = std::move(writable);
+        non_exec_pages = std::move(non_exec);
+        j2_complete = true;
       }
     }
+
+    if (!j2_complete) {
+      dual_view_error = "Windows x64 JIT dual-view construction failed: " + j2_error;
+      *error_msg = dual_view_error;
+      return false;
+    }
+    LOG(INFO) << "Windows x64 JIT dual-view (J-2) created: capacity="
+              << (capacity >> 20) << "MiB; falling through to mspace init";
   }
 #endif
 
@@ -393,7 +385,11 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
         /* low_4gb= */ true,
         data_cache_name.c_str(),
         &error_str);
-  } else if (!j2_complete) {
+  } else {
+#if defined(_WIN32)
+    // The Windows section path either completed above or returned failure.
+    CHECK(j2_complete);
+#else
     // Single view of JIT code cache case. Create an initial mapping of data pages large enough
     // for data and JIT code pages. The mappings will look like:
     //
@@ -418,6 +414,7 @@ bool JitMemoryRegion::Initialize(size_t initial_capacity,
         kProtRW,
         /* low_4gb= */ true,
         &error_str);
+#endif
   }
 
   if (!j2_complete && !data_pages.IsValid()) {
