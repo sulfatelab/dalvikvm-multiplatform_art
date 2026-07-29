@@ -1298,20 +1298,12 @@ END_FUNCTION \name
    cmpb LITERAL(70), (rINSTq)       // Test if result type char == 'F'.
    jne .Ldone_return_\suffix
 .Lreturn_float_\suffix:
-#if defined(_WIN32)
-   // Win PE helpers (e.g. LOAD_RUNTIME_INSTANCE / MS call ABI) may clobber
-   // xmm0 while leaving the ART float bits in rax. Prefer rax, then sync xmm0.
-   movd %eax, %xmm0
-#else
+   // ART quick/JNI hard-float returns live in xmm0 on Windows and Linux.
+   // Keep eax mirrored for any path that still peeks at the GPR view.
    movd %xmm0, %eax
-#endif
    jmp .Ldone_return_\suffix
 .Lreturn_double_\suffix:
-#if defined(_WIN32)
-   movq %rax, %xmm0
-#else
    movq %xmm0, %rax
-#endif
 .Ldone_return_\suffix:
    /* resume execution of caller */
    .if \is_string_init
@@ -1522,18 +1514,10 @@ END_FUNCTION \name
    ADVANCE_PC_FETCH_AND_GOTO_NEXT 3
    .endif
 .Lreturn_range_double_\suffix:
-#if defined(_WIN32)
-    movq %rax, %xmm0
-#else
     movq %xmm0, %rax
-#endif
     jmp .Ldone_return_range_\suffix
 .Lreturn_range_float_\suffix:
-#if defined(_WIN32)
-    movd %eax, %xmm0
-#else
     movd %xmm0, %eax
-#endif
     jmp .Ldone_return_range_\suffix
 .endm
 
