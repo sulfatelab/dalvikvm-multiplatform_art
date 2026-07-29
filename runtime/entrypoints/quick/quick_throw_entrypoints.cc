@@ -127,6 +127,9 @@ extern "C" ART_QUICK_ENTRYPOINT_ABI Context* artThrowStackOverflowFromCode(Threa
   // errors on the simulated stack, which is used for quick code when building for the simulator.
   // See kQuickStackType for more details.
   ThrowStackOverflowError<kQuickStackType>(self);
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+  self->RecordWin32StackOverflowHighWater(Win32StackOverflowHighWaterPoint::kQuickDelivery);
+#endif
   std::unique_ptr<Context> context = self->QuickDeliverException();
   DCHECK(context != nullptr);
   return context.release();

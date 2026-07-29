@@ -270,7 +270,7 @@ static void ZygoteHooks_nativePostForkSystemServer([[maybe_unused]] JNIEnv* env,
                                                    [[maybe_unused]] jclass klass,
                                                    jint runtime_flags) {
   // Reload the current flags first. In case we need to take actions based on them.
-  Runtime::Current()->ReloadAllFlags(__FUNCTION__);
+  Runtime::Current()->ReloadAllFlags("ZygoteHooks_nativePostForkSystemServer");
 
   // Set the runtime state as the first thing, in case JIT and other services
   // start querying it.
@@ -300,7 +300,7 @@ static void ZygoteHooks_nativePostForkChild(JNIEnv* env,
                                             jstring instruction_set) {
   DCHECK(!(is_system_server && is_zygote));
   // Reload the current flags first. In case we need to take any updated actions.
-  Runtime::Current()->ReloadAllFlags(__FUNCTION__);
+  Runtime::Current()->ReloadAllFlags("ZygoteHooks_nativePostForkChild");
   // Then, set the runtime state, in case JIT and other services
   // start querying it.
   Runtime::Current()->SetAsZygoteChild(is_system_server, is_zygote);

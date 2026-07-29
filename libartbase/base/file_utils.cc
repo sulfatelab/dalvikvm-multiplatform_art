@@ -783,13 +783,26 @@ bool LocationIsOnArtApexData(std::string_view location) {
 
 static bool StartsWithSlash(const char* str) {
   DCHECK(str != nullptr);
+#ifdef _WIN32
+  // Windows host paths may be rooted with a slash/backslash or with a drive
+  // prefix. Accept all absolute spellings used by Wine and native Windows.
+  const bool has_drive_prefix =
+      ((str[0] >= 'A' && str[0] <= 'Z') || (str[0] >= 'a' && str[0] <= 'z')) &&
+      str[1] == ':' && (str[2] == '/' || str[2] == '\\');
+  return str[0] == '/' || str[0] == '\\' || has_drive_prefix;
+#else
   return str[0] == '/';
+#endif
 }
 
 static bool EndsWithSlash(const char* str) {
   DCHECK(str != nullptr);
   size_t len = strlen(str);
+#ifdef _WIN32
+  return len > 0 && (str[len - 1] == '/' || str[len - 1] == '\\');
+#else
   return len > 0 && str[len - 1] == '/';
+#endif
 }
 
 // Returns true if `full_path` is located in folder either provided with `env_var`

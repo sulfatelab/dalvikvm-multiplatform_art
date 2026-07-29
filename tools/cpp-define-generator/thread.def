@@ -54,6 +54,26 @@ ASM_DEFINE(THREAD_SELF_OFFSET,
            art::Thread::SelfOffset<art::kRuntimePointerSize>().Int32Value())
 ASM_DEFINE(THREAD_STACK_END_OFFSET,
            art::Thread::StackEndOffset<art::kRuntimePointerSize>().Int32Value())
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+ASM_DEFINE(THREAD_WIN32_STACK_HIGH_WATER_ACTIVE_OFFSET,
+           art::Thread::Win32StackOverflowHighWaterActiveOffset<art::kRuntimePointerSize>()
+               .Int32Value())
+ASM_DEFINE(THREAD_WIN32_STACK_HIGH_WATER_SEQUENCE_OFFSET,
+           art::Thread::Win32StackOverflowHighWaterSequenceOffset<art::kRuntimePointerSize>()
+               .Int32Value())
+ASM_DEFINE(THREAD_WIN32_STACK_HIGH_WATER_EXPLICIT_CHECK_OFFSET,
+           art::Thread::Win32StackOverflowHighWaterOffset<art::kRuntimePointerSize>(
+               art::Win32StackOverflowHighWaterPoint::kExplicitCheck).Int32Value())
+ASM_DEFINE(THREAD_WIN32_STACK_HIGH_WATER_QUICK_ENTRYPOINT_OFFSET,
+           art::Thread::Win32StackOverflowHighWaterOffset<art::kRuntimePointerSize>(
+               art::Win32StackOverflowHighWaterPoint::kQuickEntrypoint).Int32Value())
+ASM_DEFINE(THREAD_WIN32_STACK_HIGH_WATER_QUICK_FRAME_OFFSET,
+           art::Thread::Win32StackOverflowHighWaterOffset<art::kRuntimePointerSize>(
+               art::Win32StackOverflowHighWaterPoint::kQuickFrame).Int32Value())
+ASM_DEFINE(THREAD_WIN32_STACK_HIGH_WATER_LONG_JUMP_OFFSET,
+           art::Thread::Win32StackOverflowHighWaterOffset<art::kRuntimePointerSize>(
+               art::Win32StackOverflowHighWaterPoint::kLongJump).Int32Value())
+#endif
 ASM_DEFINE(THREAD_SUSPEND_OR_CHECKPOINT_REQUEST,
            art::Thread::SuspendOrCheckpointRequestFlags())
 ASM_DEFINE(THREAD_SUSPEND_REQUEST,

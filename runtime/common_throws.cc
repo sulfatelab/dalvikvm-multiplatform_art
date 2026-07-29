@@ -718,6 +718,11 @@ void ThrowSecurityException(const char* fmt, ...) {
 
 template <StackType stack_type>
 void ThrowStackOverflowError(Thread* self) {
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+  self->EnsureWin32StackOverflowHighWaterStarted();
+  self->RecordWin32StackOverflowHighWater(
+      Win32StackOverflowHighWaterPoint::kThrowEntrypoint);
+#endif
   if (self->IsHandlingStackOverflow<stack_type>()) {
     LOG(ERROR) << "Recursive stack overflow.";
     // We don't fail here because SetStackEndForStackOverflow will print better diagnostics.
@@ -725,6 +730,10 @@ void ThrowStackOverflowError(Thread* self) {
 
   // Allow space on the stack for constructor to execute.
   self->SetStackEndForStackOverflow<stack_type>();
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+  self->RecordWin32StackOverflowHighWater(
+      Win32StackOverflowHighWaterPoint::kExpandedStackEnd);
+#endif
 
   // Remove the stack overflow protection if it is set up.
   bool implicit_stack_check = Runtime::Current()->GetImplicitStackOverflowChecks();
@@ -742,6 +751,10 @@ void ThrowStackOverflowError(Thread* self) {
   //       with its own frame in the extended stack, which is especially important for modes
   //       with larger stack sizes (e.g., ASAN).
   auto create_and_throw = [self]() REQUIRES_SHARED(Locks::mutator_lock_) NO_INLINE {
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+    self->RecordWin32StackOverflowHighWater(
+        Win32StackOverflowHighWaterPoint::kExceptionConstruction);
+#endif
     std::string msg("stack size ");
     msg += PrettySize(self->GetUsableStackSize<stack_type>());
 
@@ -819,9 +832,17 @@ void ThrowStackOverflowError(Thread* self) {
     self->SetException(exc->AsThrowable());
   };
   create_and_throw();
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+  self->RecordWin32StackOverflowHighWater(
+      Win32StackOverflowHighWaterPoint::kExceptionConstructed);
+#endif
   CHECK(self->IsExceptionPending());
 
   self->ResetDefaultStackEnd<stack_type>();  // Return to default stack size.
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+  self->RecordWin32StackOverflowHighWater(
+      Win32StackOverflowHighWaterPoint::kDefaultStackEndRestored);
+#endif
 
   // And restore protection if implicit checks are on.
   if (implicit_stack_check) {

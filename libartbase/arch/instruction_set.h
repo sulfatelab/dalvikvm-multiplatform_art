@@ -246,7 +246,15 @@ static constexpr size_t kArmStackOverflowReservedBytes     = ART_STACK_OVERFLOW_
 static constexpr size_t kArm64StackOverflowReservedBytes   = ART_STACK_OVERFLOW_GAP_arm64;
 static constexpr size_t kRiscv64StackOverflowReservedBytes = ART_STACK_OVERFLOW_GAP_riscv64;
 static constexpr size_t kX86StackOverflowReservedBytes     = ART_STACK_OVERFLOW_GAP_x86;
+#if (defined(_WIN32) || defined(ART_TARGET_WINDOWS)) && !defined(NDEBUG)
+// Clang's O0 Microsoft-ABI frames in the StackOverflowError allocation path
+// exceed both the normal 8-KiB reserve and ART's 20-KiB ASAN-sized reserve on
+// native Windows. FS-1 measured an 8-KiB deficit with the latter, so retain a
+// three-page safety margin while leaving product and non-Windows builds alone.
+static constexpr size_t kX86_64StackOverflowReservedBytes  = 40960u;
+#else
 static constexpr size_t kX86_64StackOverflowReservedBytes  = ART_STACK_OVERFLOW_GAP_x86_64;
+#endif
 
 NO_RETURN void GetStackOverflowReservedBytesFailure(const char* error_msg);
 

@@ -302,6 +302,36 @@ static constexpr size_t kNumRosAllocThreadLocalSizeBracketsInThread = 16;
 
 static constexpr size_t kSharedMethodHotnessThreshold = 0x1fff;
 
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+enum class Win32StackOverflowHighWaterPoint : size_t {  // private
+  kExplicitCheck,
+  kQuickEntrypoint,
+  kQuickFrame,
+  kThrowEntrypoint,
+  kExpandedStackEnd,
+  kExceptionConstruction,
+  kExceptionConstructed,
+  kDefaultStackEndRestored,
+  kQuickDelivery,
+  kLongJump,
+  kCount,
+};
+
+// Probe-only, thread-owned storage. The overflow path writes only fixed-size
+// scalar fields; result formatting happens after the managed catch has run.
+struct Win32StackOverflowHighWater {
+  uintptr_t stack_low = 0u;
+  uintptr_t guarantee_top = 0u;
+  uintptr_t native_boundary = 0u;
+  uintptr_t default_stack_end = 0u;
+  size_t stack_guarantee_size = 0u;
+  size_t art_reserved_size = 0u;
+  uint64_t sequence = 0u;
+  uint64_t active = 0u;
+  uintptr_t rsp[static_cast<size_t>(Win32StackOverflowHighWaterPoint::kCount)] = {};
+};
+#endif
+
 // Thread's stack layout for implicit stack overflow checks:
 //
 //   +---------------------+  <- highest address of stack memory
@@ -388,6 +418,44 @@ class EXPORT Thread {
   void ExitWin32FaultHandler() {
     win32_fault_handler_active_.store(0u, std::memory_order_release);
   }
+
+#if defined(ART_WIN32_STACK_HIGH_WATER)
+  __attribute__((always_inline)) inline uintptr_t GetCurrentWin32StackPointer() const {
+    uintptr_t stack_pointer;
+    __asm__ __volatile__("movq %%rsp, %0" : "=r"(stack_pointer));
+    return stack_pointer;
+  }
+
+  __attribute__((always_inline)) inline void RecordWin32StackOverflowHighWater(
+      Win32StackOverflowHighWaterPoint point) {
+    tlsPtr_.win32_stack_overflow_high_water.rsp[static_cast<size_t>(point)] =
+        GetCurrentWin32StackPointer();
+  }
+
+  __attribute__((always_inline)) inline void BeginWin32StackOverflowHighWater() {
+    Win32StackOverflowHighWater& record = tlsPtr_.win32_stack_overflow_high_water;
+    ++record.sequence;
+    record.active = 1u;
+    record.rsp[0] = GetCurrentWin32StackPointer();
+    record.rsp[1] = 0u;
+    record.rsp[2] = 0u;
+    record.rsp[3] = 0u;
+    record.rsp[4] = 0u;
+    record.rsp[5] = 0u;
+    record.rsp[6] = 0u;
+    record.rsp[7] = 0u;
+    record.rsp[8] = 0u;
+    record.rsp[9] = 0u;
+  }
+
+  __attribute__((always_inline)) inline void EnsureWin32StackOverflowHighWaterStarted() {
+    if (tlsPtr_.win32_stack_overflow_high_water.active == 0u) {
+      BeginWin32StackOverflowHighWater();
+    }
+  }
+
+  bool DumpWin32StackOverflowHighWater(const char* label);
+#endif
 #endif
 
   // On a runnable thread, check for pending thread suspension request and handle if pending.
@@ -1316,6 +1384,31 @@ class EXPORT Thread {
     return ThreadOffsetFromTlsPtr<pointer_size>(
         OFFSETOF_MEMBER(tls_ptr_sized_values, stack_end));
   }
+
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+  template <PointerSize pointer_size>
+  static constexpr ThreadOffset<pointer_size> Win32StackOverflowHighWaterOffset(
+      Win32StackOverflowHighWaterPoint point) {
+    return ThreadOffsetFromTlsPtr<pointer_size>(
+        OFFSETOF_MEMBER(tls_ptr_sized_values, win32_stack_overflow_high_water) +
+        OFFSETOF_MEMBER(Win32StackOverflowHighWater, rsp) +
+        static_cast<size_t>(point) * sizeof(uintptr_t));
+  }
+
+  template <PointerSize pointer_size>
+  static constexpr ThreadOffset<pointer_size> Win32StackOverflowHighWaterSequenceOffset() {
+    return ThreadOffsetFromTlsPtr<pointer_size>(
+        OFFSETOF_MEMBER(tls_ptr_sized_values, win32_stack_overflow_high_water) +
+        OFFSETOF_MEMBER(Win32StackOverflowHighWater, sequence));
+  }
+
+  template <PointerSize pointer_size>
+  static constexpr ThreadOffset<pointer_size> Win32StackOverflowHighWaterActiveOffset() {
+    return ThreadOffsetFromTlsPtr<pointer_size>(
+        OFFSETOF_MEMBER(tls_ptr_sized_values, win32_stack_overflow_high_water) +
+        OFFSETOF_MEMBER(Win32StackOverflowHighWater, active));
+  }
+#endif
 
   template<PointerSize pointer_size>
   static constexpr ThreadOffset<pointer_size> JniEnvOffset() {
@@ -2580,6 +2673,10 @@ class EXPORT Thread {
     // Hold either the same reference as opeer or a VirtualThread instance. Mainly used for the
     // java.lang.Thread.currentThread() API.
     mirror::Object* current_peer;
+
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+    Win32StackOverflowHighWater win32_stack_overflow_high_water;
+#endif
   } tlsPtr_;
 
   // Small thread-local cache to be used from the interpreter.

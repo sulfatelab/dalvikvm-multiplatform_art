@@ -276,7 +276,24 @@ NO_ARG_RUNTIME_EXCEPTION_SAVE_EVERYTHING art_quick_throw_div_zero, artThrowDivZe
     /*
      * Called by managed code to create and deliver a StackOverflowError.
      */
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+DEFINE_FUNCTION art_quick_throw_stack_overflow
+    // Start a new thread-owned record before changing RSP. The generated
+    // explicit check has already stored its pre-prologue RSP.
+    incq THREAD_WIN32_STACK_HIGH_WATER_SEQUENCE_OFFSET(%r15)
+    movq LITERAL(1), THREAD_WIN32_STACK_HIGH_WATER_ACTIVE_OFFSET(%r15)
+    movq %rsp, THREAD_WIN32_STACK_HIGH_WATER_QUICK_ENTRYPOINT_OFFSET(%r15)
+    SETUP_SAVE_ALL_CALLEE_SAVES_FRAME
+    movq %rsp, THREAD_WIN32_STACK_HIGH_WATER_QUICK_FRAME_OFFSET(%r15)
+    THREAD_GET_SELF rdi
+    call SYMBOL(artThrowStackOverflowFromCode)
+    movq %rax, %rdi
+    call SYMBOL(art_quick_do_long_jump)
+    UNREACHABLE
+END_FUNCTION art_quick_throw_stack_overflow
+#else
 NO_ARG_RUNTIME_EXCEPTION art_quick_throw_stack_overflow, artThrowStackOverflowFromCode
+#endif
 
     /*
      * Called by managed code, saves callee saves and then calls artThrowException
@@ -815,6 +832,14 @@ DEFINE_FUNCTION art_quick_do_long_jump
 #else
     // Reserve space for the gprs + fprs;
     INCREASE_FRAME X86_64_LONG_JUMP_CONTEXT_SIZE
+
+#if defined(_WIN32) && defined(ART_WIN32_STACK_HIGH_WATER)
+    cmpq LITERAL(0), THREAD_WIN32_STACK_HIGH_WATER_ACTIVE_OFFSET(%r15)
+    je 1f
+    movq %rsp, THREAD_WIN32_STACK_HIGH_WATER_LONG_JUMP_OFFSET(%r15)
+    movq LITERAL(0), THREAD_WIN32_STACK_HIGH_WATER_ACTIVE_OFFSET(%r15)
+1:
+#endif
 
     leaq 0(%rsp), %rsi                              // GPRS
     leaq X86_64_LONG_JUMP_GPRS_SIZE(%rsp), %rdx     // FPRS

@@ -1013,22 +1013,6 @@ static jobject CreateSystemClassLoader(Runtime* runtime) {
   }
   LOG(INFO) << "Windows x64 CreateSystemClassLoader after invoke loader="
             << system_class_loader.Ptr();
-  if (system_class_loader != nullptr) {
-    ArtMethod* to_string = system_class_loader->GetClass()->FindClassMethod(
-        "toString", "()Ljava/lang/String;", pointer_size);
-    if (to_string != nullptr) {
-      ObjPtr<mirror::Object> s =
-          to_string->InvokeVirtual<'L'>(soa.Self(), system_class_loader.Ptr());
-      if (soa.Self()->IsExceptionPending()) {
-        LOG(ERROR) << "Windows x64 loader.toString pending: " << soa.Self()->GetException()->Dump();
-        soa.Self()->ClearException();
-      } else if (s != nullptr && s->IsString()) {
-        LOG(INFO) << "Windows x64 loader.toString=" << s->AsString()->ToModifiedUtf8();
-      } else {
-        LOG(INFO) << "Windows x64 loader.toString returned null/non-string";
-      }
-    }
-  }
   CHECK(system_class_loader != nullptr)
       << (soa.Self()->IsExceptionPending() ? soa.Self()->GetException()->Dump() : "<null>");
 
@@ -1686,7 +1670,9 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   CHECK_EQ(static_cast<size_t>(sysconf(_SC_PAGE_SIZE)), gPageSize);
 
   // Reload all the flags value (from system properties and device configs).
-  ReloadAllFlags(__FUNCTION__);
+  // __FUNCTION__ is "art::Runtime::Init" for a Windows-target Clang build,
+  // while FlagBase's intentional caller allowlist uses the source-level name.
+  ReloadAllFlags("Init");
 
   deny_art_apex_data_files_ = runtime_options.Exists(Opt::DenyArtApexDataFiles);
   if (deny_art_apex_data_files_) {

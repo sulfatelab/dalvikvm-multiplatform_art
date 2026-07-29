@@ -55,8 +55,6 @@ static constexpr size_t kMaxPageSize = kMinPageSize;
 // this is the value to be used in images files for aligning contents to page size.
 static constexpr size_t kElfSegmentAlignment = kMaxPageSize;
 
-#if defined(NDEBUG) && !defined(__clang_analyzer__)
-
 // Multi-element classpath / bootclasspath list separator (-cp, -Xbootclasspath).
 // Windows uses ';' (OpenJDK Win32); Unix/Android use ':'.
 // Drive letters make ':' unsafe on WinNT (C:\a.jar:C:\b.jar).
@@ -66,6 +64,7 @@ static constexpr char kClassPathListSeparator = ';';
 static constexpr char kClassPathListSeparator = ':';
 #endif
 
+#if defined(NDEBUG) && !defined(__clang_analyzer__)
 static constexpr bool kIsDebugBuild = false;
 #else
 static constexpr bool kIsDebugBuild = true;

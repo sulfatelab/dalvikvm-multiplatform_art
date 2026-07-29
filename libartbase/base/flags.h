@@ -70,7 +70,7 @@ class FlagMetaBase {
 
   template <typename Builder>
   static void AddFlagsToCmdlineParser(Builder* builder) {
-    for (auto* flag : ALL_FLAGS) {
+    for (auto* flag : AllFlags()) {
       // Each flag can return a pointer to where its command line value is stored. Because these can
       // be different types, the return value comes as a variant. The cases list below contains a
       // lambda that is specialized to handle each branch of the variant and call the correct
@@ -102,7 +102,7 @@ class FlagMetaBase {
         || caller == "ZygoteHooks_nativePostForkChild"
         || caller == "ZygoteHooks_nativePostForkSystemServer"
         || caller == "test") << caller;
-    for (auto* flag : ALL_FLAGS) {
+    for (auto* flag : AllFlags()) {
       flag->Reload();
     }
 
@@ -114,7 +114,7 @@ class FlagMetaBase {
 
   // Dump all the flags info to the given stream.
   static void DumpFlags(std::ostream& oss) {
-    for (auto* flag : ALL_FLAGS) {
+    for (auto* flag : AllFlags()) {
       oss << "\n{\n";
       flag->Dump(oss);
       oss << "\n}";
@@ -130,7 +130,13 @@ class FlagMetaBase {
   // Dumps the flags info to the given stream.
   virtual void Dump(std::ostream& oss) const = 0;
 
-  static std::forward_list<FlagMetaBase<T...>*> ALL_FLAGS;
+  static std::forward_list<FlagMetaBase<T...>*>& AllFlags() {
+    // Avoid cross-global initialization ordering. In particular, MSVC-ABI
+    // Clang may initialize a template static data member after gFlags even
+    // when its definition appears first in the same translation unit.
+    static std::forward_list<FlagMetaBase<T...>*> all_flags;
+    return all_flags;
+  }
 
   const std::string command_line_argument_name_;
   const std::string system_property_name_;
@@ -139,9 +145,6 @@ class FlagMetaBase {
 };
 
 using FlagBase = FlagMetaBase<bool, int32_t, uint32_t, std::string>;
-
-template <>
-std::forward_list<FlagBase*> FlagBase::ALL_FLAGS;
 
 class FlagsTests;
 

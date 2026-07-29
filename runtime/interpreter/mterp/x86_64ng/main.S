@@ -871,6 +871,9 @@ END_FUNCTION \name
    // boundary. Equality is allowed, matching Thread::stack_end semantics.
    cmpq THREAD_STACK_END_OFFSET(rSELF), %rsp
    jae 1f
+#if defined(ART_WIN32_STACK_HIGH_WATER)
+   movq %rsp, THREAD_WIN32_STACK_HIGH_WATER_EXPLICIT_CHECK_OFFSET(rSELF)
+#endif
    jmpq *THREAD_THROW_STACK_OVERFLOW_ENTRYPOINT_OFFSET(rSELF)
 1:
 #else

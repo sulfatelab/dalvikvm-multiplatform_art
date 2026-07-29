@@ -77,10 +77,6 @@ bool ParseValue(const std::string_view value, std::optional<std::string>* destin
 
 namespace art {
 
-template <>
-std::forward_list<FlagBase*> FlagBase::ALL_FLAGS{};
-
-// gFlags must be defined after FlagBase::ALL_FLAGS so the constructors run in the right order.
 Flags gFlags;
 
 static std::string GenerateCmdLineArgName(const std::string& name) {
@@ -105,12 +101,12 @@ Flag<Value>::Flag(const std::string& name, Value default_value, FlagType type) :
              type),
     initialized_{false},
     default_{default_value} {
-  ALL_FLAGS.push_front(this);
+  AllFlags().push_front(this);
 }
 
 template <typename Value>
 Flag<Value>::~Flag() {
-  ALL_FLAGS.remove(this);
+  AllFlags().remove(this);
 }
 
 template <typename Value>

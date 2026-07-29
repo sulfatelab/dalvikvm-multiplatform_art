@@ -1903,6 +1903,13 @@ void CodeGeneratorX86_64::GenerateFrameEntry() {
             Address::ThreadOffsetAddr(
                 Thread::StackEndOffset<kX86_64PointerSize>().Int32Value()));
     __ j(kAboveEqual, &stack_ok);
+#if defined(ART_WIN32_STACK_HIGH_WATER)
+    __ gs()->movq(
+        Address::ThreadOffsetAddr(
+            Thread::Win32StackOverflowHighWaterOffset<kX86_64PointerSize>(
+                Win32StackOverflowHighWaterPoint::kExplicitCheck).Int32Value()),
+        CpuRegister(RSP));
+#endif
     __ gs()->jmp(Address::ThreadOffsetAddr(
         GetThreadOffset<kX86_64PointerSize>(kQuickThrowStackOverflow)));
     __ Bind(&stack_ok);
