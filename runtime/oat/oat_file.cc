@@ -355,7 +355,12 @@ OatFileBase* OatFileBase::OpenOatFileFromSdm(const std::string& sdm_filename,
   if (sdc_reader == nullptr) {
     return nullptr;
   }
-  if (sdc_reader->GetSdmTimestampNs() != TimeSpecToNs(timespec{static_cast<time_t>(sdm_st.st_mtime), 0})) {
+#ifdef _WIN32
+  const timespec sdm_mtime = timespec{static_cast<time_t>(sdm_st.st_mtime), 0};
+#else
+  const timespec sdm_mtime = sdm_st.st_mtim;
+#endif
+  if (sdc_reader->GetSdmTimestampNs() != TimeSpecToNs(sdm_mtime)) {
     // The sdm file had been replaced after the sdc file was created.
     *error_msg = ART_FORMAT("Obsolete sdc file '{}'", sdc_filename);
     return nullptr;

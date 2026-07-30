@@ -17,6 +17,7 @@
 #include "oat_file.h"
 
 #include <dlfcn.h>
+#include <fcntl.h>
 
 #include <algorithm>
 #include <cstring>
@@ -25,12 +26,19 @@
 #include <string_view>
 
 #include "android-base/scopeguard.h"
+#include "android-base/unique_fd.h"
+#include "base/array_ref.h"
 #include "base/file_utils.h"
+#include "base/globals.h"
+#include "base/mem_map.h"
+#include "base/mman.h"
 #include "base/os.h"
 #include "common_runtime_test.h"
 #include "dexopt_test.h"
+#include "elf_file.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oat.h"
 #include "scoped_thread_state_change-inl.h"
 #include "vdex_file.h"
 
@@ -51,6 +59,27 @@ static void GetFirstDexFileOffset(const std::string& vdex_filename, /*out*/ size
   ASSERT_GE(ptr, vdex_file->Begin());
   ASSERT_LT(ptr, vdex_file->End());
   *offset = ptr - vdex_file->Begin();
+}
+
+static ::testing::AssertionResult DladdrIdentifies(const uint8_t* address,
+                                                   const char* expected_symbol) {
+  Dl_info info = {};
+  if (dladdr(address, &info) == 0) {
+    return ::testing::AssertionFailure()
+           << "dladdr did not identify address " << static_cast<const void*>(address);
+  }
+  if (info.dli_sname == nullptr || strcmp(info.dli_sname, expected_symbol) != 0) {
+    return ::testing::AssertionFailure()
+           << "dladdr identified symbol '"
+           << (info.dli_sname != nullptr ? info.dli_sname : "<null>") << "' at " << info.dli_saddr
+           << ", expected '" << expected_symbol << "' at " << static_cast<const void*>(address);
+  }
+  if (static_cast<const void*>(info.dli_saddr) != static_cast<const void*>(address)) {
+    return ::testing::AssertionFailure()
+           << "dladdr identified '" << expected_symbol << "' at " << info.dli_saddr
+           << ", expected exact address " << static_cast<const void*>(address);
+  }
+  return ::testing::AssertionSuccess();
 }
 
 class OatFileTest : public DexoptTest {};
@@ -77,6 +106,174 @@ TEST_F(OatFileTest, LoadOat) {
 
   // Check that the vdex file was loaded in the reserved space of odex file.
   EXPECT_EQ(odex_file->GetVdexFile()->Begin(), odex_file->VdexBegin());
+
+  // Non-executable path loads reject DlOpenOatFile and use ElfOatFile. The
+  // private mapping must not appear in the platform linker's module list.
+  Dl_info info = {};
+  EXPECT_EQ(dladdr(odex_file->Begin(), &info), 0);
+}
+
+TEST_F(OatFileTest, LoadAtReservation) {
+  std::string dex_location = GetScratchDir() + "/LoadAtReservation.jar";
+  Copy(GetDexSrc1(), dex_location);
+  GenerateOatForTest(dex_location.c_str(), CompilerFilter::kSpeed);
+
+  std::string oat_location;
+  std::string error_msg;
+  ASSERT_TRUE(OatFileAssistant::DexLocationToOatFilename(
+      dex_location, kRuntimeISA, &oat_location, &error_msg))
+      << error_msg;
+
+  std::unique_ptr<File> oat_file(OS::OpenFileForReading(oat_location.c_str()));
+  ASSERT_NE(oat_file, nullptr);
+  std::unique_ptr<ElfFile> elf_file(ElfFile::Open(oat_file.get(), /*low_4gb=*/false, &error_msg));
+  ASSERT_NE(elf_file, nullptr) << error_msg;
+  size_t loaded_size;
+  ASSERT_TRUE(elf_file->GetLoadedSize(&loaded_size, &error_msg)) << error_msg;
+
+  MemMap reservation = MemMap::MapAnonymousAligned("OatFileTest reservation",
+                                                   loaded_size,
+                                                   PROT_NONE,
+                                                   /*low_4gb=*/false,
+                                                   kElfSegmentAlignment,
+                                                   &error_msg);
+  ASSERT_TRUE(reservation.IsValid()) << error_msg;
+  const uint8_t* expected_elf_begin = reservation.Begin();
+
+  std::unique_ptr<OatFile> loaded(OatFile::Open(/*zip_fd=*/-1,
+                                                oat_location,
+                                                oat_location,
+                                                /*executable=*/true,
+                                                /*low_4gb=*/false,
+                                                ArrayRef<const std::string>(&dex_location, 1u),
+                                                /*dex_files=*/{},
+                                                &reservation,
+                                                &error_msg));
+  ASSERT_NE(loaded, nullptr) << error_msg;
+  EXPECT_FALSE(reservation.IsValid());
+  EXPECT_EQ(loaded->ComputeElfBegin(&error_msg), expected_elf_begin) << error_msg;
+  EXPECT_EQ(loaded->GetVdexFile()->Begin(), loaded->VdexBegin());
+}
+
+TEST_F(OatFileTest, FileDescriptorLoadUsesElfOatFile) {
+  std::string dex_location = GetScratchDir() + "/FileDescriptorLoad.jar";
+  std::string oat_location = GetScratchDir() + "/FileDescriptorLoad.odex";
+  std::string vdex_location = GetVdexFilename(oat_location);
+  Copy(GetDexSrc1(), dex_location);
+  ASSERT_NO_FATAL_FAILURE(GenerateOdexForTest(dex_location, oat_location, CompilerFilter::kSpeed));
+
+  android::base::unique_fd zip_fd(open(dex_location.c_str(), O_RDONLY | O_CLOEXEC));
+  android::base::unique_fd vdex_fd(open(vdex_location.c_str(), O_RDONLY | O_CLOEXEC));
+  android::base::unique_fd oat_fd(open(oat_location.c_str(), O_RDONLY | O_CLOEXEC));
+  ASSERT_TRUE(zip_fd.ok());
+  ASSERT_TRUE(vdex_fd.ok());
+  ASSERT_TRUE(oat_fd.ok());
+
+  std::string error_msg;
+  std::unique_ptr<OatFile> loaded(OatFile::Open(zip_fd.get(),
+                                                vdex_fd.get(),
+                                                oat_fd.get(),
+                                                oat_location,
+                                                /*executable=*/true,
+                                                /*low_4gb=*/false,
+                                                ArrayRef<const std::string>(&dex_location, 1u),
+                                                /*dex_files=*/{},
+                                                /*reservation=*/nullptr,
+                                                &error_msg));
+  ASSERT_NE(loaded, nullptr) << error_msg;
+  EXPECT_TRUE(error_msg.empty()) << error_msg;
+  EXPECT_EQ(loaded->GetVdexFile()->Begin(), loaded->VdexBegin());
+
+  // The fd overload selects ElfOatFile directly, even for executable input.
+  Dl_info info = {};
+  EXPECT_EQ(dladdr(loaded->Begin(), &info), 0);
+}
+
+TEST_F(OatFileTest, DuplicateLoadsHaveIndependentState) {
+  std::string dex_location = GetScratchDir() + "/DuplicateLoads.jar";
+  Copy(GetDexSrc1(), dex_location);
+  GenerateOatForTest(dex_location.c_str(), CompilerFilter::kSpeed);
+
+  std::string oat_location;
+  std::string error_msg;
+  ASSERT_TRUE(OatFileAssistant::DexLocationToOatFilename(
+      dex_location, kRuntimeISA, &oat_location, &error_msg))
+      << error_msg;
+
+  auto open = [&]() {
+    error_msg.clear();
+    return std::unique_ptr<OatFile>(OatFile::Open(/*zip_fd=*/-1,
+                                                  oat_location,
+                                                  oat_location,
+                                                  /*executable=*/true,
+                                                  /*low_4gb=*/false,
+                                                  dex_location,
+                                                  &error_msg));
+  };
+  std::unique_ptr<OatFile> first = open();
+  ASSERT_NE(first, nullptr) << error_msg;
+  std::unique_ptr<OatFile> second = open();
+  ASSERT_NE(second, nullptr) << error_msg;
+
+  std::string first_error;
+  std::string second_error;
+  EXPECT_NE(first->ComputeElfBegin(&first_error), second->ComputeElfBegin(&second_error));
+  EXPECT_TRUE(first_error.empty()) << first_error;
+  EXPECT_TRUE(second_error.empty()) << second_error;
+  EXPECT_NE(first->Begin(), second->Begin());
+  if (first->BssBegin() != nullptr || second->BssBegin() != nullptr) {
+    ASSERT_NE(first->BssBegin(), nullptr);
+    ASSERT_NE(second->BssBegin(), nullptr);
+    EXPECT_NE(first->BssBegin(), second->BssBegin());
+  }
+  if (first->VdexBegin() != nullptr || second->VdexBegin() != nullptr) {
+    ASSERT_NE(first->VdexBegin(), nullptr);
+    ASSERT_NE(second->VdexBegin(), nullptr);
+    EXPECT_NE(first->VdexBegin(), second->VdexBegin());
+  }
+
+  second.reset();
+  EXPECT_TRUE(first->GetOatHeader().IsValid());
+  EXPECT_EQ(first->GetVdexFile()->Begin(), first->VdexBegin());
+}
+
+TEST_F(OatFileTest, SdmZipEntryLoad) {
+  std::string dex_location = GetScratchDir() + "/SdmZipEntryLoad.jar";
+  std::string sdm_location =
+      GetScratchDir() + "/SdmZipEntryLoad." + GetInstructionSetString(kRuntimeISA) + ".sdm";
+  std::string dm_location = GetScratchDir() + "/SdmZipEntryLoad.dm";
+  std::string sdc_location = GetScratchDir() + "/SdmZipEntryLoad.sdc";
+  Copy(GetMultiDexUncompressedAlignedSrc1(), dex_location);
+
+  ASSERT_NO_FATAL_FAILURE(GenerateSdmDmForTest(dex_location,
+                                               sdm_location,
+                                               dm_location,
+                                               CompilerFilter::kSpeedProfile,
+                                               /*include_app_image=*/false,
+                                               /*compilation_reason=*/"cloud"));
+  ASSERT_NO_FATAL_FAILURE(
+      CreateSecureDexMetadataCompanion(sdm_location, runtime_->GetApexVersions(), sdc_location));
+
+  std::string error_msg;
+  std::unique_ptr<OatFile> loaded(OatFile::OpenFromSdm(sdm_location,
+                                                       sdc_location,
+                                                       dm_location,
+                                                       dex_location,
+                                                       /*executable=*/true,
+                                                       &error_msg));
+  ASSERT_NE(loaded, nullptr) << error_msg;
+  EXPECT_EQ(loaded->GetVdexFile()->Begin(), loaded->VdexBegin());
+
+  Dl_info info = {};
+  if (kIsTargetAndroid) {
+    ASSERT_NE(dladdr(loaded->Begin(), &info), 0);
+    EXPECT_STREQ(info.dli_sname, "oatdata");
+    EXPECT_THAT(info.dli_fname, HasSubstr("!/primary.odex"));
+  } else {
+    // Desktop dlopen does not implement Bionic's ZIP-entry extension, so the
+    // Linux host path falls back to ElfOatFile.
+    EXPECT_EQ(dladdr(loaded->Begin(), &info), 0);
+  }
 }
 
 TEST_F(OatFileTest, ChangingMultiDexUncompressed) {
@@ -166,7 +363,7 @@ TEST_F(OatFileTest, DlOpenLoad) {
   ASSERT_TRUE(error_msg.empty()) << error_msg;
 #endif
 
-  const char *dlerror_msg = dlerror();
+  const char* dlerror_msg = dlerror();
   ASSERT_EQ(dlerror_msg, nullptr) << dlerror_msg;
 
   // Ensure that the oat file is loaded with dlopen by requesting information about it
@@ -174,9 +371,37 @@ TEST_F(OatFileTest, DlOpenLoad) {
   Dl_info info;
   ASSERT_NE(dladdr(odex_file->Begin(), &info), 0);
   EXPECT_STREQ(info.dli_fname, oat_location.c_str())
-      << "dli_fname: " << info.dli_fname
-      << ", location: " << oat_location;
+      << "dli_fname: " << info.dli_fname << ", location: " << oat_location;
   EXPECT_STREQ(info.dli_sname, "oatdata") << info.dli_sname;
+
+  EXPECT_TRUE(DladdrIdentifies(odex_file->Begin(), "oatdata"));
+  EXPECT_TRUE(DladdrIdentifies(odex_file->Begin() + odex_file->GetOatHeader().GetExecutableOffset(),
+                               "oatexec"));
+  EXPECT_TRUE(DladdrIdentifies(odex_file->End() - sizeof(uint32_t), "oatlastword"));
+  if (odex_file->DataImgRelRoBegin() != nullptr) {
+    EXPECT_TRUE(DladdrIdentifies(odex_file->DataImgRelRoBegin(), "oatdataimgrelro"));
+    EXPECT_TRUE(DladdrIdentifies(odex_file->DataImgRelRoEnd() - sizeof(uint32_t),
+                                 "oatdataimgrelrolastword"));
+    if (odex_file->DataImgRelRoAppImage() != odex_file->DataImgRelRoEnd()) {
+      EXPECT_TRUE(DladdrIdentifies(odex_file->DataImgRelRoAppImage(), "oatdataimgrelroappimage"));
+    }
+  }
+  if (odex_file->BssBegin() != nullptr) {
+    EXPECT_TRUE(DladdrIdentifies(odex_file->BssBegin(), "oatbss"));
+    EXPECT_TRUE(DladdrIdentifies(odex_file->BssEnd() - sizeof(uint32_t), "oatbsslastword"));
+    if (odex_file->BssMethodsOffset() < odex_file->BssRootsOffset()) {
+      EXPECT_TRUE(
+          DladdrIdentifies(odex_file->BssBegin() + odex_file->BssMethodsOffset(), "oatbssmethods"));
+    }
+    if (odex_file->BssRootsOffset() < odex_file->BssSize()) {
+      EXPECT_TRUE(
+          DladdrIdentifies(odex_file->BssBegin() + odex_file->BssRootsOffset(), "oatbssroots"));
+    }
+  }
+  if (odex_file->VdexBegin() != nullptr) {
+    EXPECT_TRUE(DladdrIdentifies(odex_file->VdexBegin(), "oatdex"));
+    EXPECT_TRUE(DladdrIdentifies(odex_file->VdexEnd() - sizeof(uint32_t), "oatdexlastword"));
+  }
 }
 
 TEST_F(OatFileTest, RejectsCdex) {
@@ -233,4 +458,4 @@ TEST_F(OatFileTest, RejectsCdex) {
   }
 }
 
-}  // namespace art
+}  // namespace art HIDDEN
