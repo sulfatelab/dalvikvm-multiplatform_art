@@ -352,7 +352,10 @@ bool Runtime::CheckPlatformProcessPolicy() {
              << " flags=0x" << std::hex << observation.flags
              << " known_incompatible=0x"
              << KnownIncompatibleUserShadowStackPolicyFlags(observation.flags)
-             << " error=" << std::dec << observation.query_error;
+             << " error=" << std::dec << observation.query_error
+             << " test_policy_forced=" << observation.test_policy_forced
+             << " test_policy_input_valid=" << observation.test_policy_input_valid
+             << " test_forced_flags=0x" << std::hex << observation.test_forced_flags;
   return false;
 }
 

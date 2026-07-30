@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <cstring>
+
 namespace art {
 
 namespace {
@@ -28,7 +30,58 @@ bool QueryWindowsBuild(uint32_t* build) {
   return true;
 }
 
+template <typename Setter>
+uint32_t PolicyFlags(Setter setter) {
+  PROCESS_MITIGATION_USER_SHADOW_STACK_POLICY policy = {};
+  setter(&policy);
+  return policy.Flags;
+}
+
 }  // namespace
+
+bool ParseTestUserShadowStackPolicy(const char* value, uint32_t* forced_flags) {
+  if (value == nullptr || forced_flags == nullptr) {
+    return false;
+  }
+  struct Entry {
+    const char* name;
+    uint32_t flags;
+  };
+  const Entry entries[] = {
+      {"enable-user-shadow-stack",
+       PolicyFlags([](auto* policy) { policy->EnableUserShadowStack = 1; })},
+      {"audit-user-shadow-stack",
+       PolicyFlags([](auto* policy) { policy->AuditUserShadowStack = 1; })},
+      {"set-context-ip-validation",
+       PolicyFlags([](auto* policy) { policy->SetContextIpValidation = 1; })},
+      {"audit-set-context-ip-validation",
+       PolicyFlags([](auto* policy) { policy->AuditSetContextIpValidation = 1; })},
+      {"strict-user-shadow-stack",
+       PolicyFlags([](auto* policy) { policy->EnableUserShadowStackStrictMode = 1; })},
+      {"block-non-cet-binaries",
+       PolicyFlags([](auto* policy) { policy->BlockNonCetBinaries = 1; })},
+      {"block-non-cet-binaries-non-ehcont",
+       PolicyFlags([](auto* policy) { policy->BlockNonCetBinariesNonEhcont = 1; })},
+      {"audit-block-non-cet-binaries",
+       PolicyFlags([](auto* policy) { policy->AuditBlockNonCetBinaries = 1; })},
+      {"relaxed-context-ip-validation",
+       PolicyFlags([](auto* policy) { policy->SetContextIpValidationRelaxedMode = 1; })},
+      {"dynamic-apis-out-of-proc-only",
+       PolicyFlags([](auto* policy) { policy->CetDynamicApisOutOfProcOnly = 1; })},
+      {"reserved-low", PolicyFlags([](auto* policy) { policy->ReservedFlags = 1u; })},
+      {"reserved-high",
+       PolicyFlags([](auto* policy) { policy->ReservedFlags = 1u << 21; })},
+      {"reserved-all",
+       PolicyFlags([](auto* policy) { policy->ReservedFlags = (1u << 22) - 1u; })},
+  };
+  for (const Entry& entry : entries) {
+    if (std::strcmp(value, entry.name) == 0) {
+      *forced_flags = entry.flags;
+      return true;
+    }
+  }
+  return false;
+}
 
 UserShadowStackPolicyObservation QueryUserShadowStackPolicy() {
   UserShadowStackPolicyObservation observation = {};
@@ -43,6 +96,21 @@ UserShadowStackPolicyObservation QueryUserShadowStackPolicy() {
                                  sizeof(policy)) != FALSE;
   observation.flags = policy.Flags;
   observation.query_error = observation.query_succeeded ? ERROR_SUCCESS : GetLastError();
+
+  char forced_policy[64] = {};
+  SetLastError(ERROR_SUCCESS);
+  const DWORD forced_length = GetEnvironmentVariableA(
+      "ART_WINDOWS_X64_TEST_FORCE_CET_POLICY", forced_policy, sizeof(forced_policy));
+  const DWORD forced_error = forced_length == 0u ? GetLastError() : ERROR_SUCCESS;
+  if (forced_length != 0u || forced_error != ERROR_ENVVAR_NOT_FOUND) {
+    observation.test_policy_forced = true;
+    observation.test_policy_input_valid =
+        forced_length != 0u && forced_length < sizeof(forced_policy) &&
+        ParseTestUserShadowStackPolicy(forced_policy, &observation.test_forced_flags);
+    if (observation.test_policy_input_valid) {
+      observation.flags |= observation.test_forced_flags;
+    }
+  }
   return observation;
 }
 
@@ -68,6 +136,9 @@ uint32_t KnownIncompatibleUserShadowStackPolicyFlags(uint32_t flags) {
 
 UserShadowStackPolicyDecision EvaluateUserShadowStackPolicy(
     const UserShadowStackPolicyObservation& observation) {
+  if (observation.test_policy_forced && !observation.test_policy_input_valid) {
+    return UserShadowStackPolicyDecision::kUnexpectedQueryFailure;
+  }
   if (!observation.windows_build_known) {
     return UserShadowStackPolicyDecision::kWindowsVersionUnavailable;
   }
