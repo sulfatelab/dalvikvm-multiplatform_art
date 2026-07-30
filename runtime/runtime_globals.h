@@ -72,7 +72,7 @@ struct PageSize {
   //    is possible;
   //  - the variable can be addressed via offset from the program counter, instead of the global
   //    offset table which would've added another level of indirection.
-  static const size_t value_ ALWAYS_HIDDEN;
+  LIBART_PE_DATA static const size_t value_ ALWAYS_HIDDEN;
 
   // There are two flags in the accessor which help to ensure the value is accessed only after the
   // static initialization is complete.

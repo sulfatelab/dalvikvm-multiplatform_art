@@ -257,7 +257,7 @@ class EXPORT Locks {
   // This lock is used in SubtypeCheck methods which are the interface for
   // any SubtypeCheck-mutating methods.
   // In Class::IsSubClass, the lock is not required since it does not update the SubtypeCheck data.
-  static Mutex* subtype_check_lock_ ACQUIRED_AFTER(deoptimization_lock_);
+  LIBART_PE_DATA static Mutex* subtype_check_lock_ ACQUIRED_AFTER(deoptimization_lock_);
 
   // The thread_list_lock_ guards ThreadList::list_. It is also commonly held to stop threads
   // attaching and detaching.
@@ -337,7 +337,7 @@ class EXPORT Locks {
   static Mutex* custom_tls_lock_ ACQUIRED_AFTER(jni_function_table_lock_);
 
   // Guard access to JIT data structures mostly used by the JIT thread.
-  static Mutex* jit_lock_ ACQUIRED_AFTER(custom_tls_lock_);
+  LIBART_PE_DATA static Mutex* jit_lock_ ACQUIRED_AFTER(custom_tls_lock_);
 
   // Guard access to any JIT data structure that mutators can also access.
   LIBART_PE_DATA static ReaderWriterMutex* jit_mutator_lock_ ACQUIRED_AFTER(custom_tls_lock_);

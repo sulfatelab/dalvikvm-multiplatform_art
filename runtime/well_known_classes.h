@@ -120,10 +120,10 @@ struct EXPORT WellKnownClasses {
   static ArtMethod* java_lang_Daemons_start;
   static ArtMethod* java_lang_Daemons_stop;
   LIBART_PE_DATA static ArtMethod* java_lang_Daemons_waitForDaemonStart;
-  static ArtMethod* java_lang_Double_doubleToRawLongBits;
+  LIBART_PE_DATA static ArtMethod* java_lang_Double_doubleToRawLongBits;
   static ArtMethod* java_lang_Double_valueOf;
   static ArtMethod* java_lang_Error_init;  // Only for the declaring class.
-  static ArtMethod* java_lang_Float_floatToRawIntBits;
+  LIBART_PE_DATA static ArtMethod* java_lang_Float_floatToRawIntBits;
   static ArtMethod* java_lang_Float_valueOf;
   static ArtMethod* java_lang_IllegalAccessError_init;  // Only for the declaring class.
   static ArtMethod* java_lang_Integer_valueOf;
@@ -135,7 +135,7 @@ struct EXPORT WellKnownClasses {
   static ArtMethod* java_lang_RuntimeException_init;  // Only for the declaring class.
   static ArtMethod* java_lang_Short_valueOf;
   static ArtMethod* java_lang_StackOverflowError_init;  // Only for the declaring class.
-  static ArtMethod* java_lang_String_charAt;
+  LIBART_PE_DATA static ArtMethod* java_lang_String_charAt;
   static ArtMethod* java_lang_Thread_dispatchUncaughtException;
   static ArtMethod* java_lang_Thread_init;
   static ArtMethod* java_lang_Thread_parkVirtualInternal;
@@ -186,10 +186,10 @@ struct EXPORT WellKnownClasses {
   static ArtField* dalvik_system_VirtualThreadFrame_refs;
   static ArtField* dalvik_system_VirtualThreadFrame_declaringClass;
   static ArtField* java_io_FileDescriptor_descriptor;
-  static ArtField* java_lang_ref_Reference_disableIntrinsic;
-  static ArtField* java_lang_ref_Reference_slowPathEnabled;
+  LIBART_PE_DATA static ArtField* java_lang_ref_Reference_disableIntrinsic;
+  LIBART_PE_DATA static ArtField* java_lang_ref_Reference_slowPathEnabled;
   LIBART_PE_DATA static ArtField* java_lang_ClassLoader_parent;
-  static ArtField* java_lang_Object_shadowKlass;
+  LIBART_PE_DATA static ArtField* java_lang_Object_shadowKlass;
   static ArtField* java_lang_String_EMPTY;
   static ArtField* java_lang_System_in;
   static ArtField* java_lang_System_out;
@@ -236,19 +236,19 @@ struct EXPORT WellKnownClasses {
   static ArtField* org_apache_harmony_dalvik_ddmc_Chunk_offset;
   static ArtField* org_apache_harmony_dalvik_ddmc_Chunk_type;
 
-  static ArtField* java_lang_Byte_ByteCache_cache;
-  static ArtField* java_lang_Character_CharacterCache_cache;
-  static ArtField* java_lang_Short_ShortCache_cache;
-  static ArtField* java_lang_Integer_IntegerCache_cache;
+  LIBART_PE_DATA static ArtField* java_lang_Byte_ByteCache_cache;
+  LIBART_PE_DATA static ArtField* java_lang_Character_CharacterCache_cache;
+  LIBART_PE_DATA static ArtField* java_lang_Short_ShortCache_cache;
+  LIBART_PE_DATA static ArtField* java_lang_Integer_IntegerCache_cache;
   static ArtField* java_lang_Long_LongCache_cache;
 
   static ArtField* java_lang_Boolean_value;
   static ArtField* java_lang_Float_value;
   static ArtField* java_lang_Double_value;
-  static ArtField* java_lang_Byte_value;
-  static ArtField* java_lang_Character_value;
-  static ArtField* java_lang_Short_value;
-  static ArtField* java_lang_Integer_value;
+  LIBART_PE_DATA static ArtField* java_lang_Byte_value;
+  LIBART_PE_DATA static ArtField* java_lang_Character_value;
+  LIBART_PE_DATA static ArtField* java_lang_Short_value;
+  LIBART_PE_DATA static ArtField* java_lang_Integer_value;
   static ArtField* java_lang_Long_value;
 
   static constexpr ClassFromField<&dalvik_system_BaseDexClassLoader_pathList>
