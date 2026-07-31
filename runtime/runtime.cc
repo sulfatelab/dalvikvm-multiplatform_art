@@ -2570,7 +2570,7 @@ void Runtime::InitNativeMethods() {
     if (!java_vm_->LoadNativeLibrary(
           env,
 #if defined(_WIN32)
-          "libicu_jni.dll",
+          "icu_jni.dll",
 #else
           "libicu_jni.so",
 #endif
@@ -2583,7 +2583,7 @@ void Runtime::InitNativeMethods() {
     if (!java_vm_->LoadNativeLibrary(
           env,
 #if defined(_WIN32)
-          "libjavacore.dll",
+          "javacore.dll",
 #else
           "libjavacore.so",
 #endif
@@ -2593,9 +2593,7 @@ void Runtime::InitNativeMethods() {
   }
   {
 #if defined(_WIN32)
-    constexpr const char* kOpenJdkLibrary = kIsDebugBuild
-                                                ? "libopenjdkd.dll"
-                                                : "libopenjdk.dll";
+    constexpr const char* kOpenJdkLibrary = "openjdk.dll";
 #else
     constexpr const char* kOpenJdkLibrary = kIsDebugBuild
                                                 ? "libopenjdkd.so"
