@@ -1,6 +1,7 @@
 #include "cet_compat.h"
 
 #include <windows.h>
+#include <mdvm_windows_utf8.h>
 
 #include <cstring>
 
@@ -97,16 +98,23 @@ UserShadowStackPolicyObservation QueryUserShadowStackPolicy() {
   observation.flags = policy.Flags;
   observation.query_error = observation.query_succeeded ? ERROR_SUCCESS : GetLastError();
 
-  char forced_policy[64] = {};
+  wchar_t forced_policy[64] = {};
   SetLastError(ERROR_SUCCESS);
-  const DWORD forced_length = GetEnvironmentVariableA(
-      "ART_WINDOWS_X64_TEST_FORCE_CET_POLICY", forced_policy, sizeof(forced_policy));
+  const DWORD forced_length = GetEnvironmentVariableW(
+      L"ART_WINDOWS_X64_TEST_FORCE_CET_POLICY",
+      forced_policy,
+      sizeof(forced_policy) / sizeof(forced_policy[0]));
   const DWORD forced_error = forced_length == 0u ? GetLastError() : ERROR_SUCCESS;
   if (forced_length != 0u || forced_error != ERROR_ENVVAR_NOT_FOUND) {
     observation.test_policy_forced = true;
-    observation.test_policy_input_valid =
-        forced_length != 0u && forced_length < sizeof(forced_policy) &&
-        ParseTestUserShadowStackPolicy(forced_policy, &observation.test_forced_flags);
+    char* forced_policy_utf8 =
+        forced_length != 0u &&
+            forced_length < sizeof(forced_policy) / sizeof(forced_policy[0])
+            ? mdvm_utf16_to_utf8_alloc(forced_policy)
+            : nullptr;
+    observation.test_policy_input_valid = forced_policy_utf8 != nullptr &&
+        ParseTestUserShadowStackPolicy(forced_policy_utf8, &observation.test_forced_flags);
+    free(forced_policy_utf8);
     if (observation.test_policy_input_valid) {
       observation.flags |= observation.test_forced_flags;
     }

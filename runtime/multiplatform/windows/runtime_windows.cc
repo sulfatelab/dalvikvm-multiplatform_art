@@ -26,10 +26,10 @@ thread_local bool g_fatal_unwind_trace_active = false;
 
 constexpr size_t kFatalUnwindTraceFrameLimit = 32u;
 
-static bool EnvironmentFlagEnabled(const char* name) {
-  char value[2] = {};
-  const DWORD length = GetEnvironmentVariableA(name, value, sizeof(value));
-  return length == 1u && value[0] == '1';
+static bool EnvironmentFlagEnabled(const wchar_t* name) {
+  wchar_t value[2] = {};
+  const DWORD length = GetEnvironmentVariableW(name, value, 2u);
+  return length == 1u && value[0] == L'1';
 }
 
 static void WriteFatalUnwindTraceLine(const char* format, ...) {
@@ -361,7 +361,8 @@ bool Runtime::CheckPlatformProcessPolicy() {
 
 void Runtime::InitPlatformSignalHandlers() {
   g_fatal_unwind_trace_enabled.store(
-      EnvironmentFlagEnabled("ART_WINDOWS_X64_FATAL_UNWIND_TRACE"), std::memory_order_relaxed);
+      EnvironmentFlagEnabled(L"ART_WINDOWS_X64_FATAL_UNWIND_TRACE"),
+      std::memory_order_relaxed);
   if (!g_veh_installed.exchange(true)) {
     g_veh_handle = AddVectoredExceptionHandler(1, ArtVectoredHandler);
     if (g_veh_handle == nullptr) {
