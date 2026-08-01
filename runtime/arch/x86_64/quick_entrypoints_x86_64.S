@@ -2736,12 +2736,19 @@ END_FUNCTION art_quick_method_exit_hook
 #if defined(_WIN32) && defined(ART_W003_FRAME_PROBE)
     .data
     .balign 8
+    // Generated nterp assembly expands the shared frame setup macros in a
+    // separate object, so the test-only counters need object-linkage symbols.
+    // They are deliberately not part of art.dll's export table.
+    .globl art_w003_frame_probe_refs_only
 art_w003_frame_probe_refs_only:
     .quad 0
+    .globl art_w003_frame_probe_refs_and_args
 art_w003_frame_probe_refs_and_args:
     .quad 0
+    .globl art_w003_frame_probe_all_callee_saves
 art_w003_frame_probe_all_callee_saves:
     .quad 0
+    .globl art_w003_frame_probe_everything
 art_w003_frame_probe_everything:
     .quad 0
     .text
