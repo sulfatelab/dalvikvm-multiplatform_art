@@ -17,6 +17,8 @@
 #ifndef ART_COMPILER_OPTIMIZING_SCHEDULER_H_
 #define ART_COMPILER_OPTIMIZING_SCHEDULER_H_
 
+#include <stdlib.h>
+
 #include <fstream>
 
 #include "base/macros.h"
