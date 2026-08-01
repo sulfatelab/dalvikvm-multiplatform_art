@@ -17,34 +17,6 @@
 #ifndef ART_LIBARTBASE_BASE_MMAN_H_
 #define ART_LIBARTBASE_BASE_MMAN_H_
 
-#ifdef _WIN32
-
-// There is no sys/mman.h in mingw.
-
-#define PROT_READ      0x1
-#define PROT_WRITE     0x2
-#define PROT_EXEC      0x4
-#define PROT_NONE      0x0
-
-#define MAP_SHARED     0x01
-#define MAP_PRIVATE    0x02
-
-#define MAP_FAILED     ((void*) -1)
-#define MAP_FIXED      0x10
-#define MAP_ANONYMOUS  0x20
-#define MAP_32BIT     0x40
-#define MREMAP_MAYMOVE 1
-#define MREMAP_FIXED 2
-#define MREMAP_DONTUNMAP 4
-#define MS_SYNC 4
-#define MS_ASYNC 1
-#define MS_INVALIDATE 2
-
-#else
-
 #include <sys/mman.h>
-
-#endif
-
 
 #endif  // ART_LIBARTBASE_BASE_MMAN_H_

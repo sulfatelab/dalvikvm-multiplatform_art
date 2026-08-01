@@ -23,6 +23,7 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <sys/time.h>
 
 #include <limits>
 #include <sstream>
@@ -30,10 +31,6 @@
 #include "android-base/stringprintf.h"
 
 #include "logging.h"
-
-#if defined(__APPLE__)
-#include <sys/time.h>
-#endif
 
 namespace art {
 

@@ -1,9 +1,3 @@
-#ifdef _WIN32
-#ifdef ZeroMemory
-#undef ZeroMemory
-#endif
-#endif
-// MDVM_UNDEFINE_ZEROMEMORY
 /*
  * Copyright (C) 2008 The Android Open Source Project
  *
@@ -53,6 +47,12 @@
 #include "memory_tool.h"
 #include "mman.h"  // For the PROT_* and MAP_* constants.
 #include "utils.h"
+
+#ifdef _WIN32
+#ifdef ZeroMemory
+#undef ZeroMemory
+#endif
+#endif
 
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
