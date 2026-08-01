@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include <cwchar>
 #include <iostream>
 #include <string>
 
@@ -260,25 +261,36 @@ static void DumpException(EXCEPTION_POINTERS* info, const char* tag) {
 
 static void TryWriteMiniDump(EXCEPTION_POINTERS* info) {
   // Best-effort dump under run/crash if present; never throw from filter.
-  char cwd[MAX_PATH];
-  if (GetCurrentDirectoryA(sizeof(cwd), cwd) == 0) {
+  wchar_t cwd[MAX_PATH];
+  if (GetCurrentDirectoryW(MAX_PATH, cwd) == 0) {
     return;
   }
-  std::string dir = std::string(cwd) + "\\run\\crash";
-  CreateDirectoryA((std::string(cwd) + "\\run").c_str(), nullptr);
-  CreateDirectoryA(dir.c_str(), nullptr);
-  char path[MAX_PATH];
+  std::wstring run_dir = std::wstring(cwd) + L"\\run";
+  std::wstring crash_dir = run_dir + L"\\crash";
+  CreateDirectoryW(run_dir.c_str(), nullptr);
+  CreateDirectoryW(crash_dir.c_str(), nullptr);
+  wchar_t path[MAX_PATH];
   SYSTEMTIME st;
   GetLocalTime(&st);
-  snprintf(path, sizeof(path),
-           "%s\\art-%04u%02u%02u-%02u%02u%02u.dmp",
-           dir.c_str(),
-           (unsigned)st.wYear, (unsigned)st.wMonth, (unsigned)st.wDay,
-           (unsigned)st.wHour, (unsigned)st.wMinute, (unsigned)st.wSecond);
-  HANDLE file = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
+  if (swprintf(path,
+               MAX_PATH,
+               L"%ls\\art-%04u%02u%02u-%02u%02u%02u.dmp",
+               crash_dir.c_str(),
+               (unsigned)st.wYear,
+               (unsigned)st.wMonth,
+               (unsigned)st.wDay,
+               (unsigned)st.wHour,
+               (unsigned)st.wMinute,
+               (unsigned)st.wSecond) < 0) {
+    return;
+  }
+  char* path_utf8 = mdvm_utf16_to_utf8_alloc(path);
+  const char* printable_path = path_utf8 != nullptr ? path_utf8 : "<invalid-path>";
+  HANDLE file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
                             FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file == INVALID_HANDLE_VALUE) {
-    std::cerr << "ART Win32 crash: CreateFile dump failed for " << path << std::endl;
+    std::cerr << "ART Win32 crash: CreateFile dump failed for " << printable_path << std::endl;
+    free(path_utf8);
     return;
   }
   MINIDUMP_EXCEPTION_INFORMATION mei;
@@ -294,10 +306,11 @@ static void TryWriteMiniDump(EXCEPTION_POINTERS* info) {
                                     nullptr);
   CloseHandle(file);
   if (ok) {
-    std::cerr << "ART Win32 crash: minidump written to " << path << std::endl;
+    std::cerr << "ART Win32 crash: minidump written to " << printable_path << std::endl;
   } else {
     std::cerr << "ART Win32 crash: MiniDumpWriteDump failed err=" << GetLastError() << std::endl;
   }
+  free(path_utf8);
   std::cerr.flush();
 }
 
