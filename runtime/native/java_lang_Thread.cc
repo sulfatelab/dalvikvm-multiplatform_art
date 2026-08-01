@@ -16,6 +16,8 @@
 
 #include "java_lang_Thread.h"
 
+#include <sched.h>
+
 #include "android-base/logging.h"
 #include "android-base/macros.h"
 #include "art_field-inl.h"

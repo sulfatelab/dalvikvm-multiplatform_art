@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <linux/userfaultfd.h>
 #include <poll.h>
+#include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
@@ -110,7 +111,7 @@ static constexpr uint64_t kUffdFeaturesForMinorFault =
 static constexpr uint64_t kUffdFeaturesForSigbus = UFFD_FEATURE_SIGBUS;
 // A region which is more than kBlackDenseRegionThreshold percent live doesn't
 // need to be compacted as it is too densely packed.
-static constexpr uint kBlackDenseRegionThreshold = 95U;
+static constexpr uint32_t kBlackDenseRegionThreshold = 95U;
 // We consider SIGBUS feature necessary to enable this GC as it's superior than
 // threading-based implementation for janks. We may want minor-fault in future
 // to be available for making jit-code-cache updation concurrent, which uses shmem.

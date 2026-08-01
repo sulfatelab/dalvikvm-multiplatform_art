@@ -30,7 +30,7 @@ namespace space {
 
 // If a region has live objects whose size is less than this percent
 // value of the region size, evaculate the region.
-static constexpr uint kEvacuateLivePercentThreshold = 75U;
+static constexpr uint32_t kEvacuateLivePercentThreshold = 75U;
 
 // Whether we protect the unused and cleared regions.
 static constexpr bool kProtectClearedRegions = kIsDebugBuild;
@@ -191,7 +191,7 @@ void RegionSpace::Region::SetAsUnevacFromSpace(bool clear_live_bytes) {
   if (IsNewlyAllocated()) {
     // A newly allocated region set as unevac from-space must be
     // a large or large tail region.
-    DCHECK(IsLarge() || IsLargeTail()) << static_cast<uint>(state_);
+    DCHECK(IsLarge() || IsLargeTail()) << static_cast<uint32_t>(state_);
     // Always clear the live bytes of a newly allocated (large or
     // large tail) region.
     clear_live_bytes = true;

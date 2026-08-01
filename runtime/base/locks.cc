@@ -17,6 +17,7 @@
 #include "locks.h"
 
 #include <errno.h>
+#include <sched.h>
 #include <sys/time.h>
 
 #include "android-base/logging.h"

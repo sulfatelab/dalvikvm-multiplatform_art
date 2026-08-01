@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <nativehelper/scoped_local_ref.h>
 #include <nativehelper/scoped_utf_chars.h>
+#include <sched.h>
 #include <sys/resource.h>  // For getpriority()
 #include <sys/types.h>
 #include <unistd.h>

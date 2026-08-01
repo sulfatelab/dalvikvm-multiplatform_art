@@ -16,6 +16,7 @@
 
 #include "native_bridge_art_interface.h"
 
+#include <sched.h>
 #include <signal.h>
 
 #include "nativebridge/native_bridge.h"

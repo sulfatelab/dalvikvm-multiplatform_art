@@ -18,6 +18,7 @@
 
 #include <limits.h>  // for INT_MAX
 #include <pthread.h>
+#include <sched.h>
 #ifdef _WIN32
 #include <windows.h>
 #endif

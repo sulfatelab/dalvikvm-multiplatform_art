@@ -17,6 +17,7 @@
 #include "mutex.h"
 
 #include <errno.h>
+#include <sched.h>
 #include <sys/time.h>
 
 #include <sstream>
@@ -252,9 +253,9 @@ void BaseMutex::CheckSafeToWait(Thread* self) {
   // Avoid repeated reporting of the same violation in the common case.
   // We somewhat ignore races in the duplicate elision code. The first kMaxReports and the first
   // report for a given level_ should always appear.
-  static std::atomic<uint> last_level_reported(kLockLevelCount);
+  static std::atomic<uint32_t> last_level_reported(kLockLevelCount);
   static constexpr int kMaxReports = 5;
-  static std::atomic<uint> num_reports(0);  // For the current level, more or less.
+  static std::atomic<uint32_t> num_reports(0);  // For the current level, more or less.
 
   if (self == nullptr) {
     CheckUnattachedThread(level_);

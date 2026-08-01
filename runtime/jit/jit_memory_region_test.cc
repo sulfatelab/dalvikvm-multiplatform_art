@@ -18,6 +18,7 @@
 
 #include <android-base/unique_fd.h>
 #include <gtest/gtest.h>
+#include <sched.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/types.h>

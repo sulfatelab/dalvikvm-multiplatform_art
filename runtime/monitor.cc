@@ -15,6 +15,7 @@
  */
 
 #include <android-base/properties.h>
+#include <sched.h>
 
 #include <vector>
 

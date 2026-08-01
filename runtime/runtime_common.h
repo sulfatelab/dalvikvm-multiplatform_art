@@ -25,6 +25,7 @@
 #define _XOPEN_SOURCE
 #endif
 
+#include <signal.h>
 #include <sys/utsname.h>
 #include <ucontext.h>
 

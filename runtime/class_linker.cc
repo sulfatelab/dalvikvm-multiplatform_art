@@ -16,6 +16,7 @@
 
 #include "class_linker.h"
 
+#include <sched.h>
 #include <unistd.h>
 
 #include <algorithm>
