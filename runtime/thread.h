@@ -360,14 +360,17 @@ struct Win32StackOverflowHighWater {
 // if the thread makes a call out to a native function (through JNI), that native function
 // might only have 4K of memory (if the SP is adjacent to stack_end).
 
-class EXPORT Thread {
+class ART_VISIBILITY_EXPORT Thread {
  public:
   static const size_t kStackOverflowImplicitCheckSize;
   static constexpr bool kVerifyStack = kIsDebugBuild;
 
   // Creates a new native thread corresponding to the given managed peer.
   // Used to implement Thread.start.
-  static void CreateNativeThread(JNIEnv* env, jobject peer, size_t stack_size, bool daemon);
+  EXPORT static void CreateNativeThread(JNIEnv* env,
+                                        jobject peer,
+                                        size_t stack_size,
+                                        bool daemon);
 
   // Attaches the calling native thread to the runtime, returning the new native peer.
   // Used to implement JNI AttachCurrentThread and AttachCurrentThreadAsDaemon calls.
@@ -468,10 +471,11 @@ class EXPORT Thread {
   void CheckEmptyCheckpointFromWeakRefAccess(BaseMutex* cond_var_mutex);
   void CheckEmptyCheckpointFromMutex();
 
-  static Thread* FromManagedThread(Thread* self, ObjPtr<mirror::Object> thread_peer)
+  EXPORT static Thread* FromManagedThread(Thread* self, ObjPtr<mirror::Object> thread_peer)
       REQUIRES(Locks::thread_list_lock_, !Locks::thread_suspend_count_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  static Thread* FromManagedThread(const ScopedObjectAccessAlreadyRunnable& ts, jobject thread)
+  EXPORT static Thread* FromManagedThread(const ScopedObjectAccessAlreadyRunnable& ts,
+                                          jobject thread)
       REQUIRES(Locks::thread_list_lock_, !Locks::thread_suspend_count_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -616,7 +620,8 @@ class EXPORT Thread {
 
   // Wait for the flip function to complete if still running on another thread. Assumes the "this"
   // thread remains live.
-  void WaitForFlipFunction(Thread* self) const REQUIRES(!Locks::thread_suspend_count_lock_);
+  EXPORT void WaitForFlipFunction(Thread* self) const
+      REQUIRES(!Locks::thread_suspend_count_lock_);
 
   // An enhanced version of the above that uses tef to safely return if the thread exited in the
   // meantime.
@@ -726,7 +731,8 @@ class EXPORT Thread {
 
   size_t NumberOfHeldMutexes() const;
 
-  bool HoldsLock(ObjPtr<mirror::Object> object) const REQUIRES_SHARED(Locks::mutator_lock_);
+  EXPORT bool HoldsLock(ObjPtr<mirror::Object> object) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   /*
    * Set native thread niceness to match the given Java priority.
@@ -797,7 +803,7 @@ class EXPORT Thread {
 
   // Sets 'name' to the java.lang.Thread's name. This requires no transition to managed code,
   // allocation, or locking.
-  void GetThreadName(std::string& name) const;
+  EXPORT void GetThreadName(std::string& name) const;
 
   // Sets the thread's name.
   void SetThreadName(const char* name) REQUIRES_SHARED(Locks::mutator_lock_);
@@ -1020,10 +1026,10 @@ class EXPORT Thread {
   }
 
   // Implements java.lang.Thread.interrupted.
-  bool Interrupted();
+  EXPORT bool Interrupted();
   // Implements java.lang.Thread.isInterrupted.
-  bool IsInterrupted();
-  void Interrupt(Thread* self) REQUIRES(!wait_mutex_);
+  EXPORT bool IsInterrupted();
+  EXPORT void Interrupt(Thread* self) REQUIRES(!wait_mutex_);
   void SetInterrupted(bool i) {
     tls32_.interrupted.store(i, std::memory_order_seq_cst);
   }
@@ -1449,10 +1455,11 @@ class EXPORT Thread {
   bool IsRawObjOnQuickStack(uint8_t* raw_obj) const;
 
   // Is the given obj in one of this thread's JNI transition frames?
-  bool IsJniTransitionReference(jobject obj) const REQUIRES_SHARED(Locks::mutator_lock_);
+  EXPORT bool IsJniTransitionReference(jobject obj) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Convert a global (or weak global) jobject into a Object*
-  ObjPtr<mirror::Object> DecodeGlobalJObject(jobject obj) const
+  EXPORT ObjPtr<mirror::Object> DecodeGlobalJObject(jobject obj) const
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   void HandleScopeVisitRoots(RootVisitor* visitor, uint32_t thread_id)
@@ -2011,7 +2018,7 @@ class EXPORT Thread {
     return tlsPtr_.mutator_lock;
   }
 
-  void VerifyStackImpl() REQUIRES_SHARED(Locks::mutator_lock_);
+  EXPORT void VerifyStackImpl() REQUIRES_SHARED(Locks::mutator_lock_);
 
   void DumpState(std::ostream& os) const REQUIRES_SHARED(Locks::mutator_lock_);
   DumpOrder DumpStack(std::ostream& os,
@@ -2025,7 +2032,7 @@ class EXPORT Thread {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Out-of-line conveniences for debugging in gdb.
-  LIBART_PE_API static Thread* CurrentFromGdb();  // Like Thread::Current.
+  EXPORT LIBART_PE_API static Thread* CurrentFromGdb();  // Like Thread::Current.
   // Like Thread::Dump(std::cerr).
   void DumpFromGdb() const REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -2077,7 +2084,7 @@ class EXPORT Thread {
   // Decrement all "suspend barriers" for the current thread, notifying threads that requested our
   // suspension. Only called on current thread, when suspended. If suspend_count_ > 0 then we
   // promise that we are and will remain "suspended" until the suspend count is decremented.
-  bool PassActiveSuspendBarriers()
+  EXPORT bool PassActiveSuspendBarriers()
       REQUIRES(!Locks::thread_suspend_count_lock_, !Locks::mutator_lock_);
 
   // Add an entry to active_suspend1_barriers.
@@ -2118,10 +2125,10 @@ class EXPORT Thread {
   // Runs a single checkpoint function. If there are no more pending checkpoint functions it will
   // clear the kCheckpointRequest flag. The caller is responsible for calling this in a loop until
   // the kCheckpointRequest flag is cleared.
-  void RunCheckpointFunction()
+  EXPORT void RunCheckpointFunction()
       REQUIRES(!Locks::thread_suspend_count_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  void RunEmptyCheckpoint();
+  EXPORT void RunEmptyCheckpoint();
 
   // Return the nearest page-aligned address below the current stack top.
   template <StackType>
@@ -2266,11 +2273,12 @@ class EXPORT Thread {
   //    be completed when we returned.
   //  Returns true if and only if we acquired the mutator lock (which implies that we ran the flip
   //  function after finding old_state_and_flags unchanged).
-  static bool EnsureFlipFunctionStarted(Thread* self,
-                                        Thread* target,
-                                        StateAndFlags old_state_and_flags = StateAndFlags(0),
-                                        ThreadExitFlag* tef = nullptr,
-                                        /*out*/ bool* finished = nullptr)
+  EXPORT static bool EnsureFlipFunctionStarted(
+      Thread* self,
+      Thread* target,
+      StateAndFlags old_state_and_flags = StateAndFlags(0),
+      ThreadExitFlag* tef = nullptr,
+      /*out*/ bool* finished = nullptr)
       REQUIRES(!Locks::thread_list_lock_) TRY_ACQUIRE_SHARED(true, Locks::mutator_lock_);
 
   static void ThreadExitCallback(void* arg);
@@ -2286,14 +2294,14 @@ class EXPORT Thread {
 
   // Used to notify threads that they should attempt to resume, they will suspend again if
   // their suspend count is > 0.
-  LIBART_PE_DATA static ConditionVariable* resume_cond_
+  EXPORT LIBART_PE_DATA static ConditionVariable* resume_cond_
       GUARDED_BY(Locks::thread_suspend_count_lock_);
 
   // Hook passed by framework which returns true
   // when StrictMode events are traced for the current thread.
   static bool (*is_sensitive_thread_hook_)();
   // Stores the jit sensitive thread (which for now is the UI thread).
-  LIBART_PROTECTED static Thread* jit_sensitive_thread_;
+  EXPORT LIBART_PE_DATA static Thread* jit_sensitive_thread_;
 
   static constexpr uint32_t kMakeVisiblyInitializedCounterTriggerCount = 128;
 

@@ -112,7 +112,7 @@ constexpr uint32_t kJitRepackFrequency = 64;
 
 // Public binary interface between ART and native tools (gdb, libunwind, etc).
 // The fields below need to be exported and have special names as per the gdb api.
-namespace art EXPORT {
+namespace art ART_VISIBILITY_EXPORT {
 extern "C" {
   enum JITAction {
     JIT_NOACTION = 0,

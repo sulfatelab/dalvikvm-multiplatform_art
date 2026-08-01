@@ -84,7 +84,7 @@ namespace art HIDDEN {
 //
 // The superclass becomes constant during the ClassStatus::kIdx stage, so it's safe to treat it
 // as constant when reading from locations that can reference only resolved classes.
-enum EXPORT ReadBarrierOption {
+enum ART_VISIBILITY_EXPORT ReadBarrierOption {
   kWithReadBarrier,       // Perform a read barrier.
   kWithoutReadBarrier,    // Don't perform a read barrier.
   kWithFromSpaceBarrier,  // Get the from-space address for the given to-space address. Used by CMC

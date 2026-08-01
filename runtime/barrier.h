@@ -40,7 +40,7 @@ class LOCKABLE Mutex;
 // TODO: Maybe give this a better name.
 class Barrier {
  public:
-  enum EXPORT LockHandling {
+  enum ART_VISIBILITY_EXPORT LockHandling {
     kAllowHoldingLocks,
     kDisallowHoldingLocks,
   };

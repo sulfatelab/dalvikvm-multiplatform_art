@@ -134,7 +134,7 @@ class StackVisitor {
   // Return 'true' if we should continue to visit more frames, 'false' to stop.
   virtual bool VisitFrame() REQUIRES_SHARED(Locks::mutator_lock_) = 0;
 
-  enum class EXPORT CountTransitions {
+  enum class ART_VISIBILITY_EXPORT CountTransitions {
     kYes,
     kNo,
   };

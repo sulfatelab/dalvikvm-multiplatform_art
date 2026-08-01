@@ -113,7 +113,16 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 // Using symbol visibility only for release builds allows to reduce the list of
 // exported symbols and eliminates the need to check debug build configurations
 // when changing the exported symbols.
-#ifdef NDEBUG
+#if defined(_WIN32) && defined(BUILDING_LIBART)
+// PE has a fixed 65,535-entry export-table limit.  In an unoptimized build,
+// exporting every externally visible symbol also exposes tens of thousands of
+// inline/template COMDAT definitions that are implementation details.  Keep
+// the intended ART API independent of optimization by exporting declarations
+// that already carry EXPORT explicitly.
+#define HIDDEN
+#define PROTECTED
+#define EXPORT __declspec(dllexport)
+#elif defined(NDEBUG)
 #define HIDDEN /* MDVM patch 0013: export-all for the multi-.so host split */
 #define PROTECTED
 #define EXPORT __attribute__((visibility("default")))
@@ -121,6 +130,15 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 #define HIDDEN
 #define PROTECTED
 #define EXPORT
+#endif
+
+// EXPORT can decorate namespaces and enum types for ELF visibility, but PE
+// dllexport has no meaning on either declaration kind.  Keep those five AOSP
+// visibility-only sites separate from the Windows DLL ABI annotation.
+#if defined(_WIN32)
+#define ART_VISIBILITY_EXPORT
+#else
+#define ART_VISIBILITY_EXPORT EXPORT
 #endif
 
 // Protected symbols must be declared with "protected" visibility attribute when
@@ -148,8 +166,11 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 // does not provide the consumer-side indirection required for zero-initialized
 // runtime data used by optional ART plugins.
 #if defined(_WIN32) && defined(BUILDING_LIBART)
-#define LIBART_PE_DATA __declspec(dllexport)
-#define LIBART_PE_API __declspec(dllexport)
+// The defining declaration carries EXPORT, either on the enclosing class or
+// on the individual out-of-class member.  Repeating dllexport on a static
+// member of a dllexport class is rejected by Clang's GNU-style PE frontend.
+#define LIBART_PE_DATA
+#define LIBART_PE_API
 #elif defined(_WIN32) && defined(ART_CONSUMING_LIBART)
 #define LIBART_PE_DATA __declspec(dllimport)
 #define LIBART_PE_API __declspec(dllimport)

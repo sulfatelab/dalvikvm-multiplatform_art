@@ -119,7 +119,7 @@ class ScopedObjectAccessAlreadyRunnable : public ValueObject {
   // Here purely to force inlining.
   ALWAYS_INLINE ~ScopedObjectAccessAlreadyRunnable() {}
 
-  static void DCheckObjIsNotClearedJniWeakGlobal(ObjPtr<mirror::Object> obj)
+  EXPORT static void DCheckObjIsNotClearedJniWeakGlobal(ObjPtr<mirror::Object> obj)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Self thread, can be null.
