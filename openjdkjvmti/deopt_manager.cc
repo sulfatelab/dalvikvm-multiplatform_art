@@ -32,6 +32,7 @@
 #include <functional>
 #include <iosfwd>
 #include <mutex>
+#include <sched.h>
 
 #include "deopt_manager.h"
 
