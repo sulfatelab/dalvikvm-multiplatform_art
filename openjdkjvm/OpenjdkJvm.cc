@@ -36,6 +36,7 @@
 #include <assert.h>
 #include <dlfcn.h>
 #include <limits.h>
+#include <sched.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
