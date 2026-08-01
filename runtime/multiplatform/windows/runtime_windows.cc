@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <dbghelp.h>
+#include <mdvm_windows_utf8.h>
 
 #include <atomic>
 #include <cstdarg>
@@ -88,9 +89,11 @@ static const char* ModulePathForAddress(DWORD64 address,
     return "-";
   }
   *module_base = reinterpret_cast<DWORD64>(mbi.AllocationBase);
-  const DWORD length =
-      GetModuleFileNameA(reinterpret_cast<HMODULE>(mbi.AllocationBase), path, path_size);
-  if (length == 0u || length >= path_size) {
+  wchar_t wide_path[MAX_PATH + 1u] = {};
+  const DWORD length = GetModuleFileNameW(
+      reinterpret_cast<HMODULE>(mbi.AllocationBase), wide_path, MAX_PATH);
+  if (length == 0u || length >= MAX_PATH ||
+      !mdvm_utf16_to_utf8_buffer(wide_path, path, path_size)) {
     return "-";
   }
   path[length] = '\0';
