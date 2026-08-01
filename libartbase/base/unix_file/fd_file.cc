@@ -73,7 +73,7 @@ bool AllowSparseFiles() {
 class ScopedEvent {
  public:
   ScopedEvent() {
-    handle_ = CreateEventA(/*lpEventAttributes*/ nullptr,
+    handle_ = CreateEventW(/*lpEventAttributes*/ nullptr,
                            /*bManualReset*/ true,
                            /*bInitialState*/ false,
                            /*lpName*/ nullptr);
