@@ -155,7 +155,14 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 #endif
 #else
 #ifdef BUILDING_LIBART
-#define LIBART_PROTECTED PROTECTED
+#ifdef NDEBUG
+// The multi-DSO host port keeps the general PROTECTED macro empty, but these
+// explicitly annotated ART symbols are referenced directly from ISA assembly
+// and must remain locally bound in the defining ELF DSO.
+#define LIBART_PROTECTED __attribute__((visibility("protected")))
+#else
+#define LIBART_PROTECTED
+#endif
 #else
 #define LIBART_PROTECTED EXPORT
 #endif
