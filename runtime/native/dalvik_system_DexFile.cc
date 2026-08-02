@@ -376,7 +376,7 @@ static jobject DexFile_openDexFileNative(JNIEnv* env,
   if (sourceName.c_str() == nullptr) {
     return nullptr;
   }
-  LOG(INFO) << "Windows x64 DexFile_openDexFileNative source='" << sourceName.c_str() << "'";
+  LOG(INFO) << "ART DexFile_openDexFileNative source='" << sourceName.c_str() << "'";
 
   if (isReadOnlyJavaDclChecked() && access(sourceName.c_str(), W_OK) == 0) {
     LOG(ERROR) << "Attempt to load writable dex file: " << sourceName.c_str();

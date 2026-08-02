@@ -1001,17 +1001,17 @@ static jobject CreateSystemClassLoader(Runtime* runtime) {
   CHECK(getSystemClassLoader != nullptr);
   CHECK(getSystemClassLoader->IsStatic());
 
-  LOG(INFO) << "Windows x64 CreateSystemClassLoader before invoke"
+  LOG(INFO) << "ART CreateSystemClassLoader before invoke"
             << " class_path_string_='" << runtime->GetClassPathString() << "'"
             << " entry=" << getSystemClassLoader->GetEntryPointFromQuickCompiledCode()
             << " nterp_supported=" << interpreter::IsNterpSupported()
             << " can_use_nterp=" << interpreter::CanRuntimeUseNterp();
   ObjPtr<mirror::Object> system_class_loader = getSystemClassLoader->InvokeStatic<'L'>(soa.Self());
   if (soa.Self()->IsExceptionPending()) {
-    LOG(ERROR) << "Windows x64 CreateSystemClassLoader pending exception: "
+    LOG(ERROR) << "ART CreateSystemClassLoader pending exception: "
                << soa.Self()->GetException()->Dump();
   }
-  LOG(INFO) << "Windows x64 CreateSystemClassLoader after invoke loader="
+  LOG(INFO) << "ART CreateSystemClassLoader after invoke loader="
             << system_class_loader.Ptr();
   CHECK(system_class_loader != nullptr)
       << (soa.Self()->IsExceptionPending() ? soa.Self()->GetException()->Dump() : "<null>");
@@ -1142,7 +1142,7 @@ bool Runtime::Start() {
   }
 
   system_class_loader_ = CreateSystemClassLoader(this);
-  LOG(INFO) << "Windows x64 Runtime::Start after CreateSystemClassLoader"
+  LOG(INFO) << "ART Runtime::Start after CreateSystemClassLoader"
             << " can_use_nterp=" << interpreter::CanRuntimeUseNterp()
             << " finished=" << IsFinishedStarting();
 
@@ -1153,32 +1153,32 @@ bool Runtime::Start() {
     NativeBridgeAction action = force_native_bridge_
         ? NativeBridgeAction::kInitialize
         : NativeBridgeAction::kUnload;
-    LOG(INFO) << "Windows x64 Runtime::Start before InitNonZygoteOrPostFork";
+    LOG(INFO) << "ART Runtime::Start before InitNonZygoteOrPostFork";
     InitNonZygoteOrPostFork(self->GetJniEnv(),
                             /* is_system_server= */ false,
                             /* is_child_zygote= */ false,
                             action,
                             GetInstructionSetString(kRuntimeISA));
-    LOG(INFO) << "Windows x64 Runtime::Start after InitNonZygoteOrPostFork";
+    LOG(INFO) << "ART Runtime::Start after InitNonZygoteOrPostFork";
   }
 
   {
     ScopedObjectAccess soa(self);
-    LOG(INFO) << "Windows x64 Runtime::Start before StartDaemonThreads";
+    LOG(INFO) << "ART Runtime::Start before StartDaemonThreads";
     StartDaemonThreads();
-    LOG(INFO) << "Windows x64 Runtime::Start after StartDaemonThreads";
+    LOG(INFO) << "ART Runtime::Start after StartDaemonThreads";
     self->GetJniEnv()->AssertLocalsEmpty();
 
     // Send the initialized phase event. Send it after starting the Daemon threads so that agents
     // cannot delay the daemon threads from starting forever.
     callbacks_->NextRuntimePhase(RuntimePhaseCallback::RuntimePhase::kInit);
     self->GetJniEnv()->AssertLocalsEmpty();
-    LOG(INFO) << "Windows x64 Runtime::Start after kInit phase";
+    LOG(INFO) << "ART Runtime::Start after kInit phase";
   }
 
   VLOG(startup) << "Runtime::Start exiting";
   finished_starting_ = true;
-  LOG(INFO) << "Windows x64 Runtime::Start finished_starting_=true"
+  LOG(INFO) << "ART Runtime::Start finished_starting_=true"
             << " can_use_nterp=" << interpreter::CanRuntimeUseNterp();
 
 #if defined(_WIN32) && defined(__x86_64__)
