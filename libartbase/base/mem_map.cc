@@ -1441,13 +1441,16 @@ void* MemMap::MapInternal(void* addr,
   }
 
   // Prefer low 4GiB for ART heap even when a preferred address was supplied
-  // (Windows has no MAP_32BIT; TargetMMap implements the constraint).
+  // when the target exposes MAP_32BIT. Architectures without that flag use
+  // the linear-scan allocator above.
+#if defined(MAP_32BIT)
   if (low_4gb) {
     flags |= MAP_32BIT;
   }
+#endif
   actual = TargetMMap(addr, length, prot, flags, fd, offset, alignment);
 #else
-#if defined(__LP64__)
+#if defined(__LP64__) && defined(MAP_32BIT)
   if (low_4gb) {
     flags |= MAP_32BIT;
   }
