@@ -460,6 +460,34 @@ const uint8_t* ElfFileImpl<ElfTypes>::FindDynamicSymbolAddress(
   }
 }
 
+template <typename ElfTypes>
+bool ElfFileImpl<ElfTypes>::IsInLoadableFileSegment(const uint8_t* address,
+                                                    size_t size,
+                                                    uint32_t segment_flags) const {
+  if (address == nullptr || size == 0u || base_address_ == nullptr) {
+    return false;
+  }
+  const uintptr_t address_value = reinterpret_cast<uintptr_t>(address);
+  const uintptr_t base_value = reinterpret_cast<uintptr_t>(base_address_);
+  if (address_value < base_value) {
+    return false;
+  }
+  const uint64_t address_offset = address_value - base_value;
+  for (Elf_Word i = 0; i < GetProgramHeaderNum(); ++i) {
+    const Elf_Phdr* program_header = GetProgramHeader(i);
+    if (program_header->p_type != PT_LOAD || program_header->p_flags != segment_flags ||
+        address_offset < program_header->p_vaddr) {
+      continue;
+    }
+    const uint64_t offset_in_segment = address_offset - program_header->p_vaddr;
+    if (offset_in_segment <= program_header->p_filesz &&
+        size <= program_header->p_filesz - offset_in_segment) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // WARNING: Only called from FindDynamicSymbolAddress. Elides check for hash section.
 template <typename ElfTypes>
 const typename ElfTypes::Sym* ElfFileImpl<ElfTypes>::FindDynamicSymbol(

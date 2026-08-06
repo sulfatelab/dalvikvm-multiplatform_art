@@ -20,6 +20,8 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <limits>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -82,6 +84,20 @@ namespace art {
 namespace linker {
 
 namespace {  // anonymous namespace
+
+constexpr uint32_t kOatWindowsUnwindVersion = 1u;
+constexpr uint32_t kOatWindowsUnwindHeaderSize = 48u;
+constexpr uint32_t kOatWindowsX64UnwindEntrySize = 12u;
+constexpr uint32_t kImageFileMachineAmd64 = 0x8664u;
+constexpr size_t kOatWindowsUnwindChecksumOffset = 44u;
+
+void StoreUint32LittleEndian(std::vector<uint8_t>* data, size_t offset, uint32_t value) {
+  DCHECK_LE(offset + sizeof(value), data->size());
+  (*data)[offset + 0u] = static_cast<uint8_t>(value);
+  (*data)[offset + 1u] = static_cast<uint8_t>(value >> 8u);
+  (*data)[offset + 2u] = static_cast<uint8_t>(value >> 16u);
+  (*data)[offset + 3u] = static_cast<uint8_t>(value >> 24u);
+}
 
 // If we write dex layout info in the oat file.
 static constexpr bool kWriteDexLayoutInfo = true;
@@ -451,6 +467,7 @@ OatWriter::OatWriter(const CompilerOptions& compiler_options,
       data_img_rel_ro_start_(0u),
       data_img_rel_ro_size_(0u),
       data_img_rel_ro_app_image_offset_(0u),
+      windows_unwind_start_(0u),
       bss_start_(0u),
       bss_size_(0u),
       bss_methods_offset_(0u),
@@ -736,6 +753,10 @@ void OatWriter::PrepareLayout(MultiOatRelativePatcher* relative_patcher) {
   {
     TimingLogger::ScopedTiming split("InitDataImgRelRoLayout", timings_);
     offset = InitDataImgRelRoLayout(offset);
+  }
+  {
+    TimingLogger::ScopedTiming split("InitWindowsUnwindLayout", timings_);
+    offset = InitWindowsUnwindLayout(offset);
   }
   oat_size_ = offset;  // .bss does not count towards oat_size_.
   bss_start_ = (bss_size_ != 0u) ?
@@ -1269,6 +1290,11 @@ class OatWriter::LayoutReserveOffsetCodeMethodVisitor : public OrderedMethodVisi
       code_info_offset = code_offset - code_info_offset;
     }
     *method_header = OatQuickMethodHeader(code_info_offset);
+
+    writer_->AddWindowsUnwindEntry(code_offset,
+                                   code_size,
+                                   compiled_method->GetWindowsX64UnwindInfo(),
+                                   deduped);
 
     if (!deduped) {
       // Update offsets. (Checksum is updated when writing.)
@@ -2341,6 +2367,53 @@ size_t OatWriter::InitBcpBssInfo(size_t offset) {
   return offset;
 }
 
+bool OatWriter::ShouldEmitWindowsUnwind() const {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  return compiler_options_.GetInstructionSet() == InstructionSet::kX86_64 &&
+         (compiler_options_.IsBootImage() || compiler_options_.IsBootImageExtension());
+#else
+  return false;
+#endif
+}
+
+void OatWriter::AddWindowsUnwindEntry(uint32_t begin_offset,
+                                      uint32_t code_size,
+                                      ArrayRef<const uint8_t> unwind_info,
+                                      bool deduped) {
+  if (!ShouldEmitWindowsUnwind()) {
+    return;
+  }
+
+  CHECK_NE(code_size, 0u);
+  CHECK(!unwind_info.empty()) << "Windows x64 boot-AOT code has no UNWIND_INFO";
+  CHECK_LE(code_size, std::numeric_limits<uint32_t>::max() - begin_offset);
+  uint32_t end_offset = begin_offset + code_size;
+
+  auto existing = windows_unwind_entry_by_begin_.find(begin_offset);
+  if (deduped) {
+    CHECK(existing != windows_unwind_entry_by_begin_.end())
+        << "Deduplicated Windows x64 code has no unwind owner at OAT offset " << begin_offset;
+    const WindowsUnwindEntry& entry = windows_unwind_entries_[existing->second];
+    CHECK_EQ(entry.end_offset, end_offset);
+    CHECK(std::equal(entry.unwind_info.begin(),
+                     entry.unwind_info.end(),
+                     unwind_info.begin(),
+                     unwind_info.end()))
+        << "Deduplicated Windows x64 code has conflicting UNWIND_INFO at OAT offset "
+        << begin_offset;
+    return;
+  }
+
+  CHECK(existing == windows_unwind_entry_by_begin_.end())
+      << "Fresh Windows x64 code reused OAT offset " << begin_offset;
+  windows_unwind_entry_by_begin_.emplace(begin_offset, windows_unwind_entries_.size());
+  windows_unwind_entries_.push_back(WindowsUnwindEntry{
+      begin_offset,
+      end_offset,
+      std::vector<uint8_t>(unwind_info.begin(), unwind_info.end()),
+  });
+}
+
 size_t OatWriter::InitOatCode(size_t offset) {
   // calculate the offsets within OatHeader to executable code
   size_t old_offset = offset;
@@ -2353,6 +2426,8 @@ size_t OatWriter::InitOatCode(size_t offset) {
     const bool generate_debug_info = GetCompilerOptions().GenerateAnyDebugInfo();
     size_t adjusted_offset = offset;
 
+    static constexpr uint8_t kLeafUnwindInfo[] = {1u, 0u, 0u, 0u};
+
     #define DO_TRAMPOLINE(field, fn_name)                                                 \
       /* Pad with at least four 0xFFs so we can do DCHECKs in OatQuickMethodHeader */     \
       offset = GetOffsetFromOatDataAlignedToFile(offset + 4,                              \
@@ -2360,6 +2435,10 @@ size_t OatWriter::InitOatCode(size_t offset) {
       adjusted_offset = offset + GetInstructionSetEntryPointAdjustment(instruction_set);  \
       oat_header_->Set ## fn_name ## Offset(adjusted_offset);                             \
       (field) = compiler_driver_->Create ## fn_name();                                    \
+      AddWindowsUnwindEntry(dchecked_integral_cast<uint32_t>(offset),                     \
+                            dchecked_integral_cast<uint32_t>((field)->size()),             \
+                            ArrayRef<const uint8_t>(kLeafUnwindInfo),                      \
+                            /*deduped=*/ false);                                           \
       if (generate_debug_info) {                                                          \
         debug::MethodDebugInfo info = {};                                                 \
         info.custom_name = #fn_name;                                                      \
@@ -2530,6 +2609,108 @@ size_t OatWriter::InitDataImgRelRoLayout(size_t offset) {
   return offset;
 }
 
+size_t OatWriter::InitWindowsUnwindLayout(size_t offset) {
+  DCHECK(windows_unwind_data_.empty());
+  if (!ShouldEmitWindowsUnwind()) {
+    DCHECK(windows_unwind_entries_.empty());
+    return offset;
+  }
+  if (windows_unwind_entries_.empty()) {
+    return offset;
+  }
+
+  std::sort(windows_unwind_entries_.begin(),
+            windows_unwind_entries_.end(),
+            [](const WindowsUnwindEntry& lhs, const WindowsUnwindEntry& rhs) {
+              return lhs.begin_offset < rhs.begin_offset;
+            });
+
+  const uint32_t code_begin = GetOatHeader().GetExecutableOffset();
+  CHECK_LE(code_size_, std::numeric_limits<uint32_t>::max() - code_begin);
+  const uint32_t code_end = code_begin + dchecked_integral_cast<uint32_t>(code_size_);
+  uint32_t previous_end = code_begin;
+  for (const WindowsUnwindEntry& entry : windows_unwind_entries_) {
+    CHECK_GE(entry.begin_offset, code_begin);
+    CHECK_GT(entry.end_offset, entry.begin_offset);
+    CHECK_LE(entry.end_offset, code_end);
+    CHECK_GE(entry.begin_offset, previous_end) << "Overlapping Windows OAT unwind ranges";
+    CHECK(!entry.unwind_info.empty());
+    previous_end = entry.end_offset;
+  }
+
+  CHECK_LE(windows_unwind_entries_.size(), std::numeric_limits<uint32_t>::max());
+  const uint32_t entry_count = dchecked_integral_cast<uint32_t>(windows_unwind_entries_.size());
+  const uint64_t entries_end =
+      static_cast<uint64_t>(kOatWindowsUnwindHeaderSize) +
+      static_cast<uint64_t>(entry_count) * kOatWindowsX64UnwindEntrySize;
+  CHECK_LE(entries_end, std::numeric_limits<uint32_t>::max());
+  const uint32_t unwind_offset = RoundUp(static_cast<uint32_t>(entries_end), 4u);
+
+  windows_unwind_start_ = GetOffsetFromOatDataAlignedToFile(offset, kElfSegmentAlignment);
+  CHECK_LE(windows_unwind_start_, std::numeric_limits<uint32_t>::max());
+
+  std::map<std::vector<uint8_t>, uint32_t> unwind_blob_offsets;
+  std::vector<uint32_t> entry_unwind_offsets;
+  entry_unwind_offsets.reserve(windows_unwind_entries_.size());
+  uint64_t section_size = unwind_offset;
+  for (const WindowsUnwindEntry& entry : windows_unwind_entries_) {
+    auto [it, inserted] = unwind_blob_offsets.emplace(entry.unwind_info, 0u);
+    if (inserted) {
+      section_size = RoundUp(section_size, 4u);
+      CHECK_LE(section_size, std::numeric_limits<uint32_t>::max());
+      it->second = dchecked_integral_cast<uint32_t>(section_size);
+      section_size += entry.unwind_info.size();
+      CHECK_LE(section_size, std::numeric_limits<uint32_t>::max());
+    }
+    CHECK_ALIGNED(it->second, 4u);
+    CHECK_LE(windows_unwind_start_ + it->second, std::numeric_limits<uint32_t>::max());
+    entry_unwind_offsets.push_back(
+        dchecked_integral_cast<uint32_t>(windows_unwind_start_ + it->second));
+  }
+
+  windows_unwind_data_.assign(dchecked_integral_cast<size_t>(section_size), 0u);
+  windows_unwind_data_[0] = 'o';
+  windows_unwind_data_[1] = 'u';
+  windows_unwind_data_[2] = 'w';
+  windows_unwind_data_[3] = '\n';
+  StoreUint32LittleEndian(&windows_unwind_data_, 4u, kOatWindowsUnwindVersion);
+  StoreUint32LittleEndian(&windows_unwind_data_, 8u, kOatWindowsUnwindHeaderSize);
+  StoreUint32LittleEndian(&windows_unwind_data_, 12u, kImageFileMachineAmd64);
+  StoreUint32LittleEndian(&windows_unwind_data_, 16u, kOatWindowsX64UnwindEntrySize);
+  StoreUint32LittleEndian(&windows_unwind_data_, 20u, entry_count);
+  StoreUint32LittleEndian(&windows_unwind_data_, 24u, kOatWindowsUnwindHeaderSize);
+  StoreUint32LittleEndian(&windows_unwind_data_, 28u, unwind_offset);
+  StoreUint32LittleEndian(
+      &windows_unwind_data_, 32u, dchecked_integral_cast<uint32_t>(section_size - unwind_offset));
+  StoreUint32LittleEndian(&windows_unwind_data_, 36u, code_begin);
+  StoreUint32LittleEndian(&windows_unwind_data_, 40u, code_end);
+  StoreUint32LittleEndian(&windows_unwind_data_, kOatWindowsUnwindChecksumOffset, 0u);
+
+  for (size_t i = 0; i != windows_unwind_entries_.size(); ++i) {
+    size_t entry_offset = kOatWindowsUnwindHeaderSize + i * kOatWindowsX64UnwindEntrySize;
+    StoreUint32LittleEndian(
+        &windows_unwind_data_, entry_offset + 0u, windows_unwind_entries_[i].begin_offset);
+    StoreUint32LittleEndian(
+        &windows_unwind_data_, entry_offset + 4u, windows_unwind_entries_[i].end_offset);
+    StoreUint32LittleEndian(
+        &windows_unwind_data_, entry_offset + 8u, entry_unwind_offsets[i]);
+  }
+  for (const auto& [blob, blob_offset] : unwind_blob_offsets) {
+    std::copy(blob.begin(), blob.end(), windows_unwind_data_.begin() + blob_offset);
+  }
+
+  uint32_t checksum = adler32(0L, Z_NULL, 0);
+  checksum = adler32(checksum,
+                     windows_unwind_data_.data(),
+                     dchecked_integral_cast<uInt>(windows_unwind_data_.size()));
+  StoreUint32LittleEndian(
+      &windows_unwind_data_, kOatWindowsUnwindChecksumOffset, checksum);
+
+  CHECK_LE(windows_unwind_start_ + windows_unwind_data_.size(),
+           std::numeric_limits<uint32_t>::max());
+  return windows_unwind_start_ + windows_unwind_data_.size();
+}
+
 void OatWriter::InitBssLayout(InstructionSet instruction_set) {
   DCHECK_EQ(bss_size_, 0u);
   if (bss_method_entries_.empty() &&
@@ -2684,6 +2865,8 @@ bool OatWriter::WriteCode(OutputStream* out) {
 
   if (data_img_rel_ro_size_ != 0u) {
     write_state_ = WriteState::kWriteDataImgRelRo;
+  } else if (!windows_unwind_data_.empty()) {
+    write_state_ = WriteState::kWriteWindowsUnwind;
   } else {
     if (!CheckOatSize(out, file_offset, relative_offset)) {
       return false;
@@ -2718,6 +2901,40 @@ bool OatWriter::WriteDataImgRelRo(OutputStream* out) {
     return false;
   }
 
+  if (!windows_unwind_data_.empty()) {
+    write_state_ = WriteState::kWriteWindowsUnwind;
+  } else {
+    if (!CheckOatSize(out, file_offset, relative_offset)) {
+      return false;
+    }
+    write_state_ = WriteState::kWriteHeader;
+  }
+  return true;
+}
+
+bool OatWriter::WriteWindowsUnwind(OutputStream* out) {
+  TimingLogger::ScopedTiming split("WriteWindowsUnwind", timings_);
+  CHECK(write_state_ == WriteState::kWriteWindowsUnwind);
+  CHECK(!windows_unwind_data_.empty());
+
+  ChecksumUpdatingOutputStream checksum_updating_out(out, this);
+  out = &checksum_updating_out;
+
+  const size_t file_offset = oat_data_offset_;
+  const size_t predecessor_end = data_img_rel_ro_size_ != 0u
+      ? data_img_rel_ro_start_ + data_img_rel_ro_size_
+      : GetOatHeader().GetExecutableOffset() + code_size_;
+  DCHECK_EQ(GetOffsetFromOatDataAlignedToFile(predecessor_end, kElfSegmentAlignment),
+            windows_unwind_start_);
+  size_oat_unwind_windows_alignment_ =
+      dchecked_integral_cast<uint32_t>(windows_unwind_start_ - predecessor_end);
+
+  if (!out->WriteFully(windows_unwind_data_.data(), windows_unwind_data_.size())) {
+    LOG(ERROR) << "Failed to write Windows OAT unwind metadata to " << out->GetLocation();
+    return false;
+  }
+  size_oat_unwind_windows_ = dchecked_integral_cast<uint32_t>(windows_unwind_data_.size());
+  const size_t relative_offset = windows_unwind_start_ + windows_unwind_data_.size();
   if (!CheckOatSize(out, file_offset, relative_offset)) {
     return false;
   }
@@ -2764,6 +2981,8 @@ bool OatWriter::CheckOatSize(OutputStream* out, size_t file_offset, size_t relat
     DO_STAT(size_code_alignment_);
     DO_STAT(size_data_img_rel_ro_);
     DO_STAT(size_data_img_rel_ro_alignment_);
+    DO_STAT(size_oat_unwind_windows_);
+    DO_STAT(size_oat_unwind_windows_alignment_);
     DO_STAT(size_relative_call_thunks_);
     DO_STAT(size_misc_thunks_);
     DO_STAT(size_vmap_table_);

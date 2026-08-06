@@ -64,6 +64,13 @@ class ElfFile {
 
   virtual const uint8_t* FindDynamicSymbolAddress(const std::string& symbol_name) const = 0;
 
+  // Returns whether the complete address range is backed by file bytes in one
+  // PT_LOAD with exactly `segment_flags`. This is used before dereferencing
+  // target-specific metadata located through dynamic symbols.
+  virtual bool IsInLoadableFileSegment(const uint8_t* address,
+                                       size_t size,
+                                       uint32_t segment_flags) const = 0;
+
   // Returns the location of the ELF file, for debugging purposes only.
   // Note that the location is not necessarily a path to a file on disk. It can also be a zip entry
   // inside a zip file.

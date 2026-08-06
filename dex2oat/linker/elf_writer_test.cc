@@ -64,6 +64,7 @@ class ElfWriterTest : public CommonCompilerDriverTest {
                                       text.size(),
                                       data_img_rel_ro.size(),
                                       data_img_rel_ro_app_image_offset,
+                                      /*windows_unwind_size=*/ 0u,
                                       bss_size,
                                       bss_methods_offset,
                                       bss_roots_offset,

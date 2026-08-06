@@ -45,6 +45,12 @@ TEST(CompiledMethodStorage, Deduplicate) {
       ArrayRef<const uint8_t>(raw_cfi_info1),
       ArrayRef<const uint8_t>(raw_cfi_info2),
   };
+  const uint8_t raw_windows_unwind_info1[] = { 1, 0, 0, 0 };
+  const uint8_t raw_windows_unwind_info2[] = { 1, 3, 1, 5, 3, 0x50, 0, 0 };
+  ArrayRef<const uint8_t> windows_unwind_info[] = {
+      ArrayRef<const uint8_t>(raw_windows_unwind_info1),
+      ArrayRef<const uint8_t>(raw_windows_unwind_info2),
+  };
   const linker::LinkerPatch raw_patches1[] = {
       linker::LinkerPatch::IntrinsicReferencePatch(0u, 0u, 0u),
       linker::LinkerPatch::RelativeMethodPatch(4u, nullptr, 0u, 1u),
@@ -59,22 +65,25 @@ TEST(CompiledMethodStorage, Deduplicate) {
   };
 
   std::vector<CompiledMethod*> compiled_methods;
-  compiled_methods.reserve(1u << 4);
+  compiled_methods.reserve(1u << 5);
   for (auto&& c : code) {
     for (auto&& v : vmap_table) {
       for (auto&& f : cfi_info) {
-        for (auto&& p : patches) {
-          compiled_methods.push_back(CompiledMethod::SwapAllocCompiledMethod(
-              &storage, InstructionSet::kNone, c, v, f, p));
+        for (auto&& w : windows_unwind_info) {
+          for (auto&& p : patches) {
+            compiled_methods.push_back(CompiledMethod::SwapAllocCompiledMethod(
+                &storage, InstructionSet::kNone, c, v, f, w, p));
+          }
         }
       }
     }
   }
-  constexpr size_t code_bit = 1u << 3;
-  constexpr size_t vmap_table_bit = 1u << 2;
-  constexpr size_t cfi_info_bit = 1u << 1;
+  constexpr size_t code_bit = 1u << 4;
+  constexpr size_t vmap_table_bit = 1u << 3;
+  constexpr size_t cfi_info_bit = 1u << 2;
+  constexpr size_t windows_unwind_info_bit = 1u << 1;
   constexpr size_t patches_bit = 1u << 0;
-  CHECK_EQ(compiled_methods.size(), 1u << 4);
+  CHECK_EQ(compiled_methods.size(), 1u << 5);
   for (size_t i = 0; i != compiled_methods.size(); ++i) {
     for (size_t j = 0; j != compiled_methods.size(); ++j) {
       CompiledMethod* lhs = compiled_methods[i];
@@ -82,12 +91,17 @@ TEST(CompiledMethodStorage, Deduplicate) {
       bool same_code = ((i ^ j) & code_bit) == 0u;
       bool same_vmap_table = ((i ^ j) & vmap_table_bit) == 0u;
       bool same_cfi_info = ((i ^ j) & cfi_info_bit) == 0u;
+      bool same_windows_unwind_info = ((i ^ j) & windows_unwind_info_bit) == 0u;
       bool same_patches = ((i ^ j) & patches_bit) == 0u;
       ASSERT_EQ(same_code, lhs->GetQuickCode().data() == rhs->GetQuickCode().data())
           << i << " " << j;
       ASSERT_EQ(same_vmap_table, lhs->GetVmapTable().data() == rhs->GetVmapTable().data())
           << i << " " << j;
       ASSERT_EQ(same_cfi_info, lhs->GetCFIInfo().data() == rhs->GetCFIInfo().data())
+          << i << " " << j;
+      ASSERT_EQ(same_windows_unwind_info,
+                lhs->GetWindowsX64UnwindInfo().data() ==
+                    rhs->GetWindowsX64UnwindInfo().data())
           << i << " " << j;
       ASSERT_EQ(same_patches, lhs->GetPatches().data() == rhs->GetPatches().data())
           << i << " " << j;

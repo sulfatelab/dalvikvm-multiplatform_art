@@ -65,6 +65,11 @@ class CompiledMethodStorage final : public CompiledCodeStorage {
   void ReleaseCFIInfo(const LengthPrefixedArray<uint8_t>* cfi_info);
   size_t UniqueCFIInfoEntries() const;
 
+  const LengthPrefixedArray<uint8_t>* DeduplicateWindowsX64UnwindInfo(
+      const ArrayRef<const uint8_t>& unwind_info);
+  void ReleaseWindowsX64UnwindInfo(const LengthPrefixedArray<uint8_t>* unwind_info);
+  size_t UniqueWindowsX64UnwindInfoEntries() const;
+
   const LengthPrefixedArray<linker::LinkerPatch>* DeduplicateLinkerPatches(
       const ArrayRef<const linker::LinkerPatch>& linker_patches);
   void ReleaseLinkerPatches(const LengthPrefixedArray<linker::LinkerPatch>* linker_patches);
@@ -74,6 +79,7 @@ class CompiledMethodStorage final : public CompiledCodeStorage {
                                        ArrayRef<const uint8_t> code,
                                        ArrayRef<const uint8_t> stack_map,
                                        ArrayRef<const uint8_t> cfi,
+                                       ArrayRef<const uint8_t> windows_x64_unwind_info,
                                        ArrayRef<const linker::LinkerPatch> patches,
                                        bool is_intrinsic) override;
 
@@ -131,6 +137,7 @@ class CompiledMethodStorage final : public CompiledCodeStorage {
   ArrayDedupeSet<uint8_t> dedupe_code_;
   ArrayDedupeSet<uint8_t> dedupe_vmap_table_;
   ArrayDedupeSet<uint8_t> dedupe_cfi_info_;
+  ArrayDedupeSet<uint8_t> dedupe_windows_x64_unwind_info_;
   ArrayDedupeSet<linker::LinkerPatch> dedupe_linker_patches_;
 
   Mutex thunk_map_lock_;

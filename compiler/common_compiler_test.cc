@@ -136,6 +136,7 @@ class CommonCompilerTestImpl::OneCompiledMethodStorage final : public CompiledCo
                                        ArrayRef<const uint8_t> code,
                                        ArrayRef<const uint8_t> stack_map,
                                        [[maybe_unused]] ArrayRef<const uint8_t> cfi,
+                                       [[maybe_unused]] ArrayRef<const uint8_t> windows_x64_unwind_info,
                                        ArrayRef<const linker::LinkerPatch> patches,
                                        [[maybe_unused]] bool is_intrinsic) override {
     // Supports only one method at a time.

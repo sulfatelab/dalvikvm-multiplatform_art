@@ -468,6 +468,8 @@ class ElfBuilder final {
             kElfSegmentAlignment, 0),
         data_img_rel_ro_(this, ".data.img.rel.ro", SHT_PROGBITS, SHF_ALLOC, nullptr, 0,
             kElfSegmentAlignment, 0),
+        windows_unwind_(this, ".oat_unwind.windows", SHT_PROGBITS, SHF_ALLOC, nullptr, 0,
+            kElfSegmentAlignment, 0),
         bss_(this, ".bss", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
         dex_(this, ".dex", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
         dynstr_(this, ".dynstr", SHF_ALLOC, 1),
@@ -507,6 +509,7 @@ class ElfBuilder final {
   Section* GetRoData() { return &rodata_; }
   Section* GetText() { return &text_; }
   Section* GetDataImgRelRo() { return &data_img_rel_ro_; }
+  Section* GetWindowsUnwind() { return &windows_unwind_; }
   Section* GetBss() { return &bss_; }
   Section* GetDex() { return &dex_; }
   StringSection* GetStrTab() { return &strtab_; }
@@ -640,7 +643,8 @@ class ElfBuilder final {
   //
   // Dynamic section content is dependent on subsequent sections. Here, reserve enough
   // space for it. We will write the content later (in PrepareDynamicSection).
-  void ReserveSpaceForDynamicSection(const std::string& elf_file_path) {
+  void ReserveSpaceForDynamicSection(const std::string& elf_file_path,
+                                     size_t extra_dynamic_symbols = 0u) {
     CHECK_EQ(dynamic_sections_start_, 0);
     CHECK_EQ(dynamic_sections_reserved_size_, 0u);
     CHECK(!rodata_.Exists());
@@ -651,23 +655,21 @@ class ElfBuilder final {
     dynstr_.AddSection();
     // We don't expect that .dynstr section can have any alignment requirements.
     DCHECK_EQ(dynstr_.header_.sh_addralign, 1u);
-    offset += []() consteval {
-      size_t size = 0;
-      for (size_t i = 0; i < kDynamicSymbolCount; i++) {
-        DynamicSymbol sym = static_cast<DynamicSymbol>(i);
-        size += GetDynamicSymbolName(sym).length() + 1;
-      }
-      return size;
-    }();
+    CHECK_LE(extra_dynamic_symbols, kWindowsUnwindDynamicSymbolCount);
+    const size_t reserved_dynamic_symbol_count = kDynamicSymbolCount + extra_dynamic_symbols;
+    for (size_t i = 0; i < reserved_dynamic_symbol_count; ++i) {
+      DynamicSymbol sym = static_cast<DynamicSymbol>(i);
+      offset += GetDynamicSymbolName(sym).length() + 1;
+    }
     offset += GetSoname(elf_file_path).length() + 1;
 
     dynsym_.AddSection();
     offset = RoundUp(offset, dynsym_.header_.sh_addralign);
-    offset += kDynamicSymbolCount * sizeof(Elf_Sym);
+    offset += reserved_dynamic_symbol_count * sizeof(Elf_Sym);
 
     hash_.AddSection();
     offset = RoundUp(offset, hash_.header_.sh_addralign);
-    offset += PrepareDynamicSymbolHashtable(kDynamicSymbolCount, /*hashtable=*/ nullptr);
+    offset += PrepareDynamicSymbolHashtable(reserved_dynamic_symbol_count, /*hashtable=*/ nullptr);
 
     dynamic_.AddSection();
     offset = RoundUp(offset, dynamic_.header_.sh_addralign);
@@ -689,6 +691,7 @@ class ElfBuilder final {
                              Elf_Word text_size,
                              Elf_Word data_img_rel_ro_size,
                              Elf_Word data_img_rel_ro_app_image_offset,
+                             Elf_Word windows_unwind_size,
                              Elf_Word bss_size,
                              Elf_Word bss_methods_offset,
                              Elf_Word bss_roots_offset,
@@ -704,6 +707,9 @@ class ElfBuilder final {
     text_.AllocateVirtualMemory(text_size);
     if (data_img_rel_ro_size != 0) {
       data_img_rel_ro_.AllocateVirtualMemory(data_img_rel_ro_size);
+    }
+    if (windows_unwind_size != 0) {
+      windows_unwind_.AllocateVirtualMemory(windows_unwind_size);
     }
     if (bss_size != 0) {
       bss_.AllocateVirtualMemory(bss_size);
@@ -757,6 +763,24 @@ class ElfBuilder final {
                     STB_GLOBAL,
                     STT_OBJECT);
       }
+    }
+    if (windows_unwind_size != 0u) {
+      Elf_Word oatunwindwindows =
+          dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatUnwindWindows));
+      dynsym_.Add(oatunwindwindows,
+                  &windows_unwind_,
+                  windows_unwind_.GetAddress(),
+                  windows_unwind_size,
+                  STB_GLOBAL,
+                  STT_OBJECT);
+      Elf_Word oatunwindwindowslastword =
+          dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatUnwindWindowsLastWord));
+      dynsym_.Add(oatunwindwindowslastword,
+                  &windows_unwind_,
+                  windows_unwind_.GetAddress() + windows_unwind_size - 4u,
+                  4u,
+                  STB_GLOBAL,
+                  STT_OBJECT);
     }
     DCHECK_LE(bss_roots_offset, bss_size);
     if (bss_size != 0u) {
@@ -1049,10 +1073,15 @@ class ElfBuilder final {
     kOatBssLastWord,
     kOatDex,
     kOatDexLastWord,
-    kLast = kOatDexLastWord
+    kLast = kOatDexLastWord,
+    kOatUnwindWindows,
+    kOatUnwindWindowsLastWord,
   };
 
   static constexpr size_t kDynamicSymbolCount = static_cast<size_t>(DynamicSymbol::kLast) + 1;
+  static constexpr size_t kWindowsUnwindDynamicSymbolCount = 2u;
+  static_assert(kDynamicSymbolCount ==
+                static_cast<size_t>(DynamicSymbol::kOatDexLastWord) + 1u);
   static constexpr size_t kDynamicEntriesCount = 7;
 
   static constexpr std::string GetDynamicSymbolName(DynamicSymbol sym) {
@@ -1083,6 +1112,10 @@ class ElfBuilder final {
         return "oatdex";
       case DynamicSymbol::kOatDexLastWord:
         return "oatdexlastword";
+      case DynamicSymbol::kOatUnwindWindows:
+        return "oatunwindwindows";
+      case DynamicSymbol::kOatUnwindWindowsLastWord:
+        return "oatunwindwindowslastword";
     }
   }
 
@@ -1127,6 +1160,7 @@ class ElfBuilder final {
   Section rodata_;
   Section text_;
   Section data_img_rel_ro_;
+  Section windows_unwind_;
   Section bss_;
   Section dex_;
   CachedStringSection dynstr_;

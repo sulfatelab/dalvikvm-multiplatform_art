@@ -87,6 +87,7 @@ class FuzzerCompiledMethodStorage final : public CompiledCodeStorage {
                                        ArrayRef<const uint8_t> code,
                                        ArrayRef<const uint8_t> stack_map,
                                        [[maybe_unused]] ArrayRef<const uint8_t> cfi,
+                                       [[maybe_unused]] ArrayRef<const uint8_t> windows_x64_unwind_info,
                                        [[maybe_unused]] ArrayRef<const linker::LinkerPatch> patches,
                                        [[maybe_unused]] bool is_intrinsic) override {
     DCHECK_NE(instruction_set, InstructionSet::kNone);

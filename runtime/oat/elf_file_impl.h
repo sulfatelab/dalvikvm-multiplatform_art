@@ -61,6 +61,10 @@ class ElfFileImpl : public ElfFile {
   // Find .dynsym using .hash for more efficient lookup than FindSymbolAddress.
   const uint8_t* FindDynamicSymbolAddress(const std::string& symbol_name) const override;
 
+  bool IsInLoadableFileSegment(const uint8_t* address,
+                               size_t size,
+                               uint32_t segment_flags) const override;
+
   static bool IsSymbolSectionType(Elf_Word section_type);
   Elf_Word GetSymbolNum(Elf_Shdr&) const;
   Elf_Sym* GetSymbol(Elf_Word section_type, Elf_Word i) const;

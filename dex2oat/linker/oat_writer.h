@@ -207,6 +207,8 @@ class OatWriter {
   bool WriteCode(OutputStream* out);
   // Write the image relocation data to the .data.img.rel.ro section.
   bool WriteDataImgRelRo(OutputStream* out);
+  // Write the Windows x64 OAT unwind table to the .oat_unwind.windows section.
+  bool WriteWindowsUnwind(OutputStream* out);
   // Check the size of the written oat file.
   bool CheckOatSize(OutputStream* out, size_t file_offset, size_t relative_offset);
   // Write the oat header. This finalizes the oat file.
@@ -233,6 +235,10 @@ class OatWriter {
 
   size_t GetDataImgRelRoSize() const {
     return data_img_rel_ro_size_;
+  }
+
+  size_t GetWindowsUnwindSize() const {
+    return windows_unwind_data_.size();
   }
 
   size_t GetDataImgRelRoAppImageOffset() const {
@@ -328,6 +334,12 @@ class OatWriter {
   size_t InitOatCode(size_t offset);
   size_t InitOatCodeDexFiles(size_t offset);
   size_t InitDataImgRelRoLayout(size_t offset);
+  size_t InitWindowsUnwindLayout(size_t offset);
+  bool ShouldEmitWindowsUnwind() const;
+  void AddWindowsUnwindEntry(uint32_t begin_offset,
+                             uint32_t code_size,
+                             ArrayRef<const uint8_t> unwind_info,
+                             bool deduped);
   void InitBssAndRelRoData();
   void InitBssLayout(InstructionSet instruction_set);
   void AddBssReference(const DexFileReference& ref,
@@ -413,6 +425,7 @@ class OatWriter {
     kWriteRoData,
     kWriteText,
     kWriteDataImgRelRo,
+    kWriteWindowsUnwind,
     kWriteHeader,
     kDone
   };
@@ -468,6 +481,18 @@ class OatWriter {
 
   // The start of app image relocations in the .data.img.rel.ro section.
   size_t data_img_rel_ro_app_image_offset_;
+
+  struct WindowsUnwindEntry {
+    uint32_t begin_offset;
+    uint32_t end_offset;
+    std::vector<uint8_t> unwind_info;
+  };
+
+  // Windows-only metadata is kept outside the shared OAT header/version.
+  size_t windows_unwind_start_;
+  std::vector<WindowsUnwindEntry> windows_unwind_entries_;
+  std::unordered_map<uint32_t, size_t> windows_unwind_entry_by_begin_;
+  std::vector<uint8_t> windows_unwind_data_;
 
   // The start of the optional .bss section.
   size_t bss_start_;
@@ -600,6 +625,8 @@ class OatWriter {
   uint32_t size_code_alignment_ = 0;
   uint32_t size_data_img_rel_ro_ = 0;
   uint32_t size_data_img_rel_ro_alignment_ = 0;
+  uint32_t size_oat_unwind_windows_ = 0;
+  uint32_t size_oat_unwind_windows_alignment_ = 0;
   uint32_t size_relative_call_thunks_ = 0;
   uint32_t size_misc_thunks_ = 0;
   uint32_t size_vmap_table_ = 0;

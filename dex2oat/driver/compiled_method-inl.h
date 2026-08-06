@@ -46,6 +46,10 @@ inline ArrayRef<const uint8_t> CompiledMethod::GetCFIInfo() const {
   return GetArray(cfi_info_);
 }
 
+inline ArrayRef<const uint8_t> CompiledMethod::GetWindowsX64UnwindInfo() const {
+  return GetArray(windows_x64_unwind_info_);
+}
+
 inline ArrayRef<const linker::LinkerPatch> CompiledMethod::GetPatches() const {
   return GetArray(patches_);
 }

@@ -732,11 +732,16 @@ CompiledMethod* OptimizingCompiler::Emit(ArenaAllocator* allocator,
   ScopedArenaVector<uint8_t> stack_map = codegen->BuildStackMaps(code_item_for_osr_check);
 
   CompiledCodeStorage* storage = GetCompiledCodeStorage();
+  Assembler* assembler = codegen->GetAssembler();
+  CHECK(assembler->IsWindowsX64UnwindInfoValid());
+  ArrayRef<const uint8_t> windows_x64_unwind_info = assembler->GetWindowsX64UnwindInfo();
+  CHECK_IMPLIES(assembler->IsWindowsX64UnwindInfoEnabled(), !windows_x64_unwind_info.empty());
   CompiledMethod* compiled_method = storage->CreateCompiledMethod(
       codegen->GetInstructionSet(),
       codegen->GetCode(),
       ArrayRef<const uint8_t>(stack_map),
-      ArrayRef<const uint8_t>(*codegen->GetAssembler()->cfi().data()),
+      ArrayRef<const uint8_t>(*assembler->cfi().data()),
+      windows_x64_unwind_info,
       ArrayRef<const linker::LinkerPatch>(linker_patches),
       is_intrinsic);
 
@@ -1288,6 +1293,7 @@ CompiledMethod* OptimizingCompiler::JniCompile(uint32_t access_flags,
 
   JniCompiledMethod jni_compiled_method = ArtQuickJniCompileMethod(
       compiler_options, dex_file.GetMethodShortyView(method_idx), access_flags, &allocator);
+  CHECK(jni_compiled_method.IsWindowsX64UnwindInfoValid());
   MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kCompiledNativeStub);
 
   ScopedArenaAllocator stack_map_allocator(&arena_stack);  // Will hold the stack map.
@@ -1301,6 +1307,7 @@ CompiledMethod* OptimizingCompiler::JniCompile(uint32_t access_flags,
       jni_compiled_method.GetCode(),
       ArrayRef<const uint8_t>(stack_map),
       jni_compiled_method.GetCfi(),
+      jni_compiled_method.GetWindowsX64UnwindInfo(),
       /*patches=*/ ArrayRef<const linker::LinkerPatch>(),
       /*is_intrinsic=*/ false);
 }

@@ -94,7 +94,9 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
   bool needs_entry_exit_hooks = is_debuggable && compiler_options.IsJitCompiler();
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
   const bool emit_windows_x64_unwind_info =
-      compiler_options.IsJitCompiler() && instruction_set == InstructionSet::kX86_64;
+      (compiler_options.IsJitCompiler() || compiler_options.IsBootImage() ||
+       compiler_options.IsBootImageExtension()) &&
+      instruction_set == InstructionSet::kX86_64;
 #else
   const bool emit_windows_x64_unwind_info = false;
 #endif

@@ -45,6 +45,7 @@ class CompiledCodeStorage {
                                                ArrayRef<const uint8_t> code,
                                                ArrayRef<const uint8_t> stack_map,
                                                ArrayRef<const uint8_t> cfi,
+                                               ArrayRef<const uint8_t> windows_x64_unwind_info,
                                                ArrayRef<const linker::LinkerPatch> patches,
                                                bool is_intrinsic) = 0;
 

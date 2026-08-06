@@ -444,6 +444,13 @@ class CodeGeneratorX86_64 : public CodeGenerator {
   }
 
   size_t GetCalleePreservedFPWidth() const override {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+    if (GetCompilerOptions().IsJitCompiler() || GetCompilerOptions().IsBootImage() ||
+        GetCompilerOptions().IsBootImageExtension()) {
+      // Windows unwind restores nonvolatile XMM registers in complete 128-bit units.
+      return 2 * kX86_64WordSize;
+    }
+#endif
     return 1 * kX86_64WordSize;
   }
 

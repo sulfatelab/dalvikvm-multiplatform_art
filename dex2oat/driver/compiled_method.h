@@ -107,6 +107,7 @@ class CompiledMethod final : public CompiledCode {
                  const ArrayRef<const uint8_t>& quick_code,
                  const ArrayRef<const uint8_t>& vmap_table,
                  const ArrayRef<const uint8_t>& cfi_info,
+                 const ArrayRef<const uint8_t>& windows_x64_unwind_info,
                  const ArrayRef<const linker::LinkerPatch>& patches);
 
   virtual ~CompiledMethod();
@@ -117,6 +118,7 @@ class CompiledMethod final : public CompiledCode {
       const ArrayRef<const uint8_t>& quick_code,
       const ArrayRef<const uint8_t>& vmap_table,
       const ArrayRef<const uint8_t>& cfi_info,
+      const ArrayRef<const uint8_t>& windows_x64_unwind_info,
       const ArrayRef<const linker::LinkerPatch>& patches);
 
   static void ReleaseSwapAllocatedCompiledMethod(CompiledMethodStorage* storage, CompiledMethod* m);
@@ -137,6 +139,9 @@ class CompiledMethod final : public CompiledCode {
 
   ArrayRef<const uint8_t> GetCFIInfo() const;
 
+  // PE x64 UNWIND_INFO for Windows-generated code. Empty for other targets.
+  ArrayRef<const uint8_t> GetWindowsX64UnwindInfo() const;
+
   ArrayRef<const linker::LinkerPatch> GetPatches() const;
 
  private:
@@ -152,6 +157,8 @@ class CompiledMethod final : public CompiledCode {
   const LengthPrefixedArray<uint8_t>* const vmap_table_;
   // For quick code, a FDE entry for the debug_frame section.
   const LengthPrefixedArray<uint8_t>* const cfi_info_;
+  // For Windows x64 code, the PE UNWIND_INFO describing the method prologue.
+  const LengthPrefixedArray<uint8_t>* const windows_x64_unwind_info_;
   // For quick code, linker patches needed by the method.
   const LengthPrefixedArray<linker::LinkerPatch>* const patches_;
 };

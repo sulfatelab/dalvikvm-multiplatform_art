@@ -151,6 +151,8 @@ CompiledMethodStorage::CompiledMethodStorage(int swap_fd)
       dedupe_vmap_table_("dedupe vmap table",
                          LengthPrefixedArrayAlloc<uint8_t>(swap_space_.get())),
       dedupe_cfi_info_("dedupe cfi info", LengthPrefixedArrayAlloc<uint8_t>(swap_space_.get())),
+      dedupe_windows_x64_unwind_info_(
+          "dedupe windows x64 unwind info", LengthPrefixedArrayAlloc<uint8_t>(swap_space_.get())),
       dedupe_linker_patches_("dedupe cfi info",
                              LengthPrefixedArrayAlloc<linker::LinkerPatch>(swap_space_.get())),
       thunk_map_lock_("thunk_map_lock"),
@@ -171,6 +173,8 @@ void CompiledMethodStorage::DumpMemoryUsage(std::ostream& os, bool extended) con
     os << "\nCode dedupe: " << dedupe_code_.DumpStats(self);
     os << "\nVmap table dedupe: " << dedupe_vmap_table_.DumpStats(self);
     os << "\nCFI info dedupe: " << dedupe_cfi_info_.DumpStats(self);
+    os << "\nWindows x64 unwind info dedupe: "
+       << dedupe_windows_x64_unwind_info_.DumpStats(self);
   }
 }
 
@@ -216,6 +220,21 @@ size_t CompiledMethodStorage::UniqueCFIInfoEntries() const {
   return dedupe_cfi_info_.Size(Thread::Current());
 }
 
+const LengthPrefixedArray<uint8_t>* CompiledMethodStorage::DeduplicateWindowsX64UnwindInfo(
+    const ArrayRef<const uint8_t>& unwind_info) {
+  return AllocateOrDeduplicateArray(unwind_info, &dedupe_windows_x64_unwind_info_);
+}
+
+void CompiledMethodStorage::ReleaseWindowsX64UnwindInfo(
+    const LengthPrefixedArray<uint8_t>* unwind_info) {
+  ReleaseArrayIfNotDeduplicated(unwind_info);
+}
+
+size_t CompiledMethodStorage::UniqueWindowsX64UnwindInfoEntries() const {
+  DCHECK(DedupeEnabled());
+  return dedupe_windows_x64_unwind_info_.Size(Thread::Current());
+}
+
 const LengthPrefixedArray<linker::LinkerPatch>* CompiledMethodStorage::DeduplicateLinkerPatches(
     const ArrayRef<const linker::LinkerPatch>& linker_patches) {
   return AllocateOrDeduplicateArray(linker_patches, &dedupe_linker_patches_);
@@ -258,10 +277,11 @@ CompiledMethod* CompiledMethodStorage::CreateCompiledMethod(
     ArrayRef<const uint8_t> code,
     ArrayRef<const uint8_t> stack_map,
     ArrayRef<const uint8_t> cfi,
+    ArrayRef<const uint8_t> windows_x64_unwind_info,
     ArrayRef<const linker::LinkerPatch> patches,
     bool is_intrinsic) {
   CompiledMethod* compiled_method = CompiledMethod::SwapAllocCompiledMethod(
-      this, instruction_set, code, stack_map, cfi, patches);
+      this, instruction_set, code, stack_map, cfi, windows_x64_unwind_info, patches);
   if (is_intrinsic) {
     compiled_method->MarkAsIntrinsic();
   }

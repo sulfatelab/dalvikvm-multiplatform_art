@@ -89,6 +89,21 @@ class WindowsX64UnwindInfoBuilder {
         Operation{OperationKind::kSetFramePointer, static_cast<uint8_t>(code_offset), reg, 0u});
   }
 
+  void RecordSaveXmm128(uint8_t reg, size_t stack_offset, size_t code_offset) {
+    if (!PrepareOperation(code_offset) || !IsNonvolatileXmmRegister(reg) ||
+        stack_offset > std::numeric_limits<uint32_t>::max() ||
+        std::any_of(operations_.begin(), operations_.end(), [reg](const Operation& operation) {
+          return operation.kind == OperationKind::kSaveXmm128 && operation.reg == reg;
+        })) {
+      Invalidate();
+      return;
+    }
+    operations_.push_back(Operation{OperationKind::kSaveXmm128,
+                                    static_cast<uint8_t>(code_offset),
+                                    reg,
+                                    static_cast<uint32_t>(stack_offset)});
+  }
+
   void Finalize(size_t prologue_size) {
     if (!enabled_ || finalized_) {
       if (enabled_ && finalized_) {
@@ -120,6 +135,9 @@ class WindowsX64UnwindInfoBuilder {
           AppendSlot(&codes, operation.code_offset, /*op=*/ 3u, /*op_info=*/ 0u);
           slot_count += 1u;
           break;
+        case OperationKind::kSaveXmm128:
+          AppendXmm128Save(&codes, operation, &slot_count);
+          break;
       }
     }
     if (!valid_ || slot_count > std::numeric_limits<uint8_t>::max()) {
@@ -146,6 +164,7 @@ class WindowsX64UnwindInfoBuilder {
     kPushNonvolatile,
     kStackAllocation,
     kSetFramePointer,
+    kSaveXmm128,
   };
 
   struct Operation {
@@ -160,6 +179,10 @@ class WindowsX64UnwindInfoBuilder {
     // nonvolatile GPRs are RBX, RBP, RSI, RDI, and R12-R15.
     return reg == 3u || reg == 5u || reg == 6u || reg == 7u ||
            (reg >= 12u && reg <= 15u);
+  }
+
+  static bool IsNonvolatileXmmRegister(uint8_t reg) {
+    return reg >= 6u && reg <= 15u;
   }
 
   bool HasOperation(OperationKind kind) const {
@@ -190,6 +213,11 @@ class WindowsX64UnwindInfoBuilder {
     out->push_back(static_cast<uint8_t>(value >> 8));
   }
 
+  static void AppendUint32(std::vector<uint8_t>* out, uint32_t value) {
+    AppendUint16(out, static_cast<uint16_t>(value));
+    AppendUint16(out, static_cast<uint16_t>(value >> 16u));
+  }
+
   void AppendStackAllocation(std::vector<uint8_t>* out,
                              uint8_t code_offset,
                              uint32_t size,
@@ -208,6 +236,22 @@ class WindowsX64UnwindInfoBuilder {
       AppendSlot(out, code_offset, /*op=*/ 1u, /*op_info=*/ 1u);
       AppendUint16(out, static_cast<uint16_t>(size));
       AppendUint16(out, static_cast<uint16_t>(size >> 16));
+      *slot_count += 3u;
+    }
+  }
+
+  void AppendXmm128Save(std::vector<uint8_t>* out,
+                        const Operation& operation,
+                        size_t* slot_count) {
+    const uint32_t scaled_offset = operation.value / 16u;
+    if ((operation.value & 15u) == 0u &&
+        scaled_offset <= std::numeric_limits<uint16_t>::max()) {
+      AppendSlot(out, operation.code_offset, /*op=*/ 8u, operation.reg);
+      AppendUint16(out, static_cast<uint16_t>(scaled_offset));
+      *slot_count += 2u;
+    } else {
+      AppendSlot(out, operation.code_offset, /*op=*/ 9u, operation.reg);
+      AppendUint32(out, operation.value);
       *slot_count += 3u;
     }
   }

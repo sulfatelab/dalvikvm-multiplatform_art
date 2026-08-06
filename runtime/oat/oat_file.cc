@@ -76,6 +76,10 @@
 #include "vdex_file.h"
 #include "verifier/verifier_deps.h"
 
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+#include "multiplatform/windows/aot_unwind_windows.h"
+#endif
+
 #ifndef __APPLE__
 #include <link.h>  // for dl_iterate_phdr.
 #endif
@@ -154,7 +158,8 @@ bool IsReadOnlyDynamicSupportedByDlOpen() {
 // 2) Load() to try to open the file.
 // 3) ComputeFields() to populate the OatFile fields like begin_, using FindDynamicSymbolAddress.
 // 4) PreSetup() for any steps that should be done before the final setup.
-// 5) Setup() to complete the procedure.
+// 5) Setup() to complete the ordinary OAT/VDEX procedure.
+// 6) PostSetup() for fallible target-specific finalization before publication.
 
 class OatFileBase : public OatFile {
  public:
@@ -224,6 +229,8 @@ class OatFileBase : public OatFile {
 
   virtual void PreSetup(const std::string& elf_filename) = 0;
 
+  virtual bool PostSetup(std::string* error_msg) = 0;
+
   bool Setup(int zip_fd,
              ArrayRef<const std::string> dex_filenames,
              ArrayRef<File> dex_files,
@@ -245,6 +252,11 @@ class OatFileBase : public OatFile {
     vdex_.reset(vdex);
   }
 
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  const uint8_t* WindowsUnwindBegin() const { return windows_unwind_begin_; }
+  const uint8_t* WindowsUnwindEnd() const { return windows_unwind_end_; }
+#endif
+
  private:
   std::string ErrorPrintf(const char* fmt, ...) __attribute__((__format__(__printf__, 2, 3)));
   bool ReadIndexBssMapping(/*inout*/const uint8_t** oat,
@@ -260,6 +272,11 @@ class OatFileBase : public OatFile {
                           const std::string& dex_file_location,
                           /*out*/BssMappingInfo* bss_mapping_info,
                           std::string* error_msg);
+
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  const uint8_t* windows_unwind_begin_ = nullptr;
+  const uint8_t* windows_unwind_end_ = nullptr;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(OatFileBase);
 };
@@ -297,6 +314,10 @@ OatFileBase* OatFileBase::OpenOatFile(int zip_fd,
     return nullptr;
   }
 
+  if (!ret->PostSetup(error_msg)) {
+    return nullptr;
+  }
+
   return ret.release();
 }
 
@@ -329,6 +350,10 @@ OatFileBase* OatFileBase::OpenOatFile(int zip_fd,
   }
 
   if (!ret->Setup(zip_fd, dex_filenames, dex_files, error_msg)) {
+    return nullptr;
+  }
+
+  if (!ret->PostSetup(error_msg)) {
     return nullptr;
   }
 
@@ -389,6 +414,10 @@ OatFileBase* OatFileBase::OpenOatFileFromSdm(const std::string& sdm_filename,
                   ArrayRef<const std::string>(&dex_filename, /*size=*/1u),
                   /*dex_files=*/{},
                   error_msg)) {
+    return nullptr;
+  }
+
+  if (!ret->PostSetup(error_msg)) {
     return nullptr;
   }
 
@@ -508,6 +537,22 @@ bool OatFileBase::ComputeFields(const std::string& file_path, std::string* error
     // Readjust to be non-inclusive upper bound.
     vdex_end_ += sizeof(uint32_t);
   }
+
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  windows_unwind_begin_ = FindDynamicSymbolAddress("oatunwindwindows", &symbol_error_msg);
+  if (windows_unwind_begin_ == nullptr) {
+    windows_unwind_end_ = nullptr;
+  } else {
+    windows_unwind_end_ =
+        FindDynamicSymbolAddress("oatunwindwindowslastword", &symbol_error_msg);
+    if (windows_unwind_end_ == nullptr) {
+      *error_msg = StringPrintf("Failed to find oatunwindwindowslastword symbol in '%s'",
+                                file_path.c_str());
+      return false;
+    }
+    windows_unwind_end_ += sizeof(uint32_t);
+  }
+#endif
 
   return true;
 }
@@ -1272,6 +1317,18 @@ class DlOpenOatFile final : public OatFileBase {
   // Ask the linker where it mmaped the file and notify our mmap wrapper of the regions.
   void PreSetup(const std::string& elf_filename) override;
 
+  bool PostSetup(std::string* error_msg) override {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+    if (IsExecutable() || WindowsUnwindBegin() != nullptr) {
+      *error_msg = "Windows OAT unwind requires the internal ELF loader";
+      return false;
+    }
+#else
+    UNUSED(error_msg);
+#endif
+    return true;
+  }
+
   const uint8_t* ComputeElfBegin(std::string* error_msg) const override {
     Dl_info info;
     if (dladdr(Begin(), &info) == 0) {
@@ -1705,6 +1762,8 @@ class ElfOatFile final : public OatFileBase {
 
   void PreSetup([[maybe_unused]] const std::string& elf_filename) override {}
 
+  bool PostSetup(std::string* error_msg) override;
+
   const uint8_t* ComputeElfBegin(std::string*) const override {
     return elf_file_->GetBaseAddress();
   }
@@ -1722,6 +1781,12 @@ class ElfOatFile final : public OatFileBase {
  private:
   // Backing memory map for oat file during cross compilation.
   std::unique_ptr<ElfFile> elf_file_;
+
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  // Declared after elf_file_ so registration is removed before the mappings
+  // containing the code and unwind descriptors are released.
+  std::unique_ptr<WindowsAotUnwindRegistry> windows_aot_unwind_registry_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(ElfOatFile);
 };
@@ -1793,6 +1858,59 @@ bool ElfOatFile::ElfFileOpen(File* file,
   bool loaded = elf_file_->Load(executable, low_4gb, reservation, error_msg);
   DCHECK(loaded || !error_msg->empty());
   return loaded;
+}
+
+bool ElfOatFile::PostSetup(std::string* error_msg) {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  if (WindowsUnwindBegin() == nullptr) {
+    if (IsExecutable()) {
+      *error_msg = "Executable Windows OAT is missing .oat_unwind.windows";
+      return false;
+    }
+    return true;
+  }
+
+  const uintptr_t unwind_begin = reinterpret_cast<uintptr_t>(WindowsUnwindBegin());
+  const uintptr_t unwind_end = reinterpret_cast<uintptr_t>(WindowsUnwindEnd());
+  if (unwind_end <= unwind_begin ||
+      !elf_file_->IsInLoadableFileSegment(
+          WindowsUnwindBegin(), unwind_end - unwind_begin, PF_R)) {
+    *error_msg = ".oat_unwind.windows is not contained by one read-only PT_LOAD";
+    return false;
+  }
+
+  const uintptr_t oat_begin = reinterpret_cast<uintptr_t>(Begin());
+  const uintptr_t oat_end = reinterpret_cast<uintptr_t>(End());
+  const uint32_t executable_offset = GetOatHeader().GetExecutableOffset();
+  if (oat_end <= oat_begin || executable_offset >= oat_end - oat_begin) {
+    *error_msg = "Windows OAT executable offset is outside oatdata/oatlastword";
+    return false;
+  }
+  const uint8_t* code_begin =
+      reinterpret_cast<const uint8_t*>(oat_begin + executable_offset);
+  if (!elf_file_->IsInLoadableFileSegment(code_begin, oat_end - (oat_begin + executable_offset),
+                                          PF_R | PF_X)) {
+    *error_msg = "Windows OAT code is not contained by one read/execute PT_LOAD";
+    return false;
+  }
+
+  windows_aot_unwind_registry_ = WindowsAotUnwindRegistry::Create(Begin(),
+                                                                  code_begin,
+                                                                  End(),
+                                                                  WindowsUnwindBegin(),
+                                                                  WindowsUnwindEnd(),
+                                                                  error_msg);
+  if (windows_aot_unwind_registry_ == nullptr) {
+    return false;
+  }
+  if (IsExecutable() && !windows_aot_unwind_registry_->Register(error_msg)) {
+    windows_aot_unwind_registry_.reset();
+    return false;
+  }
+#else
+  UNUSED(error_msg);
+#endif
+  return true;
 }
 
 class OatFileBackedByVdex final : public OatFileBase {
@@ -1979,6 +2097,8 @@ class OatFileBackedByVdex final : public OatFileBase {
   }
 
   void PreSetup([[maybe_unused]] const std::string& elf_filename) override {}
+
+  bool PostSetup([[maybe_unused]] std::string* error_msg) override { return true; }
 
   const uint8_t* FindDynamicSymbolAddress([[maybe_unused]] const std::string& symbol_name,
                                           std::string* error_msg) const override {

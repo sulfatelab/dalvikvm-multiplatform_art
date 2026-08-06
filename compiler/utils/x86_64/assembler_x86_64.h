@@ -463,6 +463,11 @@ class X86_64Assembler final : public Assembler {
         static_cast<uint8_t>(reg.AsRegister()), scaled_offset, CodeSize());
   }
 
+  void RecordWindowsX64SaveXmm128(XmmRegister reg, size_t stack_offset) {
+    windows_x64_unwind_info_.RecordSaveXmm128(
+        static_cast<uint8_t>(reg.AsFloatRegister()), stack_offset, CodeSize());
+  }
+
   void EndWindowsX64UnwindPrologue() {
     windows_x64_unwind_info_.Finalize(CodeSize());
   }

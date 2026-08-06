@@ -63,10 +63,12 @@ CompiledMethod::CompiledMethod(CompiledMethodStorage* storage,
                                const ArrayRef<const uint8_t>& quick_code,
                                const ArrayRef<const uint8_t>& vmap_table,
                                const ArrayRef<const uint8_t>& cfi_info,
+                               const ArrayRef<const uint8_t>& windows_x64_unwind_info,
                                const ArrayRef<const linker::LinkerPatch>& patches)
     : CompiledCode(storage, instruction_set, quick_code),
       vmap_table_(storage->DeduplicateVMapTable(vmap_table)),
       cfi_info_(storage->DeduplicateCFIInfo(cfi_info)),
+      windows_x64_unwind_info_(storage->DeduplicateWindowsX64UnwindInfo(windows_x64_unwind_info)),
       patches_(storage->DeduplicateLinkerPatches(patches)) {
 }
 
@@ -76,6 +78,7 @@ CompiledMethod* CompiledMethod::SwapAllocCompiledMethod(
     const ArrayRef<const uint8_t>& quick_code,
     const ArrayRef<const uint8_t>& vmap_table,
     const ArrayRef<const uint8_t>& cfi_info,
+    const ArrayRef<const uint8_t>& windows_x64_unwind_info,
     const ArrayRef<const linker::LinkerPatch>& patches) {
   SwapAllocator<CompiledMethod> alloc(storage->GetSwapSpaceAllocator());
   CompiledMethod* ret = alloc.allocate(1);
@@ -84,7 +87,9 @@ CompiledMethod* CompiledMethod::SwapAllocCompiledMethod(
                   instruction_set,
                   quick_code,
                   vmap_table,
-                  cfi_info, patches);
+                  cfi_info,
+                  windows_x64_unwind_info,
+                  patches);
   return ret;
 }
 
@@ -98,6 +103,7 @@ void CompiledMethod::ReleaseSwapAllocatedCompiledMethod(CompiledMethodStorage* s
 CompiledMethod::~CompiledMethod() {
   CompiledMethodStorage* storage = GetStorage();
   storage->ReleaseLinkerPatches(patches_);
+  storage->ReleaseWindowsX64UnwindInfo(windows_x64_unwind_info_);
   storage->ReleaseCFIInfo(cfi_info_);
   storage->ReleaseVMapTable(vmap_table_);
 }
