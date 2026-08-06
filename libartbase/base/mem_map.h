@@ -542,10 +542,10 @@ class MemMap {
   std::shared_ptr<WindowsMapOwner> windows_owner_;
 #endif
 
-  static std::mutex* mem_maps_lock_;
+  static ART_BASE_DATA std::mutex* mem_maps_lock_;
 
 #ifdef ART_PAGE_SIZE_AGNOSTIC
-  static size_t page_size_;
+  static ART_BASE_DATA size_t page_size_;
 #endif
 
   friend class MemMapTest;  // To allow access to base_begin_ and base_size_.

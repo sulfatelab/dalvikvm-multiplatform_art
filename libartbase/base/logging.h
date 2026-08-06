@@ -64,7 +64,7 @@ struct LogVerbosity {
 };
 
 // Global log verbosity setting, initialized by InitLogging.
-extern LogVerbosity gLogVerbosity;
+extern ART_BASE_DATA LogVerbosity gLogVerbosity;
 
 // Configure logging based on ANDROID_LOG_TAGS environment variable.
 // We need to parse a string that looks like

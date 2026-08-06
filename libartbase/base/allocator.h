@@ -75,13 +75,13 @@ namespace TrackedAllocators {
 // wherever concurrent updates are possible.
 // Running count of number of bytes used for this kind of allocation. Increased by allocations,
 // decreased by deallocations.
-extern Atomic<size_t> g_bytes_used[kAllocatorTagCount];
+extern ART_BASE_DATA Atomic<size_t> g_bytes_used[kAllocatorTagCount];
 
 // Largest value of bytes used seen.
-extern Atomic<size_t> g_max_bytes_used[kAllocatorTagCount];
+extern ART_BASE_DATA Atomic<size_t> g_max_bytes_used[kAllocatorTagCount];
 
 // Total number of bytes allocated of this kind.
-extern Atomic<uint64_t> g_total_bytes_used[kAllocatorTagCount];
+extern ART_BASE_DATA Atomic<uint64_t> g_total_bytes_used[kAllocatorTagCount];
 
 void Dump(std::ostream& os);
 

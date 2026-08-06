@@ -327,6 +327,10 @@ class WatchDog {
 
   static void SetRuntime(Runtime* runtime) {
     const char* reason = "dex2oat watch dog set runtime";
+#if defined(_WIN32)
+    CHECK_WATCH_DOG_PTHREAD_CALL(
+        pthread_once, (&runtime_mutex_once_, &InitializeRuntimeMutex), reason);
+#endif
     CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_lock, (&runtime_mutex_), reason);
     runtime_ = runtime;
     CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_unlock, (&runtime_mutex_), reason);
@@ -404,11 +408,24 @@ class WatchDog {
 
   static Runtime* GetRuntime() {
     const char* reason = "dex2oat watch dog get runtime";
+#if defined(_WIN32)
+    CHECK_WATCH_DOG_PTHREAD_CALL(
+        pthread_once, (&runtime_mutex_once_, &InitializeRuntimeMutex), reason);
+#endif
     CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_lock, (&runtime_mutex_), reason);
     Runtime* runtime = runtime_;
     CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_unlock, (&runtime_mutex_), reason);
     return runtime;
   }
+
+#if defined(_WIN32)
+  static void InitializeRuntimeMutex() {
+    const char* reason = "dex2oat watch dog runtime mutex initialization";
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_init, (&runtime_mutex_, nullptr), reason);
+  }
+
+  static pthread_once_t runtime_mutex_once_;
+#endif
 
   static pthread_mutex_t runtime_mutex_;
   static Runtime* runtime_;
@@ -424,6 +441,9 @@ class WatchDog {
 };
 
 pthread_mutex_t WatchDog::runtime_mutex_ = PTHREAD_MUTEX_INITIALIZER;
+#if defined(_WIN32)
+pthread_once_t WatchDog::runtime_mutex_once_ = PTHREAD_ONCE_INIT;
+#endif
 Runtime* WatchDog::runtime_ = nullptr;
 
 // Helper class for overriding `java.lang.ThreadLocal.nextHashCode`.

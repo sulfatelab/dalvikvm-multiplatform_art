@@ -77,7 +77,7 @@ bool ParseValue(const std::string_view value, std::optional<std::string>* destin
 
 namespace art {
 
-Flags gFlags;
+ART_BASE_DATA Flags gFlags;
 
 static std::string GenerateCmdLineArgName(const std::string& name) {
   std::string result = "-X" + name + ":_";

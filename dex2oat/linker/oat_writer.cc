@@ -3459,6 +3459,32 @@ bool OatWriter::WriteDexFiles(File* file,
     }
 
     std::string error_msg;
+#ifdef _WIN32
+    // A Windows file cannot be resized while a file mapping of it is live. The
+    // compiler keeps this mapping alive because the DexFiles opened below
+    // point into it, but FinishVdexFile() must resize the VDEX after verifier
+    // dependencies and type lookup tables have been computed. Use an
+    // anonymous working copy for a newly-created VDEX and copy it to the exact
+    // final-size file in FinishVdexFile(). An existing VDEX is not resized and
+    // can retain the normal file mapping.
+    MemMap dex_files_map = use_existing_vdex
+        ? MemMap::MapFile(page_aligned_size,
+                          PROT_READ,
+                          MAP_SHARED,
+                          file->Fd(),
+                          /*start=*/ 0u,
+                          /*low_4gb=*/ false,
+                          file->GetPath().c_str(),
+                          &error_msg)
+        : MemMap::MapAnonymous(file->GetPath().c_str(),
+                               /*addr=*/ nullptr,
+                               page_aligned_size,
+                               PROT_READ | PROT_WRITE,
+                               /*low_4gb=*/ false,
+                               /*reuse=*/ false,
+                               /*reservation=*/ nullptr,
+                               &error_msg);
+#else
     MemMap dex_files_map = MemMap::MapFile(
         page_aligned_size,
         use_existing_vdex ? PROT_READ : PROT_READ | PROT_WRITE,
@@ -3468,6 +3494,7 @@ bool OatWriter::WriteDexFiles(File* file,
         /*low_4gb=*/ false,
         file->GetPath().c_str(),
         &error_msg);
+#endif
     if (!dex_files_map.IsValid()) {
       LOG(ERROR) << "Failed to mmap() dex files from oat file. File: " << file->GetPath()
                  << " error: " << error_msg;
@@ -3733,8 +3760,15 @@ bool OatWriter::FinishVdexFile(File* vdex_file, verifier::VerifierDeps* verifier
   WriteTypeLookupTables(&buffer);
   DCHECK_EQ(vdex_size_, old_vdex_size + buffer.size());
 
-  // Resize the vdex file.
-  if (vdex_file->SetLength(vdex_size_) != 0) {
+  // Windows file views are rounded up to the runtime page size. Temporarily
+  // extend the physical file to match the view and truncate it to the exact
+  // VDEX size after the short-lived output mapping is released below.
+#ifdef _WIN32
+  const size_t mapped_vdex_size = RoundUp(vdex_size_, MemMap::GetPageSize());
+#else
+  const size_t mapped_vdex_size = vdex_size_;
+#endif
+  if (vdex_file->SetLength(mapped_vdex_size) != 0) {
     PLOG(ERROR) << "Failed to resize vdex file " << vdex_file->GetPath();
     return false;
   }
@@ -3743,6 +3777,29 @@ bool OatWriter::FinishVdexFile(File* vdex_file, verifier::VerifierDeps* verifier
   MemMap extra_map;
   if (extract_dex_files_into_vdex_) {
     DCHECK(vdex_begin != nullptr);
+#ifdef _WIN32
+    // The long-lived compiler mapping is an anonymous working copy on Windows
+    // (see WriteDexFiles()). Publish it through a short-lived mapping of the
+    // now exactly-sized output file.
+    std::string error_msg;
+    extra_map = MemMap::MapFile(
+        vdex_size_,
+        PROT_READ | PROT_WRITE,
+        MAP_SHARED,
+        vdex_file->Fd(),
+        /*start=*/ 0u,
+        /*low_4gb=*/ false,
+        vdex_file->GetPath().c_str(),
+        &error_msg);
+    if (!extra_map.IsValid()) {
+      LOG(ERROR) << "Failed to mmap() vdex output file. File: " << vdex_file->GetPath()
+                 << " error: " << error_msg;
+      return false;
+    }
+    vdex_begin = extra_map.Begin();
+    memcpy(vdex_begin, vdex_begin_, old_vdex_size);
+    memcpy(vdex_begin + old_vdex_size, buffer.data(), buffer.size());
+#else
     // Write data to the last already mmapped page of the vdex file.
     // The size should match the page_aligned_size in the OatWriter::WriteDexFiles.
     size_t mmapped_vdex_size = RoundUp(old_vdex_size, MemMap::GetPageSize());
@@ -3768,6 +3825,7 @@ bool OatWriter::FinishVdexFile(File* vdex_file, verifier::VerifierDeps* verifier
       }
       memcpy(extra_map.Begin(), buffer.data() + first_chunk_size, tail_size);
     }
+#endif
   } else {
     DCHECK(vdex_begin == nullptr);
     std::string error_msg;
@@ -3832,6 +3890,7 @@ bool OatWriter::FinishVdexFile(File* vdex_file, verifier::VerifierDeps* verifier
     // Sync the data to the disk while the header is invalid. We do not want to end up with
     // a valid header and invalid data if the process is suddenly killed.
     if (extract_dex_files_into_vdex_) {
+#ifndef _WIN32
       // Note: We passed the ownership of the vdex dex file MemMap to the caller,
       // so we need to use msync() for the range explicitly.
       //
@@ -3842,11 +3901,21 @@ bool OatWriter::FinishVdexFile(File* vdex_file, verifier::VerifierDeps* verifier
         PLOG(ERROR) << "Failed to sync vdex file contents" << vdex_file->GetPath();
         return false;
       }
+#endif
     }
     if (extra_map.IsValid() && !extra_map.Sync()) {
       PLOG(ERROR) << "Failed to sync vdex file contents" << vdex_file->GetPath();
       return false;
     }
+#ifdef _WIN32
+    // FlushViewOfFile() writes dirty mapped pages but does not itself flush the
+    // underlying file buffers. Preserve the VDEX publish ordering by doing
+    // both before making the header valid.
+    if (vdex_file->Flush() != 0) {
+      PLOG(ERROR) << "Failed to flush vdex file contents " << vdex_file->GetPath();
+      return false;
+    }
+#endif
   }
 
   // Now that we know all contents have been flushed to disk, we can write
@@ -3861,10 +3930,27 @@ bool OatWriter::FinishVdexFile(File* vdex_file, verifier::VerifierDeps* verifier
   // here should match the header size rounded up to the page size. Any higher value
   // might happen to be larger than the size of the mapping which can in some circumstances
   // cause msync to fail.
+#ifdef _WIN32
+  if (!extra_map.Sync()) {
+#else
   if (msync(vdex_begin, MemMap::GetPageSize(), MS_SYNC) != 0) {
+#endif
     PLOG(ERROR) << "Failed to sync vdex file header " << vdex_file->GetPath();
     return false;
   }
+
+#ifdef _WIN32
+  // Release the file view before shrinking away its page-rounded tail.
+  extra_map.Reset();
+  if (vdex_file->SetLength(vdex_size_) != 0) {
+    PLOG(ERROR) << "Failed to set final vdex file size " << vdex_file->GetPath();
+    return false;
+  }
+  if (vdex_file->Flush() != 0) {
+    PLOG(ERROR) << "Failed to flush final vdex file " << vdex_file->GetPath();
+    return false;
+  }
+#endif
 
   return true;
 }

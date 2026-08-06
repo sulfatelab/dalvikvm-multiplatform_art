@@ -101,9 +101,9 @@ std::ostream& operator<<(std::ostream& os, const Maps& mem_maps) {
   return os;
 }
 
-std::mutex* MemMap::mem_maps_lock_ = nullptr;
+ART_BASE_DATA std::mutex* MemMap::mem_maps_lock_ = nullptr;
 #ifdef ART_PAGE_SIZE_AGNOSTIC
-size_t MemMap::page_size_ = 0;
+ART_BASE_DATA size_t MemMap::page_size_ = 0;
 #endif
 
 #if USE_ART_LOW_4G_ALLOCATOR
@@ -1012,8 +1012,29 @@ int MemMap::MadviseDontFork() {
 
 bool MemMap::Sync() {
 #ifdef _WIN32
-  // TODO: add FlushViewOfFile support.
-  PLOG(ERROR) << "MemMap::Sync unsupported on Windows.";
+  if (BaseBegin() == nullptr && BaseSize() == 0u) {
+    return true;
+  }
+  MEMORY_BASIC_INFORMATION info = {};
+  if (::VirtualQuery(BaseBegin(), &info, sizeof(info)) != sizeof(info)) {
+    DWORD error = ::GetLastError();
+    errno = EIO;
+    LOG(ERROR) << StringPrintf(
+        "VirtualQuery(%p) before FlushViewOfFile failed: %lu", BaseBegin(), error);
+    return false;
+  }
+  // Anonymous MemMaps are backed by VirtualAlloc rather than a file. They
+  // have nothing to flush, including the private VDEX compiler copy.
+  if (info.Type == MEM_PRIVATE) {
+    return true;
+  }
+  if (::FlushViewOfFile(BaseBegin(), BaseSize())) {
+    return true;
+  }
+  DWORD error = ::GetLastError();
+  errno = EIO;
+  LOG(ERROR) << StringPrintf(
+      "FlushViewOfFile(%p, %zu) failed: %lu", BaseBegin(), BaseSize(), error);
   return false;
 #else
   // Historical note: To avoid Valgrind errors, we temporarily lifted the lower-end noaccess

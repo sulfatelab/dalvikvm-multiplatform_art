@@ -320,7 +320,7 @@ struct Flags {
 };
 
 // This is the actual instance of all the flags.
-extern Flags gFlags;
+extern ART_BASE_DATA Flags gFlags;
 
 EXPORT bool is_test_rw_flag_enabled();
 

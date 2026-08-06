@@ -49,11 +49,15 @@ static constexpr bool kPageSizeAgnostic = false;
 static constexpr size_t kMaxPageSize = kMinPageSize;
 #endif
 
-// Targets can have different page size (eg. 4kB or 16kB). Because Art can crosscompile, it needs
-// to be able to generate OAT (ELF) and other image files with alignment other than the host page
-// size. kElfSegmentAlignment needs to be equal to the largest page size supported. Effectively,
-// this is the value to be used in images files for aligning contents to page size.
+// Targets can have different page and allocation granularities. Because ART can cross-compile,
+// use the target artifact alignment rather than the host page size for OAT (ELF) and image files.
+// Windows retains a 16KiB maximum runtime page-size bound but requires 64KiB-aligned artifacts
+// for its allocation granularity. Other targets retain the existing largest-page-size alignment.
+#if defined(ART_TARGET_WINDOWS)
+static constexpr size_t kElfSegmentAlignment = 64 * KB;
+#else
 static constexpr size_t kElfSegmentAlignment = kMaxPageSize;
+#endif
 
 // Multi-element classpath / bootclasspath list separator (-cp, -Xbootclasspath).
 // Windows uses ';' (OpenJDK Win32); Unix/Android use ':'.

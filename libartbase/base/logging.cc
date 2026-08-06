@@ -35,9 +35,9 @@
 
 namespace art {
 
-LogVerbosity gLogVerbosity;
+ART_BASE_DATA LogVerbosity gLogVerbosity;
 
-std::atomic<unsigned int> gAborting(0);
+ART_BASE_DATA std::atomic<unsigned int> gAborting(0);
 
 static std::unique_ptr<std::string> gCmdLine;
 static std::unique_ptr<std::string> gProgramInvocationName;

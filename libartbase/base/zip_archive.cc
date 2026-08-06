@@ -208,9 +208,8 @@ MemMap ZipEntry::MapDirectlyOrExtract(const char* zip_filename,
 
 static void SetCloseOnExec(int fd) {
 #ifdef _WIN32
-  // Exec is not supported on Windows.
+  // Exec and close-on-exec descriptor state are not supported on Windows.
   UNUSED(fd);
-  PLOG(ERROR) << "SetCloseOnExec is not supported on Windows.";
 #else
   // This dance is more portable than Linux's O_CLOEXEC open(2) flag.
   int flags = fcntl(fd, F_GETFD);

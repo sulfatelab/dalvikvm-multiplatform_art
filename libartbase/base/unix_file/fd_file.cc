@@ -314,6 +314,12 @@ bool FdFile::Open(const std::string& path, int flags) {
 bool FdFile::Open(const std::string& path, int flags, mode_t mode) {
   static_assert(O_RDONLY == 0, "Readonly flag has unexpected value.");
   DCHECK_EQ(fd_, kInvalidFd) << path;
+#ifdef _WIN32
+  // POSIX file descriptors do not translate newlines. Match that behavior for
+  // ART's binary artifacts and inputs instead of inheriting the MSVCRT text
+  // default.
+  flags |= O_BINARY;
+#endif
   read_only_mode_ = ((flags & O_ACCMODE) == O_RDONLY);
   fd_ = TEMP_FAILURE_RETRY(open(path.c_str(), flags, mode));
   if (fd_ == kInvalidFd) {

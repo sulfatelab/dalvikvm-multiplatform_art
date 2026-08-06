@@ -19,12 +19,14 @@
 
 #include <atomic>
 
+#include "macros.h"
+
 namespace art {
 
 // 0 if not abort, non-zero if an abort is in progress. Used on fatal exit to prevents recursive
 // aborts. Global declaration allows us to disable some error checking to ensure fatal shutdown
 // makes forward progress.
-extern std::atomic<unsigned int> gAborting;
+extern ART_BASE_DATA std::atomic<unsigned int> gAborting;
 
 }  // namespace art
 

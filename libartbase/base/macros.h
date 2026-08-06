@@ -132,6 +132,19 @@ template<typename T> ART_FRIEND_TEST(test_set_name, individual_test)
 #define EXPORT
 #endif
 
+// Mutable libartbase state must have one process-wide owner on Windows. Keep
+// the data-import annotation separate from EXPORT: libartbase is also used by
+// art.dll, whose BUILDING_LIBART definition has different PE ABI ownership.
+#if defined(_WIN32)
+#if defined(BUILDING_LIBARTBASE)
+#define ART_BASE_DATA __declspec(dllexport)
+#else
+#define ART_BASE_DATA __declspec(dllimport)
+#endif
+#else
+#define ART_BASE_DATA
+#endif
+
 // EXPORT can decorate namespaces and enum types for ELF visibility, but PE
 // dllexport has no meaning on either declaration kind.  Keep those five AOSP
 // visibility-only sites separate from the Windows DLL ABI annotation.
