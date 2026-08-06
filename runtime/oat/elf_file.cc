@@ -728,6 +728,16 @@ bool ElfFileImpl<ElfTypes>::Load(bool executable,
       return false;
     }
     if (program_header->p_filesz != 0u) {
+#ifdef _WIN32
+      MemMap segment = MemMap::MapFileAtAddressPrivateCopy(
+          p_vaddr,
+          program_header->p_filesz,
+          prot,
+          file_->Fd(),
+          start_ + program_header->p_offset,
+          file_location_.c_str(),
+          error_msg);
+#else
       MemMap segment = MemMap::MapFileAtAddress(p_vaddr,
                                                 program_header->p_filesz,
                                                 prot,
@@ -739,8 +749,9 @@ bool ElfFileImpl<ElfTypes>::Load(bool executable,
                                                 /*reuse=*/true,  // implies MAP_FIXED
                                                 /*reservation=*/nullptr,
                                                 error_msg);
+#endif
       if (!segment.IsValid()) {
-        *error_msg = StringPrintf("Failed to map ELF file segment %d from %s: %s",
+        *error_msg = StringPrintf("Failed to load ELF file segment %d from %s: %s",
                                   i,
                                   file_location_.c_str(),
                                   error_msg->c_str());

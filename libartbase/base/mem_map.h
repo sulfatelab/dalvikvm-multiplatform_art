@@ -206,6 +206,17 @@ class MemMap {
   static MemMap MapPlaceholder(const char* name, uint8_t* addr, size_t byte_count);
 
 #ifdef _WIN32
+  // Copy a checked file range into an existing ART-owned private allocation.
+  // The destination is writable and non-executable only during the copy, then
+  // receives `prot`. This is deliberately narrower than MAP_FIXED emulation.
+  static MemMap MapFileAtAddressPrivateCopy(uint8_t* addr,
+                                            size_t byte_count,
+                                            int prot,
+                                            int fd,
+                                            off_t start,
+                                            const char* filename,
+                                            std::string* error_msg);
+
   // Create an unnamed mapping backed by the system paging file. Returns NULL
   // on failure. The mapping object permits separate R, RX, and RW views.
   static void* CreatePageFileSection(size_t capacity, std::string* error_msg);

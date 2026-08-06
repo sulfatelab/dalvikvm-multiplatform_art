@@ -117,6 +117,27 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
   }
   CHECK_IMPLIES(mmap_reuse, mmap_addr != nullptr);
   // Start as PROT_WRITE so we can mprotect back to it if we want to.
+#ifdef _WIN32
+  MemMap mmap = mmap_reuse
+      ? MemMap::MapFileAtAddressPrivateCopy(mmap_addr,
+                                            vdex_length,
+                                            PROT_READ | PROT_WRITE,
+                                            file_fd,
+                                            start,
+                                            vdex_filename.c_str(),
+                                            error_msg)
+      : MemMap::MapFileAtAddress(mmap_addr,
+                                 vdex_length,
+                                 PROT_READ | PROT_WRITE,
+                                 MAP_PRIVATE,
+                                 file_fd,
+                                 start,
+                                 low_4gb,
+                                 vdex_filename.c_str(),
+                                 mmap_reuse,
+                                 /*reservation=*/nullptr,
+                                 error_msg);
+#else
   MemMap mmap = MemMap::MapFileAtAddress(mmap_addr,
                                          vdex_length,
                                          PROT_READ | PROT_WRITE,
@@ -128,6 +149,7 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
                                          mmap_reuse,
                                          /*reservation=*/nullptr,
                                          error_msg);
+#endif
   if (!mmap.IsValid()) {
     *error_msg = "Failed to mmap file " + vdex_filename + " : " + *error_msg;
     return nullptr;

@@ -17,6 +17,7 @@
 #include "mem_map.h"
 
 #include <algorithm>
+#include <inttypes.h>
 #include <io.h>
 #include <limits>
 #include <map>
@@ -32,6 +33,8 @@
 
 #include "android-base/logging.h"
 #include "android-base/stringprintf.h"
+#include "file_utils.h"
+#include "unix_file/fd_file.h"
 #ifdef PROT_READ
 #undef PROT_READ
 #endif
@@ -95,6 +98,34 @@ static bool ReleaseWindowsMapping(void* allocation_base, WindowsMapKind kind) {
       : ::UnmapViewOfFile(allocation_base) != FALSE;
 }
 
+static bool IsPrivateAllocationRange(uint8_t* address,
+                                     size_t size,
+                                     std::string* error_msg) {
+  const uintptr_t begin = reinterpret_cast<uintptr_t>(address);
+  const uintptr_t end = begin + size;
+  uintptr_t cursor = begin;
+  void* allocation_base = nullptr;
+  while (cursor < end) {
+    MEMORY_BASIC_INFORMATION info = {};
+    WindowsMapKind kind;
+    if (!QueryWindowsMapping(reinterpret_cast<void*>(cursor), &info, &kind) ||
+        kind != WindowsMapKind::kVirtualAlloc ||
+        (allocation_base != nullptr && info.AllocationBase != allocation_base)) {
+      *error_msg = "Windows private-copy destination is not one private allocation";
+      return false;
+    }
+    allocation_base = info.AllocationBase;
+    const uintptr_t region_end =
+        reinterpret_cast<uintptr_t>(info.BaseAddress) + info.RegionSize;
+    if (region_end <= cursor) {
+      *error_msg = "Windows private-copy destination has an invalid allocation range";
+      return false;
+    }
+    cursor = std::min(region_end, end);
+  }
+  return true;
+}
+
 }  // namespace
 
 struct WindowsMapOwner {
@@ -139,6 +170,95 @@ void MemMap::TargetMMapInit() {
   SYSTEM_INFO si;
   GetSystemInfo(&si);
   allocation_granularity = static_cast<off_t>(si.dwAllocationGranularity);
+}
+
+MemMap MemMap::MapFileAtAddressPrivateCopy(uint8_t* addr,
+                                           size_t byte_count,
+                                           int prot,
+                                           int fd,
+                                           off_t start,
+                                           const char* filename,
+                                           std::string* error_msg) {
+  if (addr == nullptr || byte_count == 0u || prot == 0 || fd < 0 || start < 0 ||
+      filename == nullptr || error_msg == nullptr) {
+    if (error_msg != nullptr) {
+      *error_msg = "Invalid Windows private-copy file mapping request";
+    }
+    return Invalid();
+  }
+  const uintptr_t destination = reinterpret_cast<uintptr_t>(addr);
+  if (!IsAlignedParam(destination, GetPageSize()) ||
+      byte_count > std::numeric_limits<uintptr_t>::max() - destination) {
+    *error_msg = "Windows private-copy destination is unaligned or overflows";
+    return Invalid();
+  }
+  std::string owner_error;
+  if (!ContainedWithinExistingMap(addr, byte_count, &owner_error)) {
+    *error_msg = StringPrintf("Windows private-copy destination is not ART-owned: %s",
+                              owner_error.c_str());
+    return Invalid();
+  }
+  if (!IsPrivateAllocationRange(addr, byte_count, error_msg)) {
+    return Invalid();
+  }
+
+  int duplicate = DupCloexec(fd);
+  if (duplicate < 0) {
+    *error_msg = StringPrintf("Failed to duplicate file descriptor for %s", filename);
+    return Invalid();
+  }
+  unix_file::FdFile input(duplicate, /*check_usage=*/false);
+  int64_t file_length = input.GetLength();
+  uint64_t offset = static_cast<uint64_t>(start);
+  if (file_length < 0 || offset > std::numeric_limits<size_t>::max() ||
+      offset > static_cast<uint64_t>(file_length) ||
+      byte_count > static_cast<uint64_t>(file_length) - offset) {
+    *error_msg = StringPrintf(
+        "Private-copy range [%" PRIu64 ", %" PRIu64 ") exceeds file %s of length %" PRId64,
+        offset,
+        offset + byte_count,
+        filename,
+        file_length);
+    return Invalid();
+  }
+
+  std::string copy_error;
+  MemMap result = MapAnonymous(filename,
+                               addr,
+                               byte_count,
+                               PROT_READ | PROT_WRITE,
+                               /*low_4gb=*/false,
+                               /*reuse=*/true,
+                               /*reservation=*/nullptr,
+                               &copy_error);
+  if (!result.IsValid()) {
+    *error_msg = StringPrintf(
+        "Failed to make Windows private-copy destination writable for %s: %s",
+        filename,
+        copy_error.c_str());
+    return Invalid();
+  }
+  if (!input.PreadFully(result.Begin(), byte_count, static_cast<size_t>(offset))) {
+    *error_msg = StringPrintf("Failed to copy %zu bytes from %s at offset %" PRIu64,
+                              byte_count,
+                              filename,
+                              offset);
+    return Invalid();
+  }
+  if (!result.Protect(prot)) {
+    *error_msg = StringPrintf("Failed to apply final protection 0x%x to private copy of %s",
+                              prot,
+                              filename);
+    return Invalid();
+  }
+  if ((prot & PROT_EXEC) != 0 &&
+      !::FlushInstructionCache(::GetCurrentProcess(), result.Begin(), result.Size())) {
+    *error_msg = StringPrintf("Failed to flush executable private copy of %s: %lu",
+                              filename,
+                              ::GetLastError());
+    return Invalid();
+  }
+  return result;
 }
 
 void* MemMap::TargetMMap(void* start,
