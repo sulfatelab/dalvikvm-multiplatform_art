@@ -1200,6 +1200,13 @@ bool Runtime::Start() {
           if (!CanMethodUseNterp(&m)) {
             continue;
           }
+          // This visitor repairs methods which were left on the switch
+          // interpreter while nterp was unavailable during early startup. Do
+          // not replace a boot-image method's published AOT entrypoint.
+          const void* before = m.GetEntryPointFromQuickCompiledCode();
+          if (!class_linker_->IsQuickToInterpreterBridge(before)) {
+            continue;
+          }
           instrumentation_->ReinitializeMethodsCode(&m);
           const void* after = m.GetEntryPointFromQuickCompiledCode();
           if (!(after == interpreter::GetNterpEntryPoint() ||
