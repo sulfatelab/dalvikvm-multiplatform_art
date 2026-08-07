@@ -106,6 +106,17 @@
 // Includes the return address implictly pushed on stack by 'call'.
 #define CALLEE_SAVES_SIZE (6 * 8 + 4 * 8 + 1 * 8)
 
+// Keep a fixed aligned call-return slot outside the managed nterp areas on
+// Windows. The PE adapter below uses this gap while a compiled invoke is
+// active.
+#if defined(_WIN32)
+#define NTERP_WINDOWS_UNWIND_RESERVE 16
+#define NTERP_STACK_FRAME_HEADER_SIZE (24 + NTERP_WINDOWS_UNWIND_RESERVE)
+#else
+#define NTERP_WINDOWS_UNWIND_RESERVE 0
+#define NTERP_STACK_FRAME_HEADER_SIZE 24
+#endif
+
 // +8 for the ArtMethod of the caller.
 #define OFFSET_TO_FIRST_ARGUMENT_IN_STACK (CALLEE_SAVES_SIZE + 8)
 
@@ -258,6 +269,29 @@ DEFINE_FUNCTION \name
 END_FUNCTION \name
 .endm
 
+// On Windows, retain the dynamic nterp RSP for managed exception delivery.
+// Redirect the return PC through an adapter whose PE unwind record matches this
+// frame's runtime-sized gap. The reserved gap holds the continuation address above the
+// Windows home area. The adapter unwind record also restores the nterp frame's
+// saved nonvolatile GPRs; the caller's PE unwind record may use those registers
+// (notably RBP) to recover its own stack pointer.
+.macro NTERP_COMPILED_CALL target, label
+#if defined(_WIN32)
+    movq -8(rREFS), %r10
+    leaq .Lnterp_windows_invoke_continue_\label(%rip), %r11
+    movq %r11, -8(%r10)
+    subq %rsp, %r10
+    subq MACRO_LITERAL(8), %r10
+    shrq MACRO_LITERAL(4), %r10
+    leaq .Lnterp_windows_invoke_adapter_table(%rip), %r11
+    pushq (%r11, %r10, 8)
+    jmp \target
+.Lnterp_windows_invoke_continue_\label:
+#else
+    call \target
+#endif
+.endm
+
 .macro CLEAR_VOLATILE_MARKER reg
   andq MACRO_LITERAL(-2), \reg
 .endm
@@ -312,7 +346,7 @@ END_FUNCTION \name
 
     // Compute new stack pointer in r10: add 24 for saving the previous frame,
     // pc, and method being executed.
-    leaq -24(%rsp), %r10
+    leaq -NTERP_STACK_FRAME_HEADER_SIZE(%rsp), %r10
     subq %r11, %r10
     // Alignment
     // Note: There may be two pieces of alignment but there is no need to align
@@ -1135,11 +1169,11 @@ END_FUNCTION \name
    .else
      DO_ENTRY_POINT_CHECK .Lcall_compiled_code_\suffix
      .if \is_string_init
-     call nterp_to_nterp_string_init_non_range
+     NTERP_COMPILED_CALL nterp_to_nterp_string_init_non_range, nterp_string_init_non_range_\suffix
      .elseif \is_static
-     call nterp_to_nterp_static_non_range
+     NTERP_COMPILED_CALL nterp_to_nterp_static_non_range, nterp_static_non_range_\suffix
      .else
-     call nterp_to_nterp_instance_non_range
+     NTERP_COMPILED_CALL nterp_to_nterp_instance_non_range, nterp_instance_non_range_\suffix
      .endif
      jmp .Ldone_return_\suffix
    .endif
@@ -1197,7 +1231,7 @@ END_FUNCTION \name
      // First argument already in %esi.
      .endif
 .Linvoke_fast_path_\suffix:
-     call *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi) // Call the method.
+     NTERP_COMPILED_CALL *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi), invoke_fast_path_\suffix
      ADVANCE_PC_FETCH_AND_GOTO_NEXT 3
 
 .Lfast_path_with_few_args_\suffix:
@@ -1230,7 +1264,7 @@ END_FUNCTION \name
      andl MACRO_LITERAL(0xfe), %r9d
      cmpl MACRO_LITERAL(0x0a), %r9d
      je .Lget_shorty_and_invoke_\suffix
-     call *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi) // Call the method.
+     NTERP_COMPILED_CALL *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi), invoke_few_args_\suffix
      ADVANCE_PC_FETCH_AND_GOTO_NEXT 3
 .Lget_shorty_and_invoke_\suffix:
      .if \is_interface
@@ -1294,7 +1328,7 @@ END_FUNCTION \name
       .if \is_interface
       movq %xmm12, %rax
       .endif
-      call *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi) // Call the method.
+      NTERP_COMPILED_CALL *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi), invoke_regular_\suffix
    .endif
    cmpb LITERAL(68), (rINSTq)       // Test if result type char == 'D'.
    je .Lreturn_double_\suffix
@@ -1331,11 +1365,11 @@ END_FUNCTION \name
    .else
      DO_ENTRY_POINT_CHECK .Lcall_compiled_code_range_\suffix
      .if \is_string_init
-     call nterp_to_nterp_string_init_range
+     NTERP_COMPILED_CALL nterp_to_nterp_string_init_range, nterp_string_init_range_\suffix
      .elseif \is_static
-     call nterp_to_nterp_static_range
+     NTERP_COMPILED_CALL nterp_to_nterp_static_range, nterp_static_range_\suffix
      .else
-     call nterp_to_nterp_instance_range
+     NTERP_COMPILED_CALL nterp_to_nterp_instance_range, nterp_instance_range_\suffix
      .endif
      jmp .Ldone_return_range_\suffix
    .endif
@@ -1393,7 +1427,7 @@ END_FUNCTION \name
      // First argument already in %esi.
      .endif
 .Linvoke_fast_path_range_\suffix:
-     call *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi) // Call the method.
+     NTERP_COMPILED_CALL *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi), invoke_fast_path_range_\suffix
      ADVANCE_PC_FETCH_AND_GOTO_NEXT 3
 
 .Lfast_path_with_few_args_range_\suffix:
@@ -1423,7 +1457,7 @@ END_FUNCTION \name
      and MACRO_LITERAL(0xfe), %r9d
      cmpl MACRO_LITERAL(0x0a), %r9d
      je .Lget_shorty_and_invoke_range_\suffix
-     call *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi) // Call the method.
+     NTERP_COMPILED_CALL *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi), invoke_few_args_range_\suffix
      ADVANCE_PC_FETCH_AND_GOTO_NEXT 3
 .Lget_shorty_and_invoke_range_\suffix:
      .if \is_interface
@@ -1497,7 +1531,7 @@ END_FUNCTION \name
      // Set the hidden argument for conflict resolution.
      movq %xmm12, %rax
      .endif
-     call *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi) // Call the method.
+     NTERP_COMPILED_CALL *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi), invoke_regular_range_\suffix
    .endif
    cmpb LITERAL(68), (%rbx)       // Test if result type char == 'D'.
    je .Lreturn_range_double_\suffix
@@ -2458,6 +2492,46 @@ nterp_to_nterp_string_init_range:
     .cfi_endproc
 
 END nterp_helper
+
+#if defined(_WIN32)
+// The dynamic part of an nterp frame is always 8 (mod 16) bytes and is
+// bounded by kNterpMaxFrame (3 KiB), including the fixed callee-save block.
+// Emit one adapter per possible gap so PE unwinding can skip from the dynamic
+// nterp RSP to the caller return slot in the fixed callee-save block without
+// changing RSP during managed execution. The synthetic allocation includes
+// the six GPR saves, four 64-bit ART FP saves, and the saved return address
+// (80 bytes). PE unwind metadata must describe the six GPR save locations as
+// well as the synthetic allocation. Otherwise RtlVirtualUnwind reaches the
+// caller PC with the nterp callee's nonvolatile-register context, which breaks
+// callers that use RBP as a frame register.
+    .p2align 3
+.Lnterp_windows_invoke_adapter_table:
+%  for i in range(187):
+%    write_line("    .quad .Lnterp_windows_invoke_adapter_%d" % i)
+%  pass
+    .globl SYMBOL(NterpWindowsInvokeAdapterStart)
+SYMBOL(NterpWindowsInvokeAdapterStart):
+%  for i in range(187):
+%    gap = 8 + 16 * i
+%    write_line(".Lnterp_windows_invoke_adapter_%d:" % i)
+%    write_line("    .seh_proc .Lnterp_windows_invoke_adapter_%d" % i)
+%    write_line("    .seh_stackalloc %d" % (gap + 80))
+%    write_line("    .seh_savereg %%rbx, %d" % (gap + 32))
+%    write_line("    .seh_savereg %%rbp, %d" % (gap + 40))
+%    write_line("    .seh_savereg %%r12, %d" % (gap + 48))
+%    write_line("    .seh_savereg %%r13, %d" % (gap + 56))
+%    write_line("    .seh_savereg %%r14, %d" % (gap + 64))
+%    write_line("    .seh_savereg %%r15, %d" % (gap + 72))
+%    write_line("    .seh_endprologue")
+%    if i == 0:
+%      write_line("    jmp *(%rsp)")
+%    else:
+%      write_line("    jmp *%d(%%rsp)" % (gap - 8))
+%    write_line("    .seh_endproc")
+%  pass
+    .globl SYMBOL(NterpWindowsInvokeAdapterEnd)
+SYMBOL(NterpWindowsInvokeAdapterEnd):
+%  write_line("#endif")
 
 // This is the end of PCs contained by the OatQuickMethodHeader created for the interpreter
 // entry point.

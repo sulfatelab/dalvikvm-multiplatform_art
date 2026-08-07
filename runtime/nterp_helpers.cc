@@ -88,6 +88,13 @@ namespace art HIDDEN {
 
 static constexpr size_t kPointerSize = static_cast<size_t>(kRuntimePointerSize);
 
+#if defined(_WIN32)
+// Must match NTERP_WINDOWS_UNWIND_RESERVE in the x86-64 nterp assembly.
+static constexpr size_t kWindowsUnwindReserve = 16u;
+#else
+static constexpr size_t kWindowsUnwindReserve = 0u;
+#endif
+
 static constexpr size_t NterpGetFrameEntrySize(InstructionSet isa) {
   uint32_t core_spills = 0;
   uint32_t fp_spills = 0;
@@ -166,7 +173,8 @@ static size_t NterpGetFrameSizeWithoutPadding(ArtMethod* method, InstructionSet 
       pointer_size +  // previous frame
       pointer_size +  // saved dex pc
       (out_regs * kVRegSize) +  // out arguments
-      pointer_size;  // method
+      pointer_size +  // method
+      kWindowsUnwindReserve;
   return frame_size;
 }
 
