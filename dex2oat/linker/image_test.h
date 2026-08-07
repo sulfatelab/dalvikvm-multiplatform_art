@@ -313,6 +313,7 @@ inline void ImageTest::DoCompile(ImageHeader::StorageMode storage_mode,
                                           oat_writer->GetDataImgRelRoSize(),
                                           oat_writer->GetDataImgRelRoAppImageOffset(),
                                           oat_writer->GetWindowsUnwindSize(),
+                                          oat_writer->GetWindowsCfgSize(),
                                           oat_writer->GetBssSize(),
                                           oat_writer->GetBssMethodsOffset(),
                                           oat_writer->GetBssRootsOffset(),
@@ -344,6 +345,13 @@ inline void ImageTest::DoCompile(ImageHeader::StorageMode storage_mode,
           bool windows_unwind_ok = oat_writer->WriteWindowsUnwind(windows_unwind);
           ASSERT_TRUE(windows_unwind_ok);
           elf_writer->EndWindowsUnwind(windows_unwind);
+        }
+
+        if (oat_writer->GetWindowsCfgSize() != 0u) {
+          OutputStream* windows_cfg = elf_writer->StartWindowsCfg();
+          bool windows_cfg_ok = oat_writer->WriteWindowsCfg(windows_cfg);
+          ASSERT_TRUE(windows_cfg_ok);
+          elf_writer->EndWindowsCfg(windows_cfg);
         }
 
         bool header_ok = oat_writer->WriteHeader(elf_writer->GetStream());

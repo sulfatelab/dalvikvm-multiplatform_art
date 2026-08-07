@@ -56,6 +56,7 @@ class ElfWriter {
                                      size_t data_img_rel_ro_size,
                                      size_t data_img_rel_ro_app_image_offset,
                                      size_t windows_unwind_size,
+                                     size_t windows_cfg_size,
                                      size_t bss_size,
                                      size_t bss_methods_offset,
                                      size_t bss_roots_offset,
@@ -69,6 +70,8 @@ class ElfWriter {
   virtual void EndDataImgRelRo(OutputStream* data_img_rel_ro) = 0;
   virtual OutputStream* StartWindowsUnwind() = 0;
   virtual void EndWindowsUnwind(OutputStream* windows_unwind) = 0;
+  virtual OutputStream* StartWindowsCfg() = 0;
+  virtual void EndWindowsCfg(OutputStream* windows_cfg) = 0;
   virtual void WriteDynamicSection() = 0;
   virtual void WriteDebugInfo(const debug::DebugInfo& debug_info) = 0;
   virtual bool StripDebugInfo() = 0;

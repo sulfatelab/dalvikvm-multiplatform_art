@@ -91,6 +91,16 @@ constexpr uint32_t kOatWindowsX64UnwindEntrySize = 12u;
 constexpr uint32_t kImageFileMachineAmd64 = 0x8664u;
 constexpr size_t kOatWindowsUnwindChecksumOffset = 44u;
 
+constexpr uint32_t kOatWindowsCfgVersion = 1u;
+constexpr uint32_t kOatWindowsCfgHeaderSize = 48u;
+constexpr uint32_t kOatWindowsCfgTargetSize = 8u;
+constexpr uint32_t kOatWindowsCfgCompleteTargetSet = 1u << 0;
+constexpr uint32_t kOatWindowsCfgQuickMethod = 1u << 0;
+constexpr uint32_t kOatWindowsCfgJniStub = 1u << 1;
+constexpr uint32_t kOatWindowsCfgBootTrampoline = 1u << 2;
+constexpr uint32_t kOatWindowsCfgIndirectCallableThunk = 1u << 3;
+constexpr size_t kOatWindowsCfgChecksumOffset = 40u;
+
 void StoreUint32LittleEndian(std::vector<uint8_t>* data, size_t offset, uint32_t value) {
   DCHECK_LE(offset + sizeof(value), data->size());
   (*data)[offset + 0u] = static_cast<uint8_t>(value);
@@ -468,6 +478,7 @@ OatWriter::OatWriter(const CompilerOptions& compiler_options,
       data_img_rel_ro_size_(0u),
       data_img_rel_ro_app_image_offset_(0u),
       windows_unwind_start_(0u),
+      windows_cfg_start_(0u),
       bss_start_(0u),
       bss_size_(0u),
       bss_methods_offset_(0u),
@@ -757,6 +768,10 @@ void OatWriter::PrepareLayout(MultiOatRelativePatcher* relative_patcher) {
   {
     TimingLogger::ScopedTiming split("InitWindowsUnwindLayout", timings_);
     offset = InitWindowsUnwindLayout(offset);
+  }
+  {
+    TimingLogger::ScopedTiming split("InitWindowsCfgLayout", timings_);
+    offset = InitWindowsCfgLayout(offset);
   }
   oat_size_ = offset;  // .bss does not count towards oat_size_.
   bss_start_ = (bss_size_ != 0u) ?
@@ -1295,6 +1310,10 @@ class OatWriter::LayoutReserveOffsetCodeMethodVisitor : public OrderedMethodVisi
                                    code_size,
                                    compiled_method->GetWindowsX64UnwindInfo(),
                                    deduped);
+    writer_->AddWindowsCfgTarget(
+        quick_code_offset,
+        (access_flags & kAccNative) != 0u ? kOatWindowsCfgJniStub
+                                         : kOatWindowsCfgQuickMethod);
 
     if (!deduped) {
       // Update offsets. (Checksum is updated when writing.)
@@ -2376,6 +2395,31 @@ bool OatWriter::ShouldEmitWindowsUnwind() const {
 #endif
 }
 
+bool OatWriter::ShouldEmitWindowsCfg() const {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  return compiler_options_.GetInstructionSet() == InstructionSet::kX86_64 &&
+         (compiler_options_.IsBootImage() || compiler_options_.IsBootImageExtension());
+#else
+  return false;
+#endif
+}
+
+void OatWriter::AddWindowsCfgTarget(uint32_t code_offset, uint32_t kind_flags) {
+  if (!ShouldEmitWindowsCfg()) {
+    return;
+  }
+  constexpr uint32_t kKnownKindFlags = kOatWindowsCfgQuickMethod |
+                                       kOatWindowsCfgJniStub |
+                                       kOatWindowsCfgBootTrampoline |
+                                       kOatWindowsCfgIndirectCallableThunk;
+  CHECK_NE(kind_flags, 0u);
+  CHECK_EQ(kind_flags & ~kKnownKindFlags, 0u);
+  auto [it, inserted] = windows_cfg_targets_.emplace(code_offset, kind_flags);
+  if (!inserted) {
+    it->second |= kind_flags;
+  }
+}
+
 void OatWriter::AddWindowsUnwindEntry(uint32_t begin_offset,
                                       uint32_t code_size,
                                       ArrayRef<const uint8_t> unwind_info,
@@ -2439,6 +2483,8 @@ size_t OatWriter::InitOatCode(size_t offset) {
                             dchecked_integral_cast<uint32_t>((field)->size()),             \
                             ArrayRef<const uint8_t>(kLeafUnwindInfo),                      \
                             /*deduped=*/ false);                                           \
+      AddWindowsCfgTarget(dchecked_integral_cast<uint32_t>(adjusted_offset),              \
+                          kOatWindowsCfgBootTrampoline);                                   \
       if (generate_debug_info) {                                                          \
         debug::MethodDebugInfo info = {};                                                 \
         info.custom_name = #fn_name;                                                      \
@@ -2711,6 +2757,81 @@ size_t OatWriter::InitWindowsUnwindLayout(size_t offset) {
   return windows_unwind_start_ + windows_unwind_data_.size();
 }
 
+size_t OatWriter::InitWindowsCfgLayout(size_t offset) {
+  DCHECK(windows_cfg_data_.empty());
+  if (!ShouldEmitWindowsCfg()) {
+    DCHECK(windows_cfg_targets_.empty());
+    return offset;
+  }
+  CHECK(!windows_cfg_targets_.empty()) << "Windows boot OAT has no CFG targets";
+  CHECK_LE(windows_cfg_targets_.size(), std::numeric_limits<uint32_t>::max());
+
+  const uint32_t code_begin = GetOatHeader().GetExecutableOffset();
+  CHECK_LE(code_size_, std::numeric_limits<uint32_t>::max() - code_begin);
+  const uint32_t code_end = code_begin + dchecked_integral_cast<uint32_t>(code_size_);
+  constexpr uint32_t kKnownKindFlags = kOatWindowsCfgQuickMethod |
+                                       kOatWindowsCfgJniStub |
+                                       kOatWindowsCfgBootTrampoline |
+                                       kOatWindowsCfgIndirectCallableThunk;
+  CHECK_EQ(relative_patcher_->RelativeCallThunksSize(), 0u);
+  CHECK_EQ(relative_patcher_->MiscThunksSize(), 0u);
+  for (const auto& [code_offset, kind_flags] : windows_cfg_targets_) {
+    CHECK_GE(code_offset, code_begin);
+    CHECK_LT(code_offset, code_end);
+    // `code_offset` is relative to `oatdata`, whose ELF address is not required
+    // to have code alignment. ELF congruence makes the corresponding file
+    // offset carry the target virtual address's low bits.
+    CHECK_ALIGNED(GetFileOffset(code_offset),
+                  GetInstructionSetCodeAlignment(InstructionSet::kX86_64));
+    CHECK_NE(kind_flags, 0u);
+    CHECK_EQ(kind_flags & ~kKnownKindFlags, 0u);
+  }
+
+  const uint32_t target_count =
+      dchecked_integral_cast<uint32_t>(windows_cfg_targets_.size());
+  const uint64_t section_size =
+      static_cast<uint64_t>(kOatWindowsCfgHeaderSize) +
+      static_cast<uint64_t>(target_count) * kOatWindowsCfgTargetSize;
+  CHECK_LE(section_size, std::numeric_limits<uint32_t>::max());
+
+  const size_t section_alignment =
+      windows_unwind_data_.empty() ? kElfSegmentAlignment : sizeof(uint32_t);
+  windows_cfg_start_ = GetOffsetFromOatDataAlignedToFile(offset, section_alignment);
+  CHECK_LE(windows_cfg_start_ + section_size, std::numeric_limits<uint32_t>::max());
+
+  windows_cfg_data_.assign(dchecked_integral_cast<size_t>(section_size), 0u);
+  windows_cfg_data_[0] = 'o';
+  windows_cfg_data_[1] = 'c';
+  windows_cfg_data_[2] = 'f';
+  windows_cfg_data_[3] = 'g';
+  StoreUint32LittleEndian(&windows_cfg_data_, 4u, kOatWindowsCfgVersion);
+  StoreUint32LittleEndian(&windows_cfg_data_, 8u, kOatWindowsCfgHeaderSize);
+  StoreUint32LittleEndian(&windows_cfg_data_, 12u, kImageFileMachineAmd64);
+  StoreUint32LittleEndian(&windows_cfg_data_, 16u, kOatWindowsCfgCompleteTargetSet);
+  StoreUint32LittleEndian(&windows_cfg_data_, 20u, kOatWindowsCfgTargetSize);
+  StoreUint32LittleEndian(&windows_cfg_data_, 24u, target_count);
+  StoreUint32LittleEndian(&windows_cfg_data_, 28u, kOatWindowsCfgHeaderSize);
+  StoreUint32LittleEndian(&windows_cfg_data_, 32u, code_begin);
+  StoreUint32LittleEndian(&windows_cfg_data_, 36u, code_end);
+  StoreUint32LittleEndian(&windows_cfg_data_, kOatWindowsCfgChecksumOffset, 0u);
+  StoreUint32LittleEndian(&windows_cfg_data_, 44u, 0u);
+
+  size_t target_offset = kOatWindowsCfgHeaderSize;
+  for (const auto& [code_offset, kind_flags] : windows_cfg_targets_) {
+    StoreUint32LittleEndian(&windows_cfg_data_, target_offset, code_offset);
+    StoreUint32LittleEndian(&windows_cfg_data_, target_offset + sizeof(uint32_t), kind_flags);
+    target_offset += kOatWindowsCfgTargetSize;
+  }
+  DCHECK_EQ(target_offset, windows_cfg_data_.size());
+
+  uint32_t checksum = adler32(0L, Z_NULL, 0);
+  checksum = adler32(checksum,
+                     windows_cfg_data_.data(),
+                     dchecked_integral_cast<uInt>(windows_cfg_data_.size()));
+  StoreUint32LittleEndian(&windows_cfg_data_, kOatWindowsCfgChecksumOffset, checksum);
+  return windows_cfg_start_ + windows_cfg_data_.size();
+}
+
 void OatWriter::InitBssLayout(InstructionSet instruction_set) {
   DCHECK_EQ(bss_size_, 0u);
   if (bss_method_entries_.empty() &&
@@ -2867,6 +2988,8 @@ bool OatWriter::WriteCode(OutputStream* out) {
     write_state_ = WriteState::kWriteDataImgRelRo;
   } else if (!windows_unwind_data_.empty()) {
     write_state_ = WriteState::kWriteWindowsUnwind;
+  } else if (!windows_cfg_data_.empty()) {
+    write_state_ = WriteState::kWriteWindowsCfg;
   } else {
     if (!CheckOatSize(out, file_offset, relative_offset)) {
       return false;
@@ -2903,6 +3026,8 @@ bool OatWriter::WriteDataImgRelRo(OutputStream* out) {
 
   if (!windows_unwind_data_.empty()) {
     write_state_ = WriteState::kWriteWindowsUnwind;
+  } else if (!windows_cfg_data_.empty()) {
+    write_state_ = WriteState::kWriteWindowsCfg;
   } else {
     if (!CheckOatSize(out, file_offset, relative_offset)) {
       return false;
@@ -2935,6 +3060,44 @@ bool OatWriter::WriteWindowsUnwind(OutputStream* out) {
   }
   size_oat_unwind_windows_ = dchecked_integral_cast<uint32_t>(windows_unwind_data_.size());
   const size_t relative_offset = windows_unwind_start_ + windows_unwind_data_.size();
+  if (!windows_cfg_data_.empty()) {
+    write_state_ = WriteState::kWriteWindowsCfg;
+  } else {
+    if (!CheckOatSize(out, file_offset, relative_offset)) {
+      return false;
+    }
+    write_state_ = WriteState::kWriteHeader;
+  }
+  return true;
+}
+
+bool OatWriter::WriteWindowsCfg(OutputStream* out) {
+  TimingLogger::ScopedTiming split("WriteWindowsCfg", timings_);
+  CHECK(write_state_ == WriteState::kWriteWindowsCfg);
+  CHECK(!windows_cfg_data_.empty());
+
+  ChecksumUpdatingOutputStream checksum_updating_out(out, this);
+  out = &checksum_updating_out;
+
+  const size_t file_offset = oat_data_offset_;
+  const size_t predecessor_end = !windows_unwind_data_.empty()
+      ? windows_unwind_start_ + windows_unwind_data_.size()
+      : (data_img_rel_ro_size_ != 0u
+             ? data_img_rel_ro_start_ + data_img_rel_ro_size_
+             : GetOatHeader().GetExecutableOffset() + code_size_);
+  const size_t alignment = !windows_unwind_data_.empty()
+      ? sizeof(uint32_t)
+      : kElfSegmentAlignment;
+  DCHECK_EQ(GetOffsetFromOatDataAlignedToFile(predecessor_end, alignment), windows_cfg_start_);
+  size_oat_cfg_windows_alignment_ =
+      dchecked_integral_cast<uint32_t>(windows_cfg_start_ - predecessor_end);
+
+  if (!out->WriteFully(windows_cfg_data_.data(), windows_cfg_data_.size())) {
+    LOG(ERROR) << "Failed to write Windows OAT CFG metadata to " << out->GetLocation();
+    return false;
+  }
+  size_oat_cfg_windows_ = dchecked_integral_cast<uint32_t>(windows_cfg_data_.size());
+  const size_t relative_offset = windows_cfg_start_ + windows_cfg_data_.size();
   if (!CheckOatSize(out, file_offset, relative_offset)) {
     return false;
   }
@@ -2983,6 +3146,8 @@ bool OatWriter::CheckOatSize(OutputStream* out, size_t file_offset, size_t relat
     DO_STAT(size_data_img_rel_ro_alignment_);
     DO_STAT(size_oat_unwind_windows_);
     DO_STAT(size_oat_unwind_windows_alignment_);
+    DO_STAT(size_oat_cfg_windows_);
+    DO_STAT(size_oat_cfg_windows_alignment_);
     DO_STAT(size_relative_call_thunks_);
     DO_STAT(size_misc_thunks_);
     DO_STAT(size_vmap_table_);

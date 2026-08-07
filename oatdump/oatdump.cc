@@ -184,6 +184,7 @@ class OatSymbolizer final {
                                     oat_file_->DataImgRelRoSize(),
                                     oat_file_->DataImgRelRoAppImageOffset(),
                                     /*windows_unwind_size=*/ 0u,
+                                    /*windows_cfg_size=*/ 0u,
                                     oat_file_->BssSize(),
                                     oat_file_->BssMethodsOffset(),
                                     oat_file_->BssRootsOffset(),

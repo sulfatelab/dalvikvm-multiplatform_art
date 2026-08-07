@@ -97,6 +97,7 @@ class ElfWriterQuick final : public ElfWriter {
                              size_t data_img_rel_ro_size,
                              size_t data_img_rel_ro_app_image_offset,
                              size_t windows_unwind_size,
+                             size_t windows_cfg_size,
                              size_t bss_size,
                              size_t bss_methods_offset,
                              size_t bss_roots_offset,
@@ -110,6 +111,8 @@ class ElfWriterQuick final : public ElfWriter {
   void EndDataImgRelRo(OutputStream* data_img_rel_ro) override;
   OutputStream* StartWindowsUnwind() override;
   void EndWindowsUnwind(OutputStream* windows_unwind) override;
+  OutputStream* StartWindowsCfg() override;
+  void EndWindowsCfg(OutputStream* windows_cfg) override;
   void WriteDynamicSection() override;
   void WriteDebugInfo(const debug::DebugInfo& debug_info) override;
   bool StripDebugInfo() override;
@@ -129,6 +132,7 @@ class ElfWriterQuick final : public ElfWriter {
   size_t text_size_;
   size_t data_img_rel_ro_size_;
   size_t windows_unwind_size_;
+  size_t windows_cfg_size_;
   size_t bss_size_;
   size_t dex_section_size_;
   std::unique_ptr<BufferedOutputStream> output_stream_;
@@ -158,6 +162,7 @@ ElfWriterQuick<ElfTypes>::ElfWriterQuick(const CompilerOptions& compiler_options
       text_size_(0u),
       data_img_rel_ro_size_(0u),
       windows_unwind_size_(0u),
+      windows_cfg_size_(0u),
       bss_size_(0u),
       dex_section_size_(0u),
       output_stream_(
@@ -179,7 +184,7 @@ void ElfWriterQuick<ElfTypes>::Start() {
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
   if (compiler_options_.GetInstructionSet() == InstructionSet::kX86_64 &&
       (compiler_options_.IsBootImage() || compiler_options_.IsBootImageExtension())) {
-    extra_dynamic_symbols = 2u;
+    extra_dynamic_symbols = 4u;
   }
 #endif
   builder_->ReserveSpaceForDynamicSection(elf_file_->GetPath(), extra_dynamic_symbols);
@@ -191,6 +196,7 @@ void ElfWriterQuick<ElfTypes>::PrepareDynamicSection(size_t rodata_size,
                                                      size_t data_img_rel_ro_size,
                                                      size_t data_img_rel_ro_app_image_offset,
                                                      size_t windows_unwind_size,
+                                                     size_t windows_cfg_size,
                                                      size_t bss_size,
                                                      size_t bss_methods_offset,
                                                      size_t bss_roots_offset,
@@ -203,6 +209,8 @@ void ElfWriterQuick<ElfTypes>::PrepareDynamicSection(size_t rodata_size,
   data_img_rel_ro_size_ = data_img_rel_ro_size;
   DCHECK_EQ(windows_unwind_size_, 0u);
   windows_unwind_size_ = windows_unwind_size;
+  DCHECK_EQ(windows_cfg_size_, 0u);
+  windows_cfg_size_ = windows_cfg_size;
   DCHECK_EQ(bss_size_, 0u);
   bss_size_ = bss_size;
   DCHECK_EQ(dex_section_size_, 0u);
@@ -213,6 +221,7 @@ void ElfWriterQuick<ElfTypes>::PrepareDynamicSection(size_t rodata_size,
                                   data_img_rel_ro_size_,
                                   data_img_rel_ro_app_image_offset,
                                   windows_unwind_size_,
+                                  windows_cfg_size_,
                                   bss_size_,
                                   bss_methods_offset,
                                   bss_roots_offset,
@@ -269,6 +278,19 @@ template <typename ElfTypes>
 void ElfWriterQuick<ElfTypes>::EndWindowsUnwind(OutputStream* windows_unwind) {
   CHECK_EQ(builder_->GetWindowsUnwind(), windows_unwind);
   builder_->GetWindowsUnwind()->End();
+}
+
+template <typename ElfTypes>
+OutputStream* ElfWriterQuick<ElfTypes>::StartWindowsCfg() {
+  auto* windows_cfg = builder_->GetWindowsCfg();
+  windows_cfg->Start();
+  return windows_cfg;
+}
+
+template <typename ElfTypes>
+void ElfWriterQuick<ElfTypes>::EndWindowsCfg(OutputStream* windows_cfg) {
+  CHECK_EQ(builder_->GetWindowsCfg(), windows_cfg);
+  builder_->GetWindowsCfg()->End();
 }
 
 template <typename ElfTypes>

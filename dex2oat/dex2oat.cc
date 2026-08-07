@@ -2159,6 +2159,7 @@ class Dex2Oat final {
                                           oat_writer->GetDataImgRelRoSize(),
                                           oat_writer->GetDataImgRelRoAppImageOffset(),
                                           oat_writer->GetWindowsUnwindSize(),
+                                          oat_writer->GetWindowsCfgSize(),
                                           oat_writer->GetBssSize(),
                                           oat_writer->GetBssMethodsOffset(),
                                           oat_writer->GetBssRootsOffset(),
@@ -2221,6 +2222,16 @@ class Dex2Oat final {
             return false;
           }
           elf_writer->EndWindowsUnwind(windows_unwind);
+        }
+
+        if (oat_writer->GetWindowsCfgSize() != 0u) {
+          OutputStream* windows_cfg = elf_writer->StartWindowsCfg();
+          if (!oat_writer->WriteWindowsCfg(windows_cfg)) {
+            LOG(ERROR) << "Failed to write .oat_cfg.windows section to the ELF file "
+                << oat_file->GetPath();
+            return false;
+          }
+          elf_writer->EndWindowsCfg(windows_cfg);
         }
 
         if (!oat_writer->WriteHeader(elf_writer->GetStream())) {

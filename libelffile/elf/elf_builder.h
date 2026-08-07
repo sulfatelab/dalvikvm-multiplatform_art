@@ -470,6 +470,7 @@ class ElfBuilder final {
             kElfSegmentAlignment, 0),
         windows_unwind_(this, ".oat_unwind.windows", SHT_PROGBITS, SHF_ALLOC, nullptr, 0,
             kElfSegmentAlignment, 0),
+        windows_cfg_(this, ".oat_cfg.windows", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, 4u, 0),
         bss_(this, ".bss", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
         dex_(this, ".dex", SHT_NOBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
         dynstr_(this, ".dynstr", SHF_ALLOC, 1),
@@ -510,6 +511,7 @@ class ElfBuilder final {
   Section* GetText() { return &text_; }
   Section* GetDataImgRelRo() { return &data_img_rel_ro_; }
   Section* GetWindowsUnwind() { return &windows_unwind_; }
+  Section* GetWindowsCfg() { return &windows_cfg_; }
   Section* GetBss() { return &bss_; }
   Section* GetDex() { return &dex_; }
   StringSection* GetStrTab() { return &strtab_; }
@@ -655,7 +657,7 @@ class ElfBuilder final {
     dynstr_.AddSection();
     // We don't expect that .dynstr section can have any alignment requirements.
     DCHECK_EQ(dynstr_.header_.sh_addralign, 1u);
-    CHECK_LE(extra_dynamic_symbols, kWindowsUnwindDynamicSymbolCount);
+    CHECK_LE(extra_dynamic_symbols, kWindowsMetadataDynamicSymbolCount);
     const size_t reserved_dynamic_symbol_count = kDynamicSymbolCount + extra_dynamic_symbols;
     for (size_t i = 0; i < reserved_dynamic_symbol_count; ++i) {
       DynamicSymbol sym = static_cast<DynamicSymbol>(i);
@@ -692,6 +694,7 @@ class ElfBuilder final {
                              Elf_Word data_img_rel_ro_size,
                              Elf_Word data_img_rel_ro_app_image_offset,
                              Elf_Word windows_unwind_size,
+                             Elf_Word windows_cfg_size,
                              Elf_Word bss_size,
                              Elf_Word bss_methods_offset,
                              Elf_Word bss_roots_offset,
@@ -710,6 +713,9 @@ class ElfBuilder final {
     }
     if (windows_unwind_size != 0) {
       windows_unwind_.AllocateVirtualMemory(windows_unwind_size);
+    }
+    if (windows_cfg_size != 0) {
+      windows_cfg_.AllocateVirtualMemory(windows_cfg_size);
     }
     if (bss_size != 0) {
       bss_.AllocateVirtualMemory(bss_size);
@@ -778,6 +784,23 @@ class ElfBuilder final {
       dynsym_.Add(oatunwindwindowslastword,
                   &windows_unwind_,
                   windows_unwind_.GetAddress() + windows_unwind_size - 4u,
+                  4u,
+                  STB_GLOBAL,
+                  STT_OBJECT);
+    }
+    if (windows_cfg_size != 0u) {
+      Elf_Word oatcfgwindows = dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatCfgWindows));
+      dynsym_.Add(oatcfgwindows,
+                  &windows_cfg_,
+                  windows_cfg_.GetAddress(),
+                  windows_cfg_size,
+                  STB_GLOBAL,
+                  STT_OBJECT);
+      Elf_Word oatcfgwindowslastword =
+          dynstr_.Add(GetDynamicSymbolName(DynamicSymbol::kOatCfgWindowsLastWord));
+      dynsym_.Add(oatcfgwindowslastword,
+                  &windows_cfg_,
+                  windows_cfg_.GetAddress() + windows_cfg_size - 4u,
                   4u,
                   STB_GLOBAL,
                   STT_OBJECT);
@@ -1076,10 +1099,12 @@ class ElfBuilder final {
     kLast = kOatDexLastWord,
     kOatUnwindWindows,
     kOatUnwindWindowsLastWord,
+    kOatCfgWindows,
+    kOatCfgWindowsLastWord,
   };
 
   static constexpr size_t kDynamicSymbolCount = static_cast<size_t>(DynamicSymbol::kLast) + 1;
-  static constexpr size_t kWindowsUnwindDynamicSymbolCount = 2u;
+  static constexpr size_t kWindowsMetadataDynamicSymbolCount = 4u;
   static_assert(kDynamicSymbolCount ==
                 static_cast<size_t>(DynamicSymbol::kOatDexLastWord) + 1u);
   static constexpr size_t kDynamicEntriesCount = 7;
@@ -1116,6 +1141,10 @@ class ElfBuilder final {
         return "oatunwindwindows";
       case DynamicSymbol::kOatUnwindWindowsLastWord:
         return "oatunwindwindowslastword";
+      case DynamicSymbol::kOatCfgWindows:
+        return "oatcfgwindows";
+      case DynamicSymbol::kOatCfgWindowsLastWord:
+        return "oatcfgwindowslastword";
     }
   }
 
@@ -1161,6 +1190,7 @@ class ElfBuilder final {
   Section text_;
   Section data_img_rel_ro_;
   Section windows_unwind_;
+  Section windows_cfg_;
   Section bss_;
   Section dex_;
   CachedStringSection dynstr_;

@@ -208,6 +208,7 @@ class OatTest : public CommonCompilerDriverTest {
                                       oat_writer.GetDataImgRelRoSize(),
                                       oat_writer.GetDataImgRelRoAppImageOffset(),
                                       oat_writer.GetWindowsUnwindSize(),
+                                      oat_writer.GetWindowsCfgSize(),
                                       oat_writer.GetBssSize(),
                                       oat_writer.GetBssMethodsOffset(),
                                       oat_writer.GetBssRootsOffset(),
@@ -239,6 +240,14 @@ class OatTest : public CommonCompilerDriverTest {
         return false;
       }
       elf_writer->EndWindowsUnwind(windows_unwind);
+    }
+
+    if (oat_writer.GetWindowsCfgSize() != 0u) {
+      OutputStream* windows_cfg = elf_writer->StartWindowsCfg();
+      if (!oat_writer.WriteWindowsCfg(windows_cfg)) {
+        return false;
+      }
+      elf_writer->EndWindowsCfg(windows_cfg);
     }
 
     if (!oat_writer.WriteHeader(elf_writer->GetStream())) {

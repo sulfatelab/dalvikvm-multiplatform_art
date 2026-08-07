@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -209,6 +210,8 @@ class OatWriter {
   bool WriteDataImgRelRo(OutputStream* out);
   // Write the Windows x64 OAT unwind table to the .oat_unwind.windows section.
   bool WriteWindowsUnwind(OutputStream* out);
+  // Write the Windows CFG target table to the .oat_cfg.windows section.
+  bool WriteWindowsCfg(OutputStream* out);
   // Check the size of the written oat file.
   bool CheckOatSize(OutputStream* out, size_t file_offset, size_t relative_offset);
   // Write the oat header. This finalizes the oat file.
@@ -239,6 +242,10 @@ class OatWriter {
 
   size_t GetWindowsUnwindSize() const {
     return windows_unwind_data_.size();
+  }
+
+  size_t GetWindowsCfgSize() const {
+    return windows_cfg_data_.size();
   }
 
   size_t GetDataImgRelRoAppImageOffset() const {
@@ -335,11 +342,14 @@ class OatWriter {
   size_t InitOatCodeDexFiles(size_t offset);
   size_t InitDataImgRelRoLayout(size_t offset);
   size_t InitWindowsUnwindLayout(size_t offset);
+  size_t InitWindowsCfgLayout(size_t offset);
   bool ShouldEmitWindowsUnwind() const;
+  bool ShouldEmitWindowsCfg() const;
   void AddWindowsUnwindEntry(uint32_t begin_offset,
                              uint32_t code_size,
                              ArrayRef<const uint8_t> unwind_info,
                              bool deduped);
+  void AddWindowsCfgTarget(uint32_t code_offset, uint32_t kind_flags);
   void InitBssAndRelRoData();
   void InitBssLayout(InstructionSet instruction_set);
   void AddBssReference(const DexFileReference& ref,
@@ -426,6 +436,7 @@ class OatWriter {
     kWriteText,
     kWriteDataImgRelRo,
     kWriteWindowsUnwind,
+    kWriteWindowsCfg,
     kWriteHeader,
     kDone
   };
@@ -493,6 +504,10 @@ class OatWriter {
   std::vector<WindowsUnwindEntry> windows_unwind_entries_;
   std::unordered_map<uint32_t, size_t> windows_unwind_entry_by_begin_;
   std::vector<uint8_t> windows_unwind_data_;
+
+  size_t windows_cfg_start_;
+  std::map<uint32_t, uint32_t> windows_cfg_targets_;
+  std::vector<uint8_t> windows_cfg_data_;
 
   // The start of the optional .bss section.
   size_t bss_start_;
@@ -627,6 +642,8 @@ class OatWriter {
   uint32_t size_data_img_rel_ro_alignment_ = 0;
   uint32_t size_oat_unwind_windows_ = 0;
   uint32_t size_oat_unwind_windows_alignment_ = 0;
+  uint32_t size_oat_cfg_windows_ = 0;
+  uint32_t size_oat_cfg_windows_alignment_ = 0;
   uint32_t size_relative_call_thunks_ = 0;
   uint32_t size_misc_thunks_ = 0;
   uint32_t size_vmap_table_ = 0;

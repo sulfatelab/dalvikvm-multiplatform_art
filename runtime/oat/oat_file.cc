@@ -77,6 +77,7 @@
 #include "verifier/verifier_deps.h"
 
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+#include "multiplatform/windows/aot_cfg_windows.h"
 #include "multiplatform/windows/aot_unwind_windows.h"
 #endif
 
@@ -255,6 +256,8 @@ class OatFileBase : public OatFile {
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
   const uint8_t* WindowsUnwindBegin() const { return windows_unwind_begin_; }
   const uint8_t* WindowsUnwindEnd() const { return windows_unwind_end_; }
+  const uint8_t* WindowsCfgBegin() const { return windows_cfg_begin_; }
+  const uint8_t* WindowsCfgEnd() const { return windows_cfg_end_; }
 #endif
 
  private:
@@ -276,6 +279,8 @@ class OatFileBase : public OatFile {
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
   const uint8_t* windows_unwind_begin_ = nullptr;
   const uint8_t* windows_unwind_end_ = nullptr;
+  const uint8_t* windows_cfg_begin_ = nullptr;
+  const uint8_t* windows_cfg_end_ = nullptr;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(OatFileBase);
@@ -551,6 +556,19 @@ bool OatFileBase::ComputeFields(const std::string& file_path, std::string* error
       return false;
     }
     windows_unwind_end_ += sizeof(uint32_t);
+  }
+
+  windows_cfg_begin_ = FindDynamicSymbolAddress("oatcfgwindows", &symbol_error_msg);
+  if (windows_cfg_begin_ == nullptr) {
+    windows_cfg_end_ = nullptr;
+  } else {
+    windows_cfg_end_ = FindDynamicSymbolAddress("oatcfgwindowslastword", &symbol_error_msg);
+    if (windows_cfg_end_ == nullptr) {
+      *error_msg = StringPrintf("Failed to find oatcfgwindowslastword symbol in '%s'",
+                                file_path.c_str());
+      return false;
+    }
+    windows_cfg_end_ += sizeof(uint32_t);
   }
 #endif
 
@@ -1319,8 +1337,8 @@ class DlOpenOatFile final : public OatFileBase {
 
   bool PostSetup(std::string* error_msg) override {
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-    if (IsExecutable() || WindowsUnwindBegin() != nullptr) {
-      *error_msg = "Windows OAT unwind requires the internal ELF loader";
+    if (IsExecutable() || WindowsUnwindBegin() != nullptr || WindowsCfgBegin() != nullptr) {
+      *error_msg = "Windows OAT unwind/CFG metadata requires the internal ELF loader";
       return false;
     }
 #else
@@ -1785,6 +1803,7 @@ class ElfOatFile final : public OatFileBase {
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
   // Declared after elf_file_ so registration is removed before the mappings
   // containing the code and unwind descriptors are released.
+  std::unique_ptr<WindowsAotCfgTable> windows_aot_cfg_table_;
   std::unique_ptr<WindowsAotUnwindRegistry> windows_aot_unwind_registry_;
 #endif
 
@@ -1862,21 +1881,34 @@ bool ElfOatFile::ElfFileOpen(File* file,
 
 bool ElfOatFile::PostSetup(std::string* error_msg) {
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-  if (WindowsUnwindBegin() == nullptr) {
-    if (IsExecutable()) {
-      *error_msg = "Executable Windows OAT is missing .oat_unwind.windows";
-      return false;
-    }
+  const bool has_unwind = WindowsUnwindBegin() != nullptr;
+  const bool has_cfg = WindowsCfgBegin() != nullptr;
+  if (IsExecutable() && !has_unwind) {
+    *error_msg = "Executable Windows OAT is missing .oat_unwind.windows";
+    return false;
+  }
+  if (!has_unwind && !has_cfg) {
     return true;
   }
 
-  const uintptr_t unwind_begin = reinterpret_cast<uintptr_t>(WindowsUnwindBegin());
-  const uintptr_t unwind_end = reinterpret_cast<uintptr_t>(WindowsUnwindEnd());
-  if (unwind_end <= unwind_begin ||
-      !elf_file_->IsInLoadableFileSegment(
-          WindowsUnwindBegin(), unwind_end - unwind_begin, PF_R)) {
-    *error_msg = ".oat_unwind.windows is not contained by one read-only PT_LOAD";
-    return false;
+  if (has_unwind) {
+    const uintptr_t unwind_begin = reinterpret_cast<uintptr_t>(WindowsUnwindBegin());
+    const uintptr_t unwind_end = reinterpret_cast<uintptr_t>(WindowsUnwindEnd());
+    if (unwind_end <= unwind_begin ||
+        !elf_file_->IsInLoadableFileSegment(
+            WindowsUnwindBegin(), unwind_end - unwind_begin, PF_R)) {
+      *error_msg = ".oat_unwind.windows is not contained by one read-only PT_LOAD";
+      return false;
+    }
+  }
+  if (has_cfg) {
+    const uintptr_t cfg_begin = reinterpret_cast<uintptr_t>(WindowsCfgBegin());
+    const uintptr_t cfg_end = reinterpret_cast<uintptr_t>(WindowsCfgEnd());
+    if (cfg_end <= cfg_begin ||
+        !elf_file_->IsInLoadableFileSegment(WindowsCfgBegin(), cfg_end - cfg_begin, PF_R)) {
+      *error_msg = ".oat_cfg.windows is not contained by one read-only PT_LOAD";
+      return false;
+    }
   }
 
   const uintptr_t oat_begin = reinterpret_cast<uintptr_t>(Begin());
@@ -1894,16 +1926,31 @@ bool ElfOatFile::PostSetup(std::string* error_msg) {
     return false;
   }
 
-  windows_aot_unwind_registry_ = WindowsAotUnwindRegistry::Create(Begin(),
-                                                                  code_begin,
-                                                                  End(),
-                                                                  WindowsUnwindBegin(),
-                                                                  WindowsUnwindEnd(),
-                                                                  error_msg);
-  if (windows_aot_unwind_registry_ == nullptr) {
-    return false;
+  if (has_unwind) {
+    windows_aot_unwind_registry_ = WindowsAotUnwindRegistry::Create(Begin(),
+                                                                    code_begin,
+                                                                    End(),
+                                                                    WindowsUnwindBegin(),
+                                                                    WindowsUnwindEnd(),
+                                                                    error_msg);
+    if (windows_aot_unwind_registry_ == nullptr) {
+      return false;
+    }
+  }
+  if (has_cfg) {
+    windows_aot_cfg_table_ = WindowsAotCfgTable::Create(Begin(),
+                                                        code_begin,
+                                                        End(),
+                                                        WindowsCfgBegin(),
+                                                        WindowsCfgEnd(),
+                                                        error_msg);
+    if (windows_aot_cfg_table_ == nullptr) {
+      windows_aot_unwind_registry_.reset();
+      return false;
+    }
   }
   if (IsExecutable() && !windows_aot_unwind_registry_->Register(error_msg)) {
+    windows_aot_cfg_table_.reset();
     windows_aot_unwind_registry_.reset();
     return false;
   }
