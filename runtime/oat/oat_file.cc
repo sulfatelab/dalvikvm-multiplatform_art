@@ -78,6 +78,7 @@
 
 #if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
 #include "multiplatform/windows/aot_cfg_windows.h"
+#include "multiplatform/windows/aot_test_fault_windows.h"
 #include "multiplatform/windows/aot_unwind_windows.h"
 #endif
 
@@ -784,6 +785,12 @@ bool OatFileBase::Setup(int zip_fd,
                         ArrayRef<const std::string> dex_filenames,
                         ArrayRef<File> dex_files,
                         std::string* error_msg) {
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+  if (IsExecutable() && IsWindowsBootAotTestFailure("setup")) {
+    *error_msg = "Injected Windows boot-AOT setup failure";
+    return false;
+  }
+#endif
   if (!GetOatHeader().IsValid()) {
     std::string cause = GetOatHeader().GetValidationErrorMessage();
     *error_msg = ErrorPrintf("invalid oat header: %s", cause.c_str());

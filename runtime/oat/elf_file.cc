@@ -32,6 +32,10 @@
 #include "elf/elf_utils.h"
 #include "elf_file_impl.h"
 
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+#include "multiplatform/windows/aot_test_fault_windows.h"
+#endif
+
 namespace art HIDDEN {
 
 using android::base::StringPrintf;
@@ -686,6 +690,13 @@ bool ElfFileImpl<ElfTypes>::Load(bool executable,
         DCHECK(!error_msg->empty());
         return false;
       }
+#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
+      if (executable && reservation != nullptr &&
+          IsWindowsBootAotTestFailure("reservation-consumption")) {
+        *error_msg = "Injected Windows boot-AOT reservation-consumption failure";
+        return false;
+      }
+#endif
       std::string reservation_name = "ElfFile reservation for " + file_location_;
       MemMap local_reservation =
           MemMap::MapAnonymous(reservation_name.c_str(),

@@ -28,6 +28,7 @@
 
 #include "android-base/stringprintf.h"
 #include "base/logging.h"
+#include "multiplatform/windows/aot_test_fault_windows.h"
 
 namespace art {
 
@@ -373,6 +374,10 @@ WindowsAotUnwindRegistry::~WindowsAotUnwindRegistry() {
 bool WindowsAotUnwindRegistry::Register(std::string* error_msg) {
   if (impl_->registered || impl_->functions.empty()) {
     *error_msg = "Windows AOT runtime-function table is already registered or empty";
+    return false;
+  }
+  if (IsWindowsBootAotTestFailure("unwind-registration")) {
+    *error_msg = "Injected Windows boot-AOT unwind-registration failure";
     return false;
   }
   if (RtlAddFunctionTable(impl_->functions.data(),
