@@ -213,7 +213,10 @@ void CommonArtTestImpl::SetUpAndroidRootEnvVars() {
 }
 
 void CommonArtTestImpl::SetUpAndroidDataDir(std::string& android_data) {
-  if (IsHost()) {
+  const char* test_data_root = getenv("ART_TEST_ANDROID_DATA_ROOT");
+  if (test_data_root != nullptr && test_data_root[0] != 0) {
+    android_data = test_data_root;
+  } else if (IsHost()) {
     const char* tmpdir = getenv("TMPDIR");
     if (tmpdir != nullptr && tmpdir[0] != 0) {
       android_data = tmpdir;
