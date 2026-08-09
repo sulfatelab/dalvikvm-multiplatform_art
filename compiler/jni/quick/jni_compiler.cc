@@ -92,14 +92,11 @@ static JniCompiledMethod ArtJniCompileMethodInternal(const CompilerOptions& comp
   bool emit_read_barrier = compiler_options.EmitReadBarrier();
   bool is_debuggable = compiler_options.GetDebuggable();
   bool needs_entry_exit_hooks = is_debuggable && compiler_options.IsJitCompiler();
-#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
   const bool emit_windows_x64_unwind_info =
+      kIsHostOrTargetWindows &&
       (compiler_options.IsJitCompiler() || compiler_options.IsBootImage() ||
        compiler_options.IsBootImageExtension()) &&
       instruction_set == InstructionSet::kX86_64;
-#else
-  const bool emit_windows_x64_unwind_info = false;
-#endif
   // We don't support JITing stubs for critical native methods in debuggable runtimes yet.
   // TODO(mythria): Add support required for calling method entry / exit hooks from critical native
   // methods.

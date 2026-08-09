@@ -1635,15 +1635,14 @@ CodeGeneratorX86_64::CodeGeneratorX86_64(HGraph* graph,
       fixups_to_jump_tables_(graph->GetAllocator()->Adapter(kArenaAllocCodeGenerator)) {
   blocked_registers_ = ComputeBlockedRegisters();
   AddAllocatedCoreRegister(kFakeReturnRegister);
-#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-  if (compiler_options.IsJitCompiler() || compiler_options.IsBootImage() ||
-      compiler_options.IsBootImageExtension()) {
+  if (kIsHostOrTargetWindows &&
+      (compiler_options.IsJitCompiler() || compiler_options.IsBootImage() ||
+       compiler_options.IsBootImageExtension())) {
     // Keep the Windows frame anchor out of register allocation and force its
     // existing ART callee-save spill into every generated JIT or boot-AOT frame.
     AddAllocatedCoreRegister(RBP);
     assembler_.EnableWindowsX64UnwindInfo();
   }
-#endif
 }
 
 InstructionCodeGeneratorX86_64::InstructionCodeGeneratorX86_64(HGraph* graph,
@@ -1665,15 +1664,15 @@ inline RegisterSet CodeGeneratorX86_64::ComputeBlockedRegisters() const {
   RegisterSet blocked_registers = RegisterSet::Empty();
   // Stack register is always reserved. Block the register used as TMP.
   uint32_t core_registers = (1u << RSP) | (1u << TMP);
-#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-  // R15 is rSELF / Thread*. Windows x64 JIT and boot-AOT code also reserve RBP
-  // as the stable PE unwind frame anchor; Linux register allocation is unchanged.
-  core_registers |= (1u << R15);
-  if (GetCompilerOptions().IsJitCompiler() || GetCompilerOptions().IsBootImage() ||
-      GetCompilerOptions().IsBootImageExtension()) {
-    core_registers |= (1u << RBP);
+  if constexpr (kIsHostOrTargetWindows) {
+    // R15 is rSELF / Thread*. Windows x64 JIT and boot-AOT code also reserve RBP
+    // as the stable PE unwind frame anchor; Linux register allocation is unchanged.
+    core_registers |= (1u << R15);
+    if (GetCompilerOptions().IsJitCompiler() || GetCompilerOptions().IsBootImage() ||
+        GetCompilerOptions().IsBootImageExtension()) {
+      core_registers |= (1u << RBP);
+    }
   }
-#endif
   blocked_registers.AddCoreRegisterSet(core_registers);
   return blocked_registers;
 }

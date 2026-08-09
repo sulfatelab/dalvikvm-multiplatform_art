@@ -20,6 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "base/host_target_os.h"
 #include "base/macros.h"
 
 namespace art {

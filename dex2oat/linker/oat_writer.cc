@@ -2387,21 +2387,15 @@ size_t OatWriter::InitBcpBssInfo(size_t offset) {
 }
 
 bool OatWriter::ShouldEmitWindowsUnwind() const {
-#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-  return compiler_options_.GetInstructionSet() == InstructionSet::kX86_64 &&
+  return kIsHostOrTargetWindows &&
+         compiler_options_.GetInstructionSet() == InstructionSet::kX86_64 &&
          (compiler_options_.IsBootImage() || compiler_options_.IsBootImageExtension());
-#else
-  return false;
-#endif
 }
 
 bool OatWriter::ShouldEmitWindowsCfg() const {
-#if defined(_WIN32) || defined(ART_TARGET_WINDOWS)
-  return compiler_options_.GetInstructionSet() == InstructionSet::kX86_64 &&
+  return kIsHostOrTargetWindows &&
+         compiler_options_.GetInstructionSet() == InstructionSet::kX86_64 &&
          (compiler_options_.IsBootImage() || compiler_options_.IsBootImageExtension());
-#else
-  return false;
-#endif
 }
 
 void OatWriter::AddWindowsCfgTarget(uint32_t code_offset, uint32_t kind_flags) {
