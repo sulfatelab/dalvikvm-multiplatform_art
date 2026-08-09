@@ -218,7 +218,12 @@ static void AddImageMappings(Builder& builder) {
                          {"uncompressed", ImageHeader::kStorageModeUncompressed}})
           .WithHelp("Which format to store the image Defaults to uncompressed. Eg:"
                     " --image-format=lz4")
-          .IntoKey(M::ImageFormat);
+          .IntoKey(M::ImageFormat)
+      .Define("--windows-aot-image-location=_")
+          .WithType<std::string>()
+          .WithHelp("Stores the exact package-relative -Ximage location required when loading a\n"
+                    "single-component Windows boot AOT artifact.")
+          .IntoKey(M::WindowsAotImageLocation);
   // clang-format on
 }
 

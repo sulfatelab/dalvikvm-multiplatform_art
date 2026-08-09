@@ -2939,6 +2939,28 @@ class ImageSpace::BootImageLoader {
           oat_file->GetOatHeader().GetStoreValueByKey(OatHeader::kBootClassPathChecksumsKey);
       oat_boot_class_path_checksums =
           (oat_boot_class_path_checksums != nullptr) ? oat_boot_class_path_checksums : "";
+      const char* windows_aot_image_location =
+          oat_file->GetOatHeader().GetStoreValueByKey(OatHeader::kWindowsAotImageLocationKey);
+      if (windows_aot_image_location != nullptr) {
+        std::string startup_image_location = Join(image_locations_, kComponentSeparator);
+        if (image_locations_.size() != 1u || startup_image_location != windows_aot_image_location) {
+          *error_msg = StringPrintf("Windows AOT image location mismatch: generation %s, "
+                                    "startup %s in image %s",
+                                    windows_aot_image_location,
+                                    startup_image_location.c_str(),
+                                    space->GetName());
+          return false;
+        }
+        std::string startup_boot_class_path = Join(boot_class_path_locations_, ':');
+        if (startup_boot_class_path != oat_boot_class_path) {
+          *error_msg = StringPrintf("Windows AOT boot class path mismatch: generation %s, "
+                                    "startup %s in image %s",
+                                    oat_boot_class_path,
+                                    startup_boot_class_path.c_str(),
+                                    space->GetName());
+          return false;
+        }
+      }
       size_t component_count = image_header.GetComponentCount();
       if (component_count == 0u) {
         if (oat_boot_class_path[0] != 0 || oat_boot_class_path_checksums[0] != 0) {

@@ -57,6 +57,7 @@ class EXPORT PACKED(4) OatHeader {
   static constexpr const char* kClassPathKey = "classpath";
   static constexpr const char* kBootClassPathKey = "bootclasspath";
   static constexpr const char* kBootClassPathChecksumsKey = "bootclasspath-checksums";
+  static constexpr const char* kWindowsAotImageLocationKey = "windows-aot-image-location";
   static constexpr const char* kApexVersionsKey = "apex-versions";
   static constexpr const char* kConcurrentCopying = "concurrent-copying";
   static constexpr const char* kCompilationReasonKey = "compilation-reason";
@@ -76,12 +77,13 @@ class EXPORT PACKED(4) OatHeader {
   // excluded from the oat checksum computation. This makes the oat checksum deterministic across
   // hosts and devices, which is important for Cloud Compilation, where we generate an oat file on a
   // host and use it on a device.
-  static constexpr std::array<std::string_view, 11> kDeterministicFields{kDebuggableKey,
+  static constexpr std::array<std::string_view, 12> kDeterministicFields{kDebuggableKey,
                                                                          kNativeDebuggableKey,
                                                                          kCompilerFilter,
                                                                          kClassPathKey,
                                                                          kBootClassPathKey,
                                                                          kBootClassPathChecksumsKey,
+                                                                         kWindowsAotImageLocationKey,
                                                                          kConcurrentCopying,
                                                                          kCompilationReasonKey,
                                                                          kRequiresImage,

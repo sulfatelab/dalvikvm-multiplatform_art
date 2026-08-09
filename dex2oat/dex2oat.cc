@@ -800,6 +800,20 @@ class Dex2Oat final {
       // This shall pass the checks below.
       compiler_options_->multi_image_ = IsBootImage() || IsBootImageExtension();
     }
+    if (!windows_aot_image_location_.empty()) {
+      if (!kIsTargetWindows) {
+        Usage("--windows-aot-image-location is supported only for a Windows target");
+      }
+      if (!IsBootImage() || dex_locations_.size() != 1u || image_filenames_.size() != 1u) {
+        Usage("--windows-aot-image-location requires a single-component primary boot image");
+      }
+      if (windows_aot_image_location_.front() == '/' ||
+          windows_aot_image_location_.find('\\') != std::string::npos ||
+          windows_aot_image_location_.find(':') != std::string::npos ||
+          !windows_aot_image_location_.ends_with(".art")) {
+        Usage("--windows-aot-image-location must be a package-relative forward-slash .art path");
+      }
+    }
     // On target we support generating a single image for the primary boot image.
     if (!kIsTargetBuild && !force_allow_oj_inlines_) {
       if (IsBootImage() && !compiler_options_->multi_image_) {
@@ -1000,6 +1014,10 @@ class Dex2Oat final {
     }
     key_value_store_->Put(OatHeader::kEnableProfileCodeKey,
                           compiler_options_->enable_profile_code_);
+    if (!windows_aot_image_location_.empty()) {
+      key_value_store_->Put(OatHeader::kWindowsAotImageLocationKey,
+                            windows_aot_image_location_);
+    }
     if (invocation_file_.get() != -1) {
       std::ostringstream oss;
       for (int i = 0; i < argc; ++i) {
@@ -1131,6 +1149,7 @@ class Dex2Oat final {
     AssignIfExists(args, M::DirtyImageObjects, &dirty_image_objects_filenames_);
     AssignIfExists(args, M::DirtyImageObjectsFd, &dirty_image_objects_fds_);
     AssignIfExists(args, M::ImageFormat, &image_storage_mode_);
+    AssignIfExists(args, M::WindowsAotImageLocation, &windows_aot_image_location_);
     AssignIfExists(args, M::CompilationReason, &compilation_reason_);
     AssignTrueIfExists(args, M::CheckLinkageConditions, &check_linkage_conditions_);
     AssignTrueIfExists(args, M::CrashOnLinkageViolation, &crash_on_linkage_violation_);
@@ -3004,6 +3023,7 @@ class Dex2Oat final {
   std::string boot_image_filename_;
   std::vector<const char*> runtime_args_;
   std::vector<std::string> image_filenames_;
+  std::string windows_aot_image_location_;
   int image_fd_;
   bool have_multi_image_arg_;
   uintptr_t image_base_;
