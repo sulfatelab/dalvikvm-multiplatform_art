@@ -1075,6 +1075,17 @@ class ElfBuilder final {
         }
       }
     }
+    // Modern glibc treats an ELF without PT_GNU_STACK as requesting an
+    // executable stack and rejects dlopen() when that request cannot be
+    // honored. OAT code never requires an executable process stack, so state
+    // the ordinary read/write, non-executable stack contract explicitly.
+    {
+      Elf_Phdr stack = Elf_Phdr();
+      stack.p_type = PT_GNU_STACK;
+      stack.p_flags = PF_R | PF_W;
+      stack.p_align = sizeof(Elf_Off);
+      phdrs.push_back(stack);
+    }
     // Set the size of the initial PT_PHDR.
     CHECK_EQ(phdrs[0].p_type, (Elf_Word)PT_PHDR);
     phdrs[0].p_filesz = phdrs[0].p_memsz = phdrs.size() * sizeof(Elf_Phdr);
